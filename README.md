@@ -11,9 +11,7 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 - **go vet:** verde en el workflow de validación.
 - **Build del ejecutable:** verde en Windows x64; artifact `GestionSO-V57` generado correctamente.
 
-El binario reconstruido fue generado desde el commit `4c5b893afd3139eb221a96c9b49d8da5548f477c`. El run final de compilación es `33695331006`.
-
-El binario analizado es Go 1.23.2, Windows x86-64. El símbolo `main.feedEngineFile` existe realmente; su contrato interno no puede recuperarse sin el motor V54.
+El código fuente actual de `main` está consolidado en una única implementación coherente. El binario analizado es Go 1.23.2, Windows x86-64. El símbolo `main.feedEngineFile` existe realmente; su contrato interno no puede recuperarse sin el motor V54.
 
 ## UI reconstruida — referencia V54
 
@@ -44,9 +42,10 @@ Los controles cuyo comportamiento interno no es recuperable (`TOMAR EXCEL ABIERT
 El ejecutable se genera **exclusivamente como artifact de GitHub Actions**; no se commitean `.exe` ni `.zip`.
 
 - Workflow: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
-- Run final de compilación: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33695331006
-- Artifact: **`GestionSO-V57`**.
-- Tamaño del artifact ZIP de Actions: aproximadamente 1,96 MB; contiene el `GestionSO-V57.exe`.
+- Run final de compilación: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33695362962
+- Artifact: **`GestionSO-V57`**, ID `9871584855`.
+- SHA-256 del ZIP del artifact: `39aa70c2415ecb32d9042460b6da661df2e8c7ccfc4209a1684b047ae372731b`.
+- El ejecutable extraído tiene 3.302.912 bytes y es PE32+ Windows x86-64 GUI.
 - Para descargarlo: abrir el run y, al final de la página, entrar en **Artifacts → GestionSO-V57**.
 
 ## Compilación
