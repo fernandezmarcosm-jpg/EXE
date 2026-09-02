@@ -10,30 +10,30 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v5  # ✅ v5 soporta Node.js 24
+      - name: Checkout
+        uses: actions/checkout@v5          # ✅ Soporte Node.js 24[reference:3][reference:4]
 
-    - name: Setup Go
-      uses: actions/setup-go@v6  # ✅ v6 soporta Node.js 24
-      with:
-        go-version: '1.23.2'
-        cache: false            # ✅ Desactiva el caché para evitar el error de go.sum
+      - name: Setup Go
+        uses: actions/setup-go@v6          # ✅ Soporte Node.js 24[reference:5]
+        with:
+          go-version: '1.23.2'
+          cache: false                    # ✅ Desactiva caché y elimina el error de go.sum[reference:6]
 
-    - name: Download dependencies
-      run: |
-        go mod download
-        go mod tidy
+      - name: Download dependencies
+        run: |
+          go mod download
+          go mod tidy
 
-    - name: Build
-      run: |
-        mkdir dist
-        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
+      - name: Build
+        run: |
+          mkdir dist
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
 
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: GestionSO-V57
-        path: dist/GestionSO-V57.exe
-        retention-days: 30
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionSO-V57
+          path: dist/GestionSO-V57.exe
+          retention-days: 30
