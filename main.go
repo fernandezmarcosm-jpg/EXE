@@ -12,6 +12,7 @@ var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	comctl32 = syscall.NewLazyDLL("comctl32.dll")
+	comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 )
 
 const (
@@ -30,14 +31,15 @@ const (
 	ID_LIMPIAR      = 1006
 )
 
-type winPOINT struct { X, Y int32 }
-type winMSG struct { Hwnd uintptr; Message uint32; WParam, LParam uintptr; Time uint32; Pt winPOINT }
+type winPOINT struct{ X, Y int32 }
+type winMSG struct{ Hwnd uintptr; Message uint32; WParam, LParam uintptr; Time uint32; Pt winPOINT }
 
 // Punto de entrada único de la reconstrucción Win32.
 func main() {
 	console, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
 	if console != 0 { user32.NewProc("ShowWindow").Call(console, 0) }
 	comctl32.NewProc("InitCommonControls").Call()
+	// Crear ventana y bucle de mensajes
 	hwnd := crearVentana()
 	if hwnd == 0 { log.Fatal("No se pudo crear la ventana principal") }
 	var msg winMSG
