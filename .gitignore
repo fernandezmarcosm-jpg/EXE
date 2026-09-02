@@ -1,0 +1,19 @@
+# Go build/output
+*.exe
+*.dll
+*.pdb
+*.log
+*.test
+bin/
+dist/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Local/runtime data
+GestionSO_Datos.csv
+*.db
+*.sqlite
+*.sqlite3
+.env
