@@ -31,8 +31,7 @@ var (
 )  
   
 func crearVentana() uintptr {  
-    hInst, _, _ := kernel32.NewProc("GetModuleHandleW").Call(0)  
-    hInstance = hInst  
+    hInstance, _, _ = kernel32.NewProc("GetModuleHandleW").Call(0)  
   
     className := syscall.StringToUTF16Ptr("GestionSO")  
   
@@ -43,15 +42,11 @@ func crearVentana() uintptr {
         CbSize:        uint32(unsafe.Sizeof(WNDCLASSEX{})),  
         Style:         0,  
         LpfnWndProc:   syscall.NewCallback(wndProc),  
-        CbClsExtra:    0,  
-        CbWndExtra:    0,  
         HInstance:     hInstance,  
-        HIcon:         0,  
         HCursor:       hCursor,  
         HbrBackground: hBrush,  
         LpszMenuName:  nil,  
         LpszClassName: className,  
-        HIconSm:       0,  
     }  
   
     user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))  
@@ -68,7 +63,7 @@ func crearVentana() uintptr {
     return hwnd  
 }  
   
-func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {  
+func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {  
     switch msg {  
     case WM_CREATE:  
         crearControles(hwnd)  
@@ -81,27 +76,20 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
     case WM_COMMAND:  
         comando := uint16(wParam & 0xFFFF)  
         notificacion := uint16((wParam >> 16) & 0xFFFF)  
-  
         if notificacion == BN_CLICKED {  
             switch comando {  
             case ID_ABRIR_XLSX:  
                 mostrarInfo("Info", "ABRIR XLSX")  
-                return 0  
             case ID_EXPORTAR_CSV:  
                 mostrarInfo("Info", "EXPORTAR CSV")  
-                return 0  
             case ID_RECARGAR:  
                 mostrarInfo("Info", "RECARGAR")  
-                return 0  
             case ID_COLUMNAS:  
                 mostrarInfo("Info", "COLUMNAS")  
-                return 0  
             case ID_FILTRAR:  
                 mostrarInfo("Info", "FILTRAR")  
-                return 0  
             case ID_LIMPIAR:  
                 mostrarInfo("Info", "LIMPIAR")  
-                return 0  
             }  
         }  
         return 0  
@@ -115,7 +103,7 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
         return 0  
     }  
   
-    ret, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, uintptr(msg), wParam, lParam)  
+    ret, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, msg, wParam, lParam)  
     return ret  
 }  
   
@@ -138,13 +126,10 @@ func crearControles(hwnd uintptr) {
     crearBoton(hwnd, "EXPORTAR CSV", x, y, 100, 28, ID_EXPORTAR_CSV)  
   
     y = 48  
-  
     crearLabel(hwnd, "SO", 10, y+5, 20, 20)  
     crearInput(hwnd, 35, y, 80, 24)  
-  
     crearLabel(hwnd, "SKU", 125, y+5, 30, 20)  
     crearInput(hwnd, 160, y, 80, 24)  
-  
     crearBoton(hwnd, "FILTRAR", 250, y, 70, 28, ID_FILTRAR)  
     crearBoton(hwnd, "LIMPIAR", 330, y, 70, 28, ID_LIMPIAR)  
   
@@ -186,10 +171,7 @@ func crearBoton(hwnd uintptr, texto string, x, y, ancho, alto int, id uintptr) {
         uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(texto))),  
         0x40000000|0x10000000|0x00010000,  
         uintptr(x), uintptr(y), uintptr(ancho), uintptr(alto),  
-        hwnd,  
-        id,  
-        hInstance,  
-        0,  
+        hwnd, id, hInstance, 0,  
     )  
 }  
   
@@ -200,10 +182,7 @@ func crearLabel(hwnd uintptr, texto string, x, y, ancho, alto int) {
         uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(texto))),  
         0x40000000|0x10000000,  
         uintptr(x), uintptr(y), uintptr(ancho), uintptr(alto),  
-        hwnd,  
-        0,  
-        hInstance,  
-        0,  
+        hwnd, 0, hInstance, 0,  
     )  
 }  
   
@@ -214,10 +193,7 @@ func crearInput(hwnd uintptr, x, y, ancho, alto int) {
         0,  
         0x40000000|0x10000000|0x00010000,  
         uintptr(x), uintptr(y), uintptr(ancho), uintptr(alto),  
-        hwnd,  
-        0,  
-        hInstance,  
-        0,  
+        hwnd, 0, hInstance, 0,  
     )  
 }  
   
@@ -229,21 +205,10 @@ func redimensionarControles(hwnd uintptr) {
     alto := int(rect.Bottom - rect.Top)  
   
     if hwndGrid != 0 {  
-        user32.NewProc("MoveWindow").Call(  
-            hwndGrid,  
-            10, 82,  
-            uintptr(ancho-20), uintptr(alto-82-40),  
-            1,  
-        )  
+        user32.NewProc("MoveWindow").Call(hwndGrid, 10, 82, uintptr(ancho-20), uintptr(alto-82-40), 1)  
     }  
-  
     if hwndStatus != 0 {  
-        user32.NewProc("MoveWindow").Call(  
-            hwndStatus,  
-            10, uintptr(alto-30),  
-            uintptr(ancho-20), 30,  
-            1,  
-        )  
+        user32.NewProc("MoveWindow").Call(hwndStatus, 10, uintptr(alto-30), uintptr(ancho-20), 30, 1)  
     }  
 }  
   
