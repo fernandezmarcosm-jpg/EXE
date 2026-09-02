@@ -30,17 +30,16 @@ const (
 	ID_LIMPIAR      = 1006
 )
 
+type winPOINT struct { X, Y int32 }
+type winMSG struct { Hwnd uintptr; Message uint32; WParam, LParam uintptr; Time uint32; Pt winPOINT }
+
 func main() {
 	console, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
-	if console != 0 {
-		user32.NewProc("ShowWindow").Call(console, 0)
-	}
+	if console != 0 { user32.NewProc("ShowWindow").Call(console, 0) }
 	comctl32.NewProc("InitCommonControls").Call()
 	hwnd := crearVentana()
-	if hwnd == 0 {
-		log.Fatal("No se pudo crear la ventana principal")
-	}
-	var msg syscall.MSG
+	if hwnd == 0 { log.Fatal("No se pudo crear la ventana principal") }
+	var msg winMSG
 	for {
 		ret, _, _ := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(ret) <= 0 { break }
