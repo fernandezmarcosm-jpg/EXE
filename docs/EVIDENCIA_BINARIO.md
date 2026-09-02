@@ -38,9 +38,27 @@ Documento de trazabilidad de la reconstrucción. Se separan hechos observados de
 - El selector múltiple se reimplementa usando `OPENFILENAME` + `GetOpenFileNameW` y `OFN_ALLOWMULTISELECT`.
 - El hook se conecta a `OPENFILENAME.lpfnHook`; su comportamiento exacto original no puede recuperarse literalmente del símbolo.
 - El V54 externo se representa mediante la variable de entorno `GESTIONSO_V54_ENGINE`; no se inventa el contrato interno del motor.
-- La reconstrucción crea un botón local `ABRIR XLSX` para poder compilar y probar el núcleo sin el V54 externo. Esto es una adaptación de prueba, no una afirmación de que el V57 original creara ese botón de esa forma.
+- La reconstrucción mantiene el botón local `ABRIR XLSX` ya existente en la Entrega 1 para poder compilar/probar el núcleo sin el V54 externo. Esto es una adaptación de prueba, no una afirmación de que el V57 original creara ese botón de esa forma.
 - `repositionOverlay` queda sin uso efectivo porque el README de V57 indica que el botón visible ya no debe ocultarse ni reemplazarse por un overlay.
+- Las firmas y estructuras de configuración que no son recuperables literalmente se implementan de forma conservadora y están marcadas en `core.go` como inferencia.
+- La escritura de una hoja XLSX completa no se inventa: `buildMergedSheet` conserva la operación observada, pero el contrato exacto del archivo de salida y su entrega al motor V54 queda pendiente de validación con el motor real.
 
-## Limitaciones
+## Persistencia
 
-Sin `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y el entorno original de ejecución no es posible afirmar que la reconstrucción reproduzca el flujo completo de producción.
+El ZIP analizado contiene únicamente el EXE y el LEEME. No incluye SQLite/Access ni `GestionSO_Datos.csv`. El LEEME indica expresamente que `GestionSO_Datos.csv` no está incluido.
+
+## Entrega 2
+
+Se agregó `core.go` con tipos, logging defensivo, lectura XLSX ZIP/XML, merge, configuración, CSV/maestro, vistas/proceso y stubs explícitos para opciones/simulador donde la evidencia disponible no permite reconstruir la lógica interna con honestidad.
+
+## Compilación
+
+`core.go` fue verificado de forma aislada con:
+
+`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build`
+
+La validación completa del proyecto debe hacerse con `main_windows.go + core.go` en un entorno Windows/Go equivalente. La validación funcional end-to-end requiere `GestionSO-V54-engine.exe` y los datos de runtime correspondientes.
+
+## Limitación principal
+
+Aunque `main.feedEngineFile` existe como símbolo real, **su contrato interno con `GestionSO-V54-engine.exe` no está verificado** porque ese ejecutable no forma parte del material analizado. No se afirma compatibilidad funcional hasta disponer de ese motor y poder probar el flujo completo.
