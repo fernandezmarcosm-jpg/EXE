@@ -6,8 +6,11 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 
 - **Entrega 1:** reconstrucción Win32, botón `ABRIR XLSX`, selector múltiple y trazabilidad del hook.
 - **Entrega 2:** núcleo XLSX, configuración/persistencia CSV, vistas/proceso y stubs explícitos.
-- **Fidelidad UI:** la ventana ahora replica visualmente la pantalla de referencia real de **V54 / SO RETENIDAS**: barra superior, filtros de cabecera, grilla `SysListView32`, columnas fijas, subtotales por SO y barra de estado.
-- **Build/vet:** automatizados con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
+- **Fidelidad UI:** pantalla de referencia real **V54 / SO RETENIDAS** replicada en una única implementación Win32: barra superior, filtros, grilla `SysListView32`, columnas fijas, subtotales informativos y barra de estado.
+- **Build integrado:** validado en verde con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64` mediante GitHub Actions.
+- **go vet:** validado en verde en el mismo workflow.
+
+La validación integrada verde corresponde al run de `Validar Go` asociado al commit `94f493793175cefd50173bbaa2573e32eee5e8c4`.
 
 El binario analizado es Go 1.23.2, Windows x86-64. El símbolo `main.feedEngineFile` existe realmente; su contrato interno no puede recuperarse sin el motor V54.
 
@@ -16,7 +19,7 @@ El binario analizado es Go 1.23.2, Windows x86-64. El símbolo `main.feedEngineF
 La pantalla de referencia usada es el programa real en modo `SO RETENIDAS`. Se reproduce:
 
 - Título `Gestion SO V54 - SO RETENIDAS / CSV maestro`, derivado de `configData.Mode`. El ejecutable reconstruido sigue siendo V57; la mención V54 es deliberada porque corresponde a la captura de referencia.
-- Barra superior: `ABRIR XLSX`, `TOMAR EXCEL ABIERTO`, `RECARGAR`, `COLUMNAS...`, `FILTROS CABECERA...`, `EXPORTAR CSV`, `SIMULADOR`, `RESALTAR...`, `+/- COLOR...`, `DATOS CSV...` y combo `10`.
+- Barra superior: `ABRIR XLSX`, `TOMAR EXCEL ABIERTO`, `RECARGAR`, `COLUMNAS...`, `FILTROS CABECERA...`, `EXPORTAR CSV`, `SIMULADOR`, `RESALTAR...`, `+/- COLOR...`, `DATOS CSV...` y combo de modo.
 - Filtros: `SO`, `Estado`, `SKU`, `SUMA DE`, `SDSRP2`, con `FILTRAR` y `LIMPIAR`.
 - Grilla real `SysListView32` en modo reporte.
 - Columnas, en orden exacto: `SKU`, `Descripción`, `SUM (%) descuento`, `NETO PK`, `UNIDADES`, `PALL`, `PK`, `NETO SO`, `TN SO`, `CMG`, `PPP SO`, `ORIGEN`. `CMG` lleva el indicador visual `▼`.
@@ -39,24 +42,26 @@ Los controles cuyo comportamiento interno no es recuperable (`TOMAR EXCEL ABIERT
 
 El ejecutable se genera **exclusivamente como artifact de GitHub Actions**; no se commitean `.exe` ni `.zip`.
 
-- Workflow: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
+- Workflow de compilación: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
 - Artifact: **`GestionSO-V57`**.
-- El ZIP contiene `GestionSO-V57.exe`, `README.md`, `EVIDENCIA_BINARIO.md` y `LEEME.txt`.
+- El artifact contiene el ejecutable Windows generado con `-ldflags "-H=windowsgui"`.
+- Para descargarlo: abrir el workflow, entrar al run verde más reciente y, al final de la página, abrir **Artifacts → GestionSO-V57**.
 
 ## Compilación
 
 ```text
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
+go vet ./...
 ```
 
-También se ejecuta `go vet ./...`. Los workflows permanentes son `.github/workflows/validar-go.yml` y `.github/workflows/build-exe.yml`.
+Los workflows permanentes son `.github/workflows/validar-go.yml` y `.github/workflows/build-exe.yml`.
 
 ## Límites funcionales
 
-Esta es una reconstrucción. Para validar end-to-end el flujo `ABRIR XLSX` → motor se requieren `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y XLSX reales/de prueba compatibles. Esos materiales no están disponibles. Por lo tanto quedan pendientes las **fórmulas de negocio reales, subtotales exactos y compatibilidad funcional completa con V54**.
+Esta es una reconstrucción. Para validar end-to-end el flujo `ABRIR XLSX` → motor se requieren `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y XLSX de datos reales/de prueba compatibles. Esos materiales no están disponibles. Por lo tanto quedan pendientes las **fórmulas de negocio reales, subtotales exactos y compatibilidad funcional completa con V54**.
 
 `feedEngineFile` no se modifica más allá de la parametrización existente mediante `GESTIONSO_V54_ENGINE` y logging.
 
 ## Trazabilidad
 
-La separación entre evidencia verificada e inferencia está documentada en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md).
+La separación entre evidencia verificada e inferencia está documentada en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md), incluyendo las correcciones de compilación y la discrepancia V54/V57.
