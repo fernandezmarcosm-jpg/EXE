@@ -33,6 +33,7 @@ const (
 type winPOINT struct { X, Y int32 }
 type winMSG struct { Hwnd uintptr; Message uint32; WParam, LParam uintptr; Time uint32; Pt winPOINT }
 
+// Punto de entrada único de la reconstrucción Win32.
 func main() {
 	console, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
 	if console != 0 { user32.NewProc("ShowWindow").Call(console, 0) }
