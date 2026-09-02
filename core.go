@@ -16,6 +16,17 @@ type xlsxDoc struct{SharedStrings []string;Sheets map[string][][]string}
 type configData struct{MasterPath string;EnginePath string;Mode string}
 
 func panicGuard(fn func()){defer func(){if r:=recover();r!=nil{logf("panicGuard recovered: %v",r)}}();fn()}
+func logf(format string, args ...interface{}) {  
+    p := filepath.Join(os.TempDir(), "GestionSO-V57-debug.log")  
+    f, e := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)  
+    if e != nil {  
+        return  
+    }  
+    defer f.Close()  
+    fmt.Fprintf(f, format+"\n", args...)  
+}  
+  
+func initLog() { logf("initLog: GestionSO V57 reconstruccion") }
 func defaultConfig()configData{return configData{Mode:"MODO: FACTURAS"}}
 func LoadConfig()configData{c:=defaultConfig();p:=filepath.Join(os.TempDir(),"GestionSO-config.txt");b,e:=os.ReadFile(p);if e!=nil{return c};for _,ln:=range strings.Split(string(b),"\n"){kv:=strings.SplitN(strings.TrimSpace(ln),"=",2);if len(kv)!=2{continue};switch kv[0]{case "MasterPath":c.MasterPath=kv[1];case "EnginePath":c.EnginePath=kv[1];case "Mode":c.Mode=kv[1]}};return c}
 func SaveConfig(c configData)error{return saveCfg(filepath.Join(os.TempDir(),"GestionSO-config.txt"),c)}
