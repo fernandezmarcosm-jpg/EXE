@@ -51,13 +51,34 @@ El ZIP analizado contiene únicamente el EXE y el LEEME. No incluye SQLite/Acces
 
 Se agregó `core.go` con tipos, logging defensivo, lectura XLSX ZIP/XML, merge, configuración, CSV/maestro, vistas/proceso y stubs explícitos para opciones/simulador donde la evidencia disponible no permite reconstruir la lógica interna con honestidad.
 
-## Compilación
+## Validación integrada de compilación
 
-`core.go` fue verificado de forma aislada con:
+El workflow permanente `Validar Go` ejecutó en GitHub Actions, sobre el commit `dd27561a28bd1cbdd0eefd9eb8c84d9ece57f24e`:
 
-`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build`
+- `CGO_ENABLED=0`
+- `GOOS=windows`
+- `GOARCH=amd64`
+- Go `1.23.2`
+- `go build ./...` → **success**, sin errores de compilación.
+- `go vet ./...` → **success**, sin salida de errores.
 
-La validación completa del proyecto debe hacerse con `main_windows.go + core.go` en un entorno Windows/Go equivalente. La validación funcional end-to-end requiere `GestionSO-V54-engine.exe` y los datos de runtime correspondientes.
+Run verificado: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33654572489
+
+No fue necesario corregir símbolos/tipos duplicados, firmas incompatibles, imports faltantes/no usados ni redefiniciones de `initLog`/`logf` en esa validación.
+
+## Build de entrega
+
+Se agregó el workflow permanente `.github/workflows/build-exe.yml`, que compila como Windows GUI mediante:
+
+`CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...`
+
+El workflow empaqueta el `.exe` junto con `README.md`, este documento y `LEEME.txt` en `GestionSO-V57.zip`, y lo publica como artifact `GestionSO-V57`. Los binarios no se commitean al repositorio.
+
+El resultado de este build de entrega debe considerarse validado únicamente cuando su propio run de Actions termine en verde y su artifact aparezca disponible.
+
+## Validación funcional / end-to-end
+
+La compilación verde no valida el flujo funcional completo. Para validar `ABRIR XLSX` de extremo a extremo se requiere `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y archivos XLSX de prueba compatibles. Esos materiales no forman parte del material analizado ni del repositorio.
 
 ## Limitación principal
 
