@@ -52,30 +52,36 @@ La grilla fija conserva el orden observado y resuelve valores contra encabezados
 
 ## Correcciones de compilación
 
-Las siguientes correcciones son **hechos verificados en el árbol fuente actual** y fueron realizadas únicamente para eliminar inconsistencias de compilación entre las dos versiones mezcladas de `main_windows.go` y `main.go`:
+Estas correcciones son **hechos verificados en el árbol fuente y/o en los logs de GitHub Actions** y fueron realizadas para eliminar inconsistencias entre las versiones mezcladas de `main.go` y `main_windows.go`:
 
 - `main.go`: se eliminó el import no utilizado `os`.
-- `main.go`: las llamadas `GetConsoleWindow` y `GetMessageW` pasan a capturar los tres retornos de `syscall.Proc.Call` (`ret, _, _`).
-- `main.go`: la ventana principal usa un único nombre coherente, `crearVentana()`.
-- `main.go`: se dejó explícito `//go:build windows` para mantener el proyecto Windows-only.
+- `main.go`: `GetConsoleWindow` y `GetMessageW` capturan los tres retornos de `syscall.Proc.Call` (`ret, _, _`).
+- `main.go`: se unificó el punto de entrada con `crearVentana()`.
+- `main.go`: se agregó `//go:build windows` y una estructura `winMSG` compatible con la API Win32, porque el log real de compilación mostró `./main.go:44:21: undefined: syscall.MSG`.
 - `main_windows.go`: `GetModuleHandleW`, `LoadCursorW` y `GetSysColorBrush` capturan sus tres retornos antes de inicializar `WNDCLASSEX`.
 - `main_windows.go`: `LpszMenuName` quedó como `nil`, porque el campo es un puntero.
-- `main_windows.go`: `wndProc` usa la firma `func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr`, compatible con `syscall.NewCallback`.
+- `main_windows.go`: `wndProc` usa argumentos `uintptr`, compatibles con `syscall.NewCallback`.
 - `main_windows.go`: `DefWindowProcW` captura `r, _, _` y devuelve únicamente `r`.
-- `main_windows.go`: se consolidaron en una sola implementación los controles Win32, selector múltiple XLSX, filtros, grilla, subtotales y barra de estado; no se mantienen dos versiones de esos símbolos.
+- `main_windows.go`: se consolidó una única implementación de la UI Win32, selector múltiple XLSX, filtros, grilla, subtotales y barra de estado.
 - `main_windows.go`: se agregó `WM_INITDIALOG` para el hook del selector múltiple.
-- `main_windows.go`: se agregó una única definición de `feedEngineFile`, respaldada por el símbolo real observado; su comportamiento interno queda pendiente por falta del motor V54.
-- `go.mod`: se eliminó `github.com/xuri/excelize/v2 v2.8.1`, que no es utilizado por el código reconstruido. La lectura XLSX usa `archive/zip` + `encoding/xml`.
+- `main_windows.go`: se dejó una única implementación de `feedEngineFile`, respaldada por el símbolo real; su contrato interno queda pendiente por falta del motor V54.
+- `go.mod`: se eliminó `github.com/xuri/excelize/v2 v2.8.1`, que no es utilizado por el código reconstruido.
+- `.github/workflows/build-exe.yml`: el log real mostró que `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 ...` no puede escribirse como asignación POSIX dentro de PowerShell. Se corrigió definiendo esas variables a nivel de `job`; el comando de build quedó como `go build -ldflags "-H=windowsgui" ...`.
+- Repositorio: se eliminó el `GestionSO-V57.zip` que había quedado accidentalmente versionado. `.gitignore` mantiene la exclusión de `*.exe` y `*.zip`.
 
-**Inferencia/limitación:** la corrección de firmas y tipos elimina errores de compilación; no demuestra que todas las llamadas Win32 sean idénticas al programa original en runtime. La validación funcional real requiere Windows y los materiales externos indicados abajo.
+## Validación reproducible
+
+**Build integrado en verde:** run `Validar Go` **33695199005**, asociado al código reconstruido ya consolidado; `go build ./...` terminó correctamente y `go vet ./...` también terminó correctamente.
+
+**Build del ejecutable en verde:** run `Build GestionSO V57` **33695331006**, sobre `main` en el commit `4c5b893afd3139eb221a96c9b49d8da5548f477c`. Los pasos `Build GestionSO V57`, `go vet` y `Upload artifact` terminaron correctamente.
+
+El artifact `GestionSO-V57` fue generado con ID `9871569226`, tamaño `1.962.292` bytes y SHA-256 del ZIP de artifact `893d26511e9e41245e7444f4d784645527a09700fdd09f4d7953229f113cb656`.
+
+La reconstrucción generada dentro del artifact es un **PE32+ Windows x86-64 GUI**. El ejecutable extraído del artifact tiene `3.302.912` bytes. Esta diferencia de tamaño respecto del binario original no implica equivalencia ni diferencia funcional por sí sola.
 
 ## Persistencia y XLSX
 
 `BuildLines` usa la fila que maximiza `headerScore` como encabezado y conserva esos nombres en `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío. `mergeXLSX` conserva la lectura de hojas y eliminación de encabezado duplicado observada en la reconstrucción previa. Los XLSX originales no se modifican.
-
-## Validación
-
-La validación integrada se realiza mediante `.github/workflows/validar-go.yml` con Go `1.23.2`, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`, y `go build ./...` seguido de `go vet ./...`. El ejecutable se genera mediante `.github/workflows/build-exe.yml` con `-ldflags "-H=windowsgui"` y se publica únicamente como artifact.
 
 ## Motor V54 y límite funcional
 
