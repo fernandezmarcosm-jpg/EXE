@@ -6,9 +6,24 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 
 - **Entrega 1:** reconstrucción de `main_windows.go`, centrada en Win32, botón `ABRIR XLSX`, selector múltiple y trazabilidad del hook.
 - **Entrega 2:** `core.go` agregado por bloques: tipos/logging defensivo, lectura y merge XLSX, configuración/persistencia CSV, vistas/proceso y stubs explícitos para opciones/simulador.
-- **Build integrado verificado:** el workflow `Validar Go` ejecutó `go build ./...` y `go vet ./...` con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`, y terminó en verde en el run 1.
+- **Mejora de fidelidad UI:** modos visibles, persistencia del modo, barra de totales, vista tabular de datos y mapeo de campos mediante encabezados reales.
+- **Build integrado verificado:** el workflow `Validar Go` ejecuta `go build ./...` y `go vet ./...` con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
 
 El binario analizado es Go 1.23.2, Windows x86-64, `CGO_ENABLED=0`, buildmode `exe`. El símbolo `main.feedEngineFile` existe realmente en el binario; su contrato interno no puede recuperarse literalmente sin el motor V54.
+
+## UI reconstruida
+
+La UI ahora incluye:
+
+- Selector de modo con exactamente `MODO: FACTURAS PENDIENTES`, `MODO: SO RETENIDAS` y `MODO: FACTURAS`.
+- Persistencia del modo en `configData.Mode` mediante `LoadConfig`/`SaveConfig`.
+- Etiqueta visible con el modo activo.
+- Dos líneas de totales con los formatos observados: `BULTOS %s | PALLETS %s | TN %s | UNIDADES %s` y `NETO $ %s | COSTO $ %s | RESULTADO %s | CMG %s`.
+- Área de datos multilinea de solo lectura para mostrar las filas mergeadas de XLSX y sus encabezados reales.
+- `BuildLines` usa los encabezados de la fila que maximiza `headerScore` como claves de `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío.
+- Agrupación/ordenamiento por campos reales que contienen `factura` o `cliente`, con fallback a la primera columna disponible.
+
+El layout y la fórmula exacta de totales son **inferencias conservadoras**: la evidencia disponible demuestra símbolos/strings, pero no conserva el diseño pixel a pixel ni la fórmula original. No se inventa una semántica específica para separar registros por cada modo.
 
 ## Descarga del ejecutable
 
@@ -34,7 +49,7 @@ También se ejecuta:
 go vet ./...
 ```
 
-La validación integrada de compilación y `go vet` quedó automatizada en `.github/workflows/validar-go.yml` y la generación del ejecutable/artifact en `.github/workflows/build-exe.yml`.
+La validación integrada de compilación y `go vet` está automatizada en `.github/workflows/validar-go.yml` y la generación del ejecutable/artifact en `.github/workflows/build-exe.yml`.
 
 ## Ejecución y límites
 
