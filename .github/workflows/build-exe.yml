@@ -13,24 +13,24 @@ jobs:
     
     steps:
     - name: Checkout
-      uses: actions/checkout@v5
-    
+      uses: actions/checkout@v5  # ✅ v5 soporta Node.js 24
+
     - name: Setup Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v6  # ✅ v6 soporta Node.js 24
       with:
         go-version: '1.23.2'
-        cache: false
-    
+        cache: false            # ✅ Desactiva el caché para evitar el error de go.sum
+
     - name: Download dependencies
       run: |
         go mod download
         go mod tidy
-    
+
     - name: Build
       run: |
         mkdir dist
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
-    
+
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
