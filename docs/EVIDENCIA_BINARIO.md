@@ -2,118 +2,68 @@
 
 ## Alcance
 
-Documento de trazabilidad de la reconstrucción. Se separan hechos observados del binario de inferencias necesarias para producir código compilable.
+Documento de trazabilidad de la reconstrucción. Se separan hechos observados del binario de inferencias necesarias para producir código compilable y una UI visualmente próxima a la captura real de Gestion SO V54.
 
-## Hechos verificados
+## Hechos verificados del binario
 
 - Archivo analizado: `GestionSO-V57.exe`.
-- PE: PE32+, x86-64, Windows GUI.
-- Build Go: `go1.23.2`.
-- `GOARCH=amd64`.
-- `GOOS=windows`.
-- `CGO_ENABLED=0`.
-- Buildmode: `exe`.
-- `-trimpath=true`.
+- PE32+, x86-64, Windows GUI, Go `1.23.2`, `GOOS=windows`, `GOARCH=amd64`, `CGO_ENABLED=0`.
 - No hay CLR Runtime Header; no es .NET.
-- El binario contiene símbolos/nombres `main.registerClass`, `main.createWindow`, `main.createMainControls`, `main.layoutMain`, `main.mainWndProc`, `main.handleCommand`, `main.handleNotify`, `main.handleMainNotify`.
-- El binario contiene `main.installMultiSelectButton`, `main.openXLSXDialog`, `main.pickMultipleXLSX`, `main.repositionOverlay`.
-- El binario contiene `main.multiSZ`, `main.u16`, `main.u16z`.
-- El binario contiene `main.findWindowByTitles`, `main.enumTopWindows`, `main.enumChildren`, `main.findChildByText`, `main.findFirstEdit`, `main.findDialogUnder`, `main.windowText`, `main.getClassName`, `main.setWindowText`.
-- **El símbolo `main.feedEngineFile` existe realmente.**
-- El binario contiene `main.ReadXLSX`, `main.readXLSXDoc`, `main.readZipEntry`, `main.decodeSheet`, `main.parseSharedStrings`, `main.parseRows`, `main.normalizeRows`, `main.normalizeRowXML`, `main.buildMergedSheet`, `main.rewriteRowNumber`, `main.xmlEscape`, `main.hashRow`, `main.colFromRef`, `main.headerScore`, `main.mergeXLSX`.
-- El binario contiene los nombres de archivos fuente `gestionso/core.go` y `gestionso/main_windows.go`.
-- El binario contiene `ABRIR XLSX`.
-- El binario contiene `*.xlsx`.
-- El binario contiene `ABRIR XLSX multi-select hook installed hwnd=%x`.
-- El binario contiene `GestionSO-V54-engine.exe`.
-- El binario contiene `GestionSO-debug.log` y `GestionSO-V57-debug.log`.
-- El binario contiene APIs/referencias Win32 incluyendo `GetOpenFileNameW`, `SendMessageW`, `ShowWindow`, `GetDlgItem`, `FindWindowW`, `EnumWindows`, `EnumChildWindows`, `GetWindowTextW`, `SetWindowTextW`, `GetClassNameW`, `GetWindowRect`, `SetWindowLongPtrW`, `CallWindowProcW`, `GetSystemMetrics`, `TranslateMessage`, `DispatchMessageW`.
-- El binario contiene `archive/zip`, `encoding/xml`, `encoding/csv` y `encoding/json`.
-- El binario contiene cadenas de modo: `MODO: FACTURAS PENDIENTES`, `MODO: SO RETENIDAS`, `MODO: FACTURAS`.
-- El binario contiene formatos `BULTOS %s | PALLETS %s | TN %s | UNIDADES %s` y `NETO $ %s | COSTO $ %s | RESULTADO %s | CMG %s`.
+- Existen símbolos `main.registerClass`, `main.createWindow`, `main.createMainControls`, `main.layoutMain`, `main.mainWndProc`, `main.handleCommand`, `main.handleNotify`, `main.handleMainNotify`.
+- Existen `main.installMultiSelectButton`, `main.openXLSXDialog`, `main.pickMultipleXLSX`, `main.repositionOverlay`.
+- Existe realmente `main.feedEngineFile`.
+- Existen `main.ReadXLSX`, `main.readXLSXDoc`, `main.readZipEntry`, `main.decodeSheet`, `main.parseSharedStrings`, `main.parseRows`, `main.normalizeRows`, `main.normalizeRowXML`, `main.buildMergedSheet`, `main.rewriteRowNumber`, `main.xmlEscape`, `main.hashRow`, `main.colFromRef`, `main.headerScore`, `main.mergeXLSX`.
+- Existen `BuildLines`, `GroupLines`, `BuildFilteredSortedView`, `FilterValue`, `DisplayValue`, `availableColumns` y símbolos de ordenamiento/vista.
+- El binario contiene `ABRIR XLSX`, `*.xlsx`, `GestionSO-V54-engine.exe`, `GestionSO-debug.log`, `GestionSO-V57-debug.log` y las tres cadenas de modo exactas: `MODO: FACTURAS PENDIENTES`, `MODO: SO RETENIDAS`, `MODO: FACTURAS`.
+- El binario contiene los formatos exactos `BULTOS %s | PALLETS %s | TN %s | UNIDADES %s` y `NETO $ %s | COSTO $ %s | RESULTADO %s | CMG %s`.
+- El binario contiene APIs Win32 incluyendo `GetOpenFileNameW`, `SendMessageW`, `ShowWindow`, `GetDlgItem`, `FindWindowW`, `EnumWindows`, `EnumChildWindows`, `GetWindowTextW`, `SetWindowTextW`, `GetClassNameW`, `GetWindowRect`, `SetWindowLongPtrW`, `CallWindowProcW`, `GetSystemMetrics`, `TranslateMessage`, `DispatchMessageW`.
 - El binario contiene una referencia a automatización COM/PowerShell de Excel mediante `Runtime.InteropServices.Marshal` y `GetActiveObject('Excel...`.
 
-## Inferencias de implementación
+## Evidencia visual (captura del programa en funcionamiento)
 
-- El selector múltiple se reimplementa usando `OPENFILENAME` + `GetOpenFileNameW` y `OFN_ALLOWMULTISELECT`.
-- El hook se conecta a `OPENFILENAME.lpfnHook`; su comportamiento exacto original no puede recuperarse literalmente del símbolo.
-- El V54 externo se representa mediante la variable de entorno `GESTIONSO_V54_ENGINE`; no se inventa el contrato interno del motor.
-- La reconstrucción mantiene el botón local `ABRIR XLSX` para poder compilar/probar el núcleo sin el V54 externo. Esto es una adaptación de prueba, no una afirmación de que el V57 original creara ese botón de esa forma.
-- `repositionOverlay` queda sin uso efectivo porque el README de V57 indica que el botón visible ya no debe ocultarse ni reemplazarse por un overlay.
-- Las firmas y estructuras de configuración que no son recuperables literalmente se implementan de forma conservadora y están marcadas en `core.go` como inferencia.
-- La escritura de una hoja XLSX completa no se inventa: `buildMergedSheet` conserva la operación observada, pero el contrato exacto del archivo de salida y su entrega al motor V54 queda pendiente de validación con el motor real.
+La siguiente lista registra como **hecho verificado visualmente** lo observado en la captura real aportada para el modo `SO RETENIDAS`. La captura es evidencia visual de V54; el binario analizado es V57, por lo que se documenta explícitamente la discrepancia de nombre.
 
-## UI reconstruida — fidelidad adicional
+### Hechos verificados por la captura
 
-### Hechos verificados usados
+- Título: `Gestion SO V54 - SO RETENIDAS / CSV maestro`.
+- Barra superior con `ABRIR XLSX`, `TOMAR EXCEL ABIERTO`, `RECARGAR`, `COLUMNAS...`, `FILTROS CABECERA...`, `EXPORTAR CSV`, `SIMULADOR`, `RESALTAR...`, `+/- COLOR...`, `DATOS CSV...` y un combo con valor `10`.
+- Fila de filtros con etiquetas `SO`, `Estado`, `SKU`, `SUMA DE`, `SDSRP2` y botones `FILTRAR` y `LIMPIAR`.
+- Grilla con columnas, en este orden: `SKU`, `Descripción`, `SUM (%) descuento`, `NETO PK`, `UNIDADES`, `PALL`, `PK`, `NETO SO`, `TN SO`, `CMG`, `PPP SO`, `ORIGEN`.
+- `CMG` aparece como columna ordenada con indicador `▼`.
+- Existen filas de subtotal por grupo con prefijo `SUBTOTAL SO` y datos de retención/estado/código/cliente y métricas de unidades, pallets, PK, neto SO, TN SO, CMG y PPP.
+- Barra de estado con formato observado: `MODO: SO RETENIDAS | RETENIDAS <n> | LIBERADAS <n> | SO <n> | LINEAS <n> | <n> filtros | Detalle de Descuentos Aplicados... | CSV`.
 
-- Existen símbolos `createMainControls`, `layoutMain`, `handleCommand`, `handleNotify` y `handleMainNotify`, que respaldan una UI Win32 con controles y gestión de eventos.
-- Existen las tres cadenas exactas de modo: `MODO: FACTURAS PENDIENTES`, `MODO: SO RETENIDAS`, `MODO: FACTURAS`.
-- Existen los formatos exactos de las dos líneas de totales: `BULTOS %s | PALLETS %s | TN %s | UNIDADES %s` y `NETO $ %s | COSTO $ %s | RESULTADO %s | CMG %s`.
-- Existen `BuildLines`, `GroupLines`, `BuildFilteredSortedView`, `FilterValue`, `DisplayValue`, `availableColumns` y símbolos de ordenamiento/vista.
-- Existen `ReadXLSX`/`mergeXLSX` y los símbolos de parsing necesarios para obtener filas desde XLSX.
+### Inferencias de implementación
 
-### Reconstrucción implementada
+- El título se genera desde `configData.Mode`, quitando el prefijo `MODO: ` y formando `Gestion SO V54 - <modo> / CSV maestro`. La discrepancia es intencional: el ejecutable reconstruido es V57, pero la captura de referencia muestra V54.
+- Los botones sin comportamiento recuperable se muestran como controles Win32 y sus handlers registran un stub en `%TEMP%\\GestionSO-V57-debug.log`; no se inventa lógica para `TOMAR EXCEL ABIERTO`, `COLUMNAS...`, `FILTROS CABECERA...`, `SIMULADOR`, `RESALTAR...`, `+/- COLOR...` o `DATOS CSV...`.
+- `TOMAR EXCEL ABIERTO` queda expresamente pendiente porque la evidencia solo demuestra la referencia COM/Excel, no su protocolo completo.
+- La grilla usa `SysListView32` en modo reporte y `ColumnDef` con las doce columnas observadas. El mapeo busca nombres reales de encabezado mediante coincidencias conservadoras; si no encuentra un campo, deja vacío.
+- Los filtros `SO`, `Estado`, `SKU`, `SUMA DE` y `SDSRP2` se conectan a `BuildFilteredSortedViewByHeaders`. `LIMPIAR` vacía los campos y restaura la vista.
+- El ordenamiento mantiene el campo real `SO` como primera clave preferida, con fallback a `factura` y `cliente`.
+- Las filas de subtotal se agregan por grupo de `SO` mediante `CalculateSOSubtotals` y se presentan como fila informativa de la grilla.
+- La barra de estado se construye mediante `BuildStatusBar`; `RETENIDAS`, `LIBERADAS`, cantidad de `SO` y cantidad de líneas se derivan conservadoramente de los datos cargados.
+- Los cálculos de subtotales y conteos **no son afirmados como las fórmulas originales**. No se dispone de evidencia suficiente para recuperar las fórmulas exactas de negocio.
+- El layout, tamaños, espaciados, fuentes y métricas de pixel son aproximaciones visuales; los símbolos y strings no permiten reconstruirlos literalmente.
 
-- Se agregó un `COMBOBOX` de tres opciones usando exactamente las tres cadenas de modo verificadas.
-- El modo seleccionado se guarda en `configData.Mode` mediante `LoadConfig`/`SaveConfig` y se refleja en una etiqueta `STATIC`.
-- `layoutMain` reposiciona botón, combo, etiqueta, totales y área de datos al recibir `WM_SIZE`.
-- Se agregaron dos `STATIC` para las líneas de totales, conservando exactamente los prefijos/separadores de los formatos observados.
-- La vista de datos se implementa mediante un control multilinea de solo lectura. Es la alternativa permitida a `ListView`; muestra las filas después del merge XLSX y utiliza los encabezados detectados como nombres de columnas.
-- `BuildLines` ya no genera `C1`, `C2`, etc. como claves principales. Selecciona la fila con mayor `headerScore` como encabezado y usa sus nombres reales en `Line.Values`; si un encabezado está vacío, el fallback es `C<n>` únicamente para esa columna.
-- `GroupLines` y el ordenamiento buscan primero campos cuyo nombre contenga `factura` o `cliente`; si no existe ninguno, hacen fallback a la primera columna real disponible.
-- Tras `pickMultipleXLSX` y `mergeXLSX`, se construyen las líneas, se aplica la vista genérica filtrada/ordenada y se actualizan datos y totales antes de registrar cada archivo para `feedEngineFile`.
+## Mapeo de columnas
 
-### Inferencias explícitas
+La grilla fija conserva el orden observado y resuelve valores contra encabezados reales detectados por `BuildLines`. Alias conservadores usados: `SKU→sku`; `Descripción→descrip/descripcion/producto`; `SUM (%) descuento→sum/descuento`; `NETO PK→neto pk`; `UNIDADES→unidades/unidad/cantidad`; `PALL→pall/pallet`; `PK→pk`; `NETO SO→neto so`; `TN SO→tn so/tn/tonelada`; `CMG→cmg/margen`; `PPP SO→ppp so/ppp`; `ORIGEN→origen`.
 
-- El diseño exacto, posiciones, tamaños y tipografía de la UI original no se recuperan literalmente de los símbolos; el layout Win32 es una aproximación conservadora.
-- La fórmula original de totales no es recuperable. La reconstrucción suma, cuando encuentra por nombre, campos `bultos`, `pallets`, `tn`, `unidades/cantidad`, `neto`, `costo`, `resultado` y `cmg/margen`. Si no hay un campo reconocible, aporta cero. Esto **no afirma** que sea la fórmula original.
-- No se inventa una semántica específica de filtrado para cada modo porque las cadenas prueban la existencia de los modos, pero no el algoritmo interno que separa sus registros. El modo controla selección/persistencia/rotulación y la vista usa el filtro/ordenamiento genérico disponible.
+## Persistencia y XLSX
 
-## Correcciones mínimas durante validación
+`BuildLines` usa la fila que maximiza `headerScore` como encabezado y conserva esos nombres en `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío. `mergeXLSX` conserva la lectura de hojas y eliminación de encabezado duplicado observada en la reconstrucción previa. Los XLSX originales no se modifican.
 
-El primer build de entrega después de la mejora UI falló solamente por dos errores de compilación introducidos en `main_windows.go`:
+## Validación
 
-1. Se trató el retorno múltiple de `SendMessageW.Call` como un único valor al leer `CB_GETCURSEL`. Se corrigió capturando `sel, _, _` y usando `sel` como índice.
-2. La vista llamaba a `columnsForLines`, función que no existía en la reconstrucción actual. Se corrigió usando el tipo/función ya presente `availableColumns`.
+Los workflows permanentes son `.github/workflows/validar-go.yml` para build/vet y `.github/workflows/build-exe.yml` para el ejecutable GUI/artifact. La validación requerida usa `CGO_ENABLED=0 GOOS=windows GOARCH=amd64` y Go `1.23.2`.
 
-Además, durante la revisión de la implementación Win32 se corrigió un detalle de creación de controles: los tres textos estáticos ahora se crean explícitamente con la clase Win32 `STATIC`, en lugar de pasar una clase nula. Esto no cambia la lógica de negocio ni `feedEngineFile`; evita que la UI dependa de un control inexistente.
+## Motor V54 y límite funcional
 
-El siguiente build de entrega y la validación integrada terminaron en verde con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
+Aunque `main.feedEngineFile` existe como símbolo real y el binario contiene `GestionSO-V54-engine.exe`, el contrato interno no está verificado sin el motor real. `feedEngineFile` se mantiene parametrizado por `GESTIONSO_V54_ENGINE` y no se inventan argumentos.
 
-## Persistencia
+Para una prueba end-to-end real se necesitan `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y XLSX de datos reales/prueba compatibles. Hasta disponer de ellos, quedan pendientes las fórmulas de negocio reales, subtotales exactos y el flujo completo con V54.
 
-El ZIP analizado contiene únicamente el EXE y el LEEME. No incluye SQLite/Access ni `GestionSO_Datos.csv`. El LEEME indica expresamente que `GestionSO_Datos.csv` no está incluido.
+## Binarios
 
-## Entrega 2
-
-Se agregó `core.go` con tipos, logging defensivo, lectura XLSX ZIP/XML, merge, configuración, CSV/maestro, vistas/proceso y stubs explícitos para opciones/simulador donde la evidencia disponible no permite reconstruir la lógica interna con honestidad.
-
-## Validación integrada de compilación
-
-El workflow permanente `Validar Go` ejecutó en GitHub Actions sobre la revisión final de la UI:
-
-- `CGO_ENABLED=0`
-- `GOOS=windows`
-- `GOARCH=amd64`
-- Go `1.23.2`
-- `go build ./...` → **success**.
-- `go vet ./...` → **success**, sin errores.
-
-La ejecución final debe considerarse la validación integrada de la revisión que genera el artifact entregable.
-
-## Build de entrega
-
-El workflow permanente `.github/workflows/build-exe.yml` compila como Windows GUI mediante:
-
-`CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...`
-
-El workflow empaqueta el `.exe` junto con `README.md`, este documento y `LEEME.txt` en `GestionSO-V57.zip`, y lo publica como artifact `GestionSO-V57`. Los binarios no se commitean al repositorio.
-
-## Validación funcional / end-to-end
-
-La compilación verde no valida el flujo funcional completo. Para validar `ABRIR XLSX` de extremo a extremo se requiere `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y archivos XLSX de prueba compatibles. Esos materiales no forman parte del material analizado ni del repositorio.
-
-## Limitación principal
-
-Aunque `main.feedEngineFile` existe como símbolo real, **su contrato interno con `GestionSO-V54-engine.exe` no está verificado** porque ese ejecutable no forma parte del material analizado. No se afirma compatibilidad funcional hasta disponer de ese motor y poder probar el flujo completo.
+No se commitean `.exe` ni `.zip`. El ejecutable de entrega se publica exclusivamente como artifact de GitHub Actions.
