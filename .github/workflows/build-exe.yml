@@ -7,31 +7,41 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: amd64
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5          # ✅ Soporte Node.js 24[reference:3][reference:4]
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v6          # ✅ Soporte Node.js 24[reference:5]
+        uses: actions/setup-go@v6
         with:
           go-version: '1.23.2'
-          cache: false                    # ✅ Desactiva caché y elimina el error de go.sum[reference:6]
+          cache: false
 
       - name: Download dependencies
         run: |
           go mod download
           go mod tidy
 
-      - name: Build
+      - name: Build GestionSO V57
         run: |
-          mkdir dist
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
 
-      - name: Upload
+      - name: go vet
+        run: go vet ./...
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GestionSO-V57
