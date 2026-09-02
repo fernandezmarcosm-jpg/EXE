@@ -30,7 +30,6 @@ var (
     hwndStatus uintptr
 )
 
-// crearVentana - FUNCIÓN PRINCIPAL QUE ESTABA FALTANDO
 func crearVentana() uintptr {
     hInstance = kernel32.NewProc("GetModuleHandleW").Call(0)
 
