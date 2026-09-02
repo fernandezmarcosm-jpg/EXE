@@ -50,13 +50,32 @@ La siguiente lista registra como **hecho verificado visualmente** lo observado e
 
 La grilla fija conserva el orden observado y resuelve valores contra encabezados reales detectados por `BuildLines`. Alias conservadores usados: `SKU→sku`; `Descripción→descrip/descripcion/producto`; `SUM (%) descuento→sum/descuento`; `NETO PK→neto pk`; `UNIDADES→unidades/unidad/cantidad`; `PALL→pall/pallet`; `PK→pk`; `NETO SO→neto so`; `TN SO→tn so/tn/tonelada`; `CMG→cmg/margen`; `PPP SO→ppp so/ppp`; `ORIGEN→origen`.
 
+## Correcciones de compilación
+
+Las siguientes correcciones son **hechos verificados en el árbol fuente actual** y fueron realizadas únicamente para eliminar inconsistencias de compilación entre las dos versiones mezcladas de `main_windows.go` y `main.go`:
+
+- `main.go`: se eliminó el import no utilizado `os`.
+- `main.go`: las llamadas `GetConsoleWindow` y `GetMessageW` pasan a capturar los tres retornos de `syscall.Proc.Call` (`ret, _, _`).
+- `main.go`: la ventana principal usa un único nombre coherente, `crearVentana()`.
+- `main.go`: se dejó explícito `//go:build windows` para mantener el proyecto Windows-only.
+- `main_windows.go`: `GetModuleHandleW`, `LoadCursorW` y `GetSysColorBrush` capturan sus tres retornos antes de inicializar `WNDCLASSEX`.
+- `main_windows.go`: `LpszMenuName` quedó como `nil`, porque el campo es un puntero.
+- `main_windows.go`: `wndProc` usa la firma `func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr`, compatible con `syscall.NewCallback`.
+- `main_windows.go`: `DefWindowProcW` captura `r, _, _` y devuelve únicamente `r`.
+- `main_windows.go`: se consolidaron en una sola implementación los controles Win32, selector múltiple XLSX, filtros, grilla, subtotales y barra de estado; no se mantienen dos versiones de esos símbolos.
+- `main_windows.go`: se agregó `WM_INITDIALOG` para el hook del selector múltiple.
+- `main_windows.go`: se agregó una única definición de `feedEngineFile`, respaldada por el símbolo real observado; su comportamiento interno queda pendiente por falta del motor V54.
+- `go.mod`: se eliminó `github.com/xuri/excelize/v2 v2.8.1`, que no es utilizado por el código reconstruido. La lectura XLSX usa `archive/zip` + `encoding/xml`.
+
+**Inferencia/limitación:** la corrección de firmas y tipos elimina errores de compilación; no demuestra que todas las llamadas Win32 sean idénticas al programa original en runtime. La validación funcional real requiere Windows y los materiales externos indicados abajo.
+
 ## Persistencia y XLSX
 
 `BuildLines` usa la fila que maximiza `headerScore` como encabezado y conserva esos nombres en `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío. `mergeXLSX` conserva la lectura de hojas y eliminación de encabezado duplicado observada en la reconstrucción previa. Los XLSX originales no se modifican.
 
 ## Validación
 
-Los workflows permanentes son `.github/workflows/validar-go.yml` para build/vet y `.github/workflows/build-exe.yml` para el ejecutable GUI/artifact. La validación requerida usa `CGO_ENABLED=0 GOOS=windows GOARCH=amd64` y Go `1.23.2`.
+La validación integrada se realiza mediante `.github/workflows/validar-go.yml` con Go `1.23.2`, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`, y `go build ./...` seguido de `go vet ./...`. El ejecutable se genera mediante `.github/workflows/build-exe.yml` con `-ldflags "-H=windowsgui"` y se publica únicamente como artifact.
 
 ## Motor V54 y límite funcional
 
