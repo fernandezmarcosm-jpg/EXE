@@ -44,6 +44,7 @@ const (
     CW_USEDEFAULT = 0x80000000
     CB_ADDSTRING = 0x0143
     CB_SETCURSEL = 0x014E
+    CB_GETCURSEL = 0x0147
 )
 
 var (
@@ -133,10 +134,7 @@ func createMainControls(hwnd uintptr) {
     updateMainView(hwnd)
 }
 
-func modeIndexOf(mode string) int {
-    for i, m := range modeStrings { if mode == m { return i } }
-    return 2
-}
+func modeIndexOf(mode string) int { for i, m := range modeStrings { if mode == m { return i } }; return 2 }
 
 func layoutMain(hwnd uintptr) {
     var r rect; pGetClientRect.Call(hwnd,uintptr(unsafe.Pointer(&r)))
@@ -155,7 +153,8 @@ func handleCommand(hwnd,wParam,lParam uintptr) uintptr {
     id:=uint16(wParam&0xffff); notify:=uint16((wParam>>16)&0xffff)
     if id==idOpenXLSX && notify==BN_CLICKED { openXLSXDialog(hwnd); return 0 }
     if id==idMode && notify==CBN_SELCHANGE {
-        idx:=int(pSendMessageW.Call(getDlgItem(hwnd,idMode),0x0147,0,0))
+        sel,_,_:=pSendMessageW.Call(getDlgItem(hwnd,idMode),CB_GETCURSEL,0,0)
+        idx:=int(sel)
         if idx>=0 && idx<len(modeStrings) { mainConfig.Mode=modeStrings[idx]; _=SaveConfig(mainConfig); setWindowText(getDlgItem(hwnd,idModeLabel),mainConfig.Mode); updateMainView(hwnd) }
         return 0
     }
@@ -198,7 +197,7 @@ func updateMainView(hwnd uintptr) {
 
 func renderLines(lines []Line) string {
     if len(lines)==0 { return "" }
-    cols:=columnsForLines(lines)
+    cols:=availableColumns(lines)
     var b strings.Builder
     for i,c:=range cols { if i>0 {b.WriteString("\t")}; b.WriteString(c.Name) }
     for _,l:=range lines { b.WriteByte('\n'); for i,c:=range cols { if i>0 {b.WriteString("\t")}; b.WriteString(DisplayValue(l,c.Name)) } }
@@ -221,8 +220,7 @@ func calculateTotals(lines []Line) (string,string) {
 }
 
 func numericByNames(l Line,names ...string) float64 { for k,v:=range l.Values { kl:=strings.ToLower(strings.TrimSpace(k)); for _,n:=range names { if kl==n || strings.Contains(kl,n) { if x,ok:=parseNumber(v);ok{return x} } } }; return 0 }
-func formatNumber(v float64) string { if v==0{return "0"}; return strconvFormat(v) }
-func strconvFormat(v float64) string { s:=fmt.Sprintf("%.2f",v); s=strings.TrimRight(strings.TrimRight(s,"0"),"."); return s }
+func formatNumber(v float64) string { if v==0{return "0"}; return fmt.Sprintf("%.2f",v) }
 
 func pickMultipleXLSX(owner uintptr) []string { buf:=make([]uint16,32768); filter:=u16z("Archivos XLSX (*.xlsx)\x00*.xlsx\x00Todos los archivos (*.*)\x00*.*\x00\x00"); title:=u16("ABRIR XLSX"); of:=openfilename{LStructSize:uint32(unsafe.Sizeof(openfilename{})),HwndOwner:owner,LpstrFilter:uintptr(unsafe.Pointer(&filter[0])),LpstrFile:uintptr(unsafe.Pointer(&buf[0])),NMaxFile:uint32(len(buf)),LpstrTitle:uintptr(unsafe.Pointer(title)),Flags:OFN_EXPLORER|OFN_ALLOWMULTISELECT|OFN_FILEMUSTEXIST|OFN_HIDEREADONLY,LpfnHook:hookProcCB}; r,_,_:=pGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&of))); if r==0{return nil}; return parseMultiSelectBuffer(buf) }
 func parseMultiSelectBuffer(buf []uint16) []string { parts:=make([]string,0,8); start:=0; for start<len(buf){ end:=start; for end<len(buf)&&buf[end]!=0{end++}; if end==start{break}; s:=syscall.UTF16ToString(buf[start:end]); if s!=""{parts=append(parts,s)}; start=end+1 }; if len(parts)<=1{return parts}; dir:=parts[0]; out:=make([]string,0,len(parts)-1); for _,name:=range parts[1:] { if strings.Contains(name,`\`){out=append(out,name)}else{out=append(out,dir+`\`+name)} }; return out }
