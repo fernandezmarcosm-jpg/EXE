@@ -1,41 +1,129 @@
-//go:build windows
-package main
+﻿package main
 
-import("fmt";"log";"os";"strings";"syscall";"unsafe")
-const(WM_CREATE=1;WM_DESTROY=2;WM_SIZE=5;WM_COMMAND=0x111;WM_NOTIFY=0x4e;WM_INITDIALOG=0x110;BN_CLICKED=0;SW_SHOW=5;WS_OVERLAPPEDWINDOW=0xcf0000;WS_VISIBLE=0x10000000;WS_CHILD=0x40000000;WS_TABSTOP=0x10000;WS_BORDER=0x800000;CBS_DROPDOWNLIST=3;BS_PUSHBUTTON=0;LVS_REPORT=1;LVS_SINGLESEL=4;LVS_SHOWSELALWAYS=8;LVS_EX_FULLROWSELECT=0x20;LVM_FIRST=0x1000;LVM_SETEXTENDEDLISTVIEWSTYLE=LVM_FIRST+54;LVM_INSERTCOLUMNW=LVM_FIRST+97;LVM_INSERTITEMW=LVM_FIRST+77;LVM_SETITEMW=LVM_FIRST+76;LVM_DELETEALLITEMS=LVM_FIRST+9;LVCF_FMT=1;LVCF_WIDTH=2;LVCF_TEXT=4;LVIF_TEXT=1;LVCFMT_LEFT=0;CW_USEDEFAULT=0x80000000;OFN_EXPLORER=0x80000;OFN_FILEMUSTEXIST=0x1000;OFN_ALLOWMULTISELECT=0x200;OFN_HIDEREADONLY=4)
-var(user32=syscall.NewLazyDLL("user32.dll");kernel32=syscall.NewLazyDLL("kernel32.dll");comdlg32=syscall.NewLazyDLL("comdlg32.dll");comctl32=syscall.NewLazyDLL("comctl32.dll"))
-var(pRegisterClassExW=user32.NewProc("RegisterClassExW");pCreateWindowExW=user32.NewProc("CreateWindowExW");pDefWindowProcW=user32.NewProc("DefWindowProcW");pShowWindow=user32.NewProc("ShowWindow");pUpdateWindow=user32.NewProc("UpdateWindow");pGetMessageW=user32.NewProc("GetMessageW");pTranslateMessage=user32.NewProc("TranslateMessage");pDispatchMessageW=user32.NewProc("DispatchMessageW");pPostQuitMessage=user32.NewProc("PostQuitMessage");pGetDlgItem=user32.NewProc("GetDlgItem");pSetWindowTextW=user32.NewProc("SetWindowTextW");pGetWindowTextW=user32.NewProc("GetWindowTextW");pGetWindowTextLenW=user32.NewProc("GetWindowTextLengthW");pGetClientRect=user32.NewProc("GetClientRect");pMoveWindow=user32.NewProc("MoveWindow");pSendMessageW=user32.NewProc("SendMessageW");pFindWindowW=user32.NewProc("FindWindowW");pEnumWindows=user32.NewProc("EnumWindows");pEnumChildWindows=user32.NewProc("EnumChildWindows");pGetClassNameW=user32.NewProc("GetClassNameW");pGetModuleHandleW=kernel32.NewProc("GetModuleHandleW");pGetOpenFileNameW=comdlg32.NewProc("GetOpenFileNameW");pInitCommonControlsEx=comctl32.NewProc("InitCommonControlsEx"))
-type point struct{X,Y int32};type rect struct{Left,Top,Right,Bottom int32};type msg struct{Hwnd uintptr;Message uint32;WParam,LParam uintptr;Time uint32;Pt point};type wndClassEx struct{CbSize uint32;Style uint32;LpfnWndProc uintptr;CbClsExtra int32;CbWndExtra int32;HInstance,HIcon,HCursor,HbrBackground,LpszMenuName,LpszClassName,HIconSm uintptr};type openfilename struct{LStructSize uint32;HwndOwner,HInstance uintptr;LpstrFilter,LpstrCustomFilter uintptr;NMaxCustFilter,NFilterIndex uint32;LpstrFile uintptr;NMaxFile uint32;LpstrFileTitle uintptr;NMaxFileTitle uint32;LpstrInitialDir uintptr;LpstrTitle uintptr;Flags uint32;NFileOffset,NFileExtension uint16;LpstrDefExt uintptr;LCustData uintptr;LpfnHook uintptr;LpTemplateName uintptr;PvReserved uintptr;DwReserved uint32;FlagsEx uint32};type lvcw struct{Mask uint32;Fmt int32;Cx int32;Text uintptr;TextMax int32;SubItem int32;Image int32;Order int32};type lvitemw struct{Mask uint32;Item int32;SubItem int32;State,StateMask uint32;Text uintptr;TextMax int32;Image int32;LParam uintptr};type iccex struct{DwSize uint32;DwICC uint32}
-var className="GestionSO_V57_Reconstruction";var wndProcCB=syscall.NewCallback(mainWndProc);var hookProcCB=syscall.NewCallback(multiSelectHook);var selectedFiles []string;var mainConfig configData;var mainLines []Line;var currentView []Line;var currentFilterCount int
-const(idOpenXLSX=1001;idTomarExcel=1002;idRecargar=1003;idColumnas=1004;idFiltrosCab=1005;idExportCSV=1006;idSimulador=1007;idResaltar=1008;idColor=1009;idDatosCSV=1010;idPageSize=1011;idFiltroSO=1101;idFiltroEstado=1102;idFiltroSKU=1103;idFiltroSuma=1104;idFiltroSDSRP2=1105;idFiltrar=1106;idLimpiar=1107;idGrid=1201;idStatus=1202)
-var toolbar=[]struct{id int;text string}{{idTomarExcel,"TOMAR EXCEL ABIERTO"},{idRecargar,"RECARGAR"},{idColumnas,"COLUMNAS..."},{idFiltrosCab,"FILTROS CABECERA..."},{idExportCSV,"EXPORTAR CSV"},{idSimulador,"SIMULADOR"},{idResaltar,"RESALTAR..."},{idColor,"+/- COLOR..."},{idDatosCSV,"DATOS CSV..."}}
-var uiColumns=[]ColumnDef{{"SKU",90,false},{"Descripción",230,false},{"SUM (%) descuento",125,false},{"NETO PK",110,false},{"UNIDADES",90,false},{"PALL",75,false},{"PK",75,false},{"NETO SO",110,false},{"TN SO",95,false},{"CMG",90,false},{"PPP SO",100,false},{"ORIGEN",130,false}}
-func u16(s string)*uint16{p,_:=syscall.UTF16PtrFromString(s);return p};func u16z(s string)[]uint16{return syscall.StringToUTF16(s)};func multiSZ(items []string)[]uint16{var o []uint16;for _,x:=range items{o=append(o,syscall.StringToUTF16(x)...);o=append(o,0)};return append(o,0)}
-func registerClass(){inst,_,_:=pGetModuleHandleW.Call(0);wc:=wndClassEx{CbSize:uint32(unsafe.Sizeof(wndClassEx{})),LpfnWndProc:wndProcCB,HInstance:inst,LpszClassName:uintptr(unsafe.Pointer(u16(className)))};pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)));pInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&iccex{DwSize:uint32(unsafe.Sizeof(iccex{})),DwICC:0x00000001|0x00004000})))}
-func modeName(mode string)string{if strings.HasPrefix(mode,"MODO: "){return strings.TrimSpace(mode[6:])};return mode};func windowTitle()string{return "Gestion SO V54 - "+modeName(mainConfig.Mode)+" / CSV maestro"}
-func createWindow()uintptr{mainConfig=LoadConfig();if mainConfig.Mode==""{mainConfig.Mode="MODO: SO RETENIDAS";_=SaveConfig(mainConfig)};inst,_,_:=pGetModuleHandleW.Call(0);hwnd,_,_:=pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16(className))),uintptr(unsafe.Pointer(u16(windowTitle()))),WS_OVERLAPPEDWINDOW|WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,1250,780,0,0,inst,0);if hwnd!=0{createMainControls(hwnd);pShowWindow.Call(hwnd,SW_SHOW);pUpdateWindow.Call(hwnd)};return hwnd}
-func createButton(hwnd uintptr,id int,text string)uintptr{inst,_,_:=pGetModuleHandleW.Call(0);h,_,_:=pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("BUTTON"))),uintptr(unsafe.Pointer(u16(text))),WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,0,0,100,26,hwnd,uintptr(id),inst,0);return h}
-func createMainControls(hwnd uintptr){inst,_,_:=pGetModuleHandleW.Call(0);createButton(hwnd,idOpenXLSX,"ABRIR XLSX");for _,b:=range toolbar{createButton(hwnd,b.id,b.text)};combo,_,_:=pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("COMBOBOX"))),0,WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST,0,0,70,180,hwnd,idPageSize,inst,0);pSendMessageW.Call(combo,0x143,0,uintptr(unsafe.Pointer(u16("10"))));pSendMessageW.Call(combo,0x14e,0,0);labels:=[]struct{id int;text string}{{idFiltroSO,"SO"},{idFiltroEstado,"Estado"},{idFiltroSKU,"SKU"},{idFiltroSuma,"SUMA DE"},{idFiltroSDSRP2,"SDSRP2"}};for _,x:=range labels{pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("STATIC"))),uintptr(unsafe.Pointer(u16(x.text))),WS_CHILD|WS_VISIBLE,0,0,70,22,hwnd,uintptr(x.id+100),inst,0);pCreateWindowExW.Call(WS_BORDER,uintptr(unsafe.Pointer(u16("EDIT"))),0,WS_CHILD|WS_VISIBLE|WS_TABSTOP,0,0,120,24,hwnd,uintptr(x.id),inst,0)};createButton(hwnd,idFiltrar,"FILTRAR");createButton(hwnd,idLimpiar,"LIMPIAR");grid,_,_:=pCreateWindowExW.Call(WS_BORDER,uintptr(unsafe.Pointer(u16("SysListView32"))),0,WS_CHILD|WS_VISIBLE|LVS_REPORT|LVS_SINGLESEL|LVS_SHOWSELALWAYS,0,0,100,100,hwnd,idGrid,inst,0);pSendMessageW.Call(grid,LVM_SETEXTENDEDLISTVIEWSTYLE,0,LVS_EX_FULLROWSELECT);for i,c:=range uiColumns{txt:=c.Name;if c.Name=="CMG"{txt="CMG ▼"};col:=lvcw{Mask:LVCF_FMT|LVCF_WIDTH|LVCF_TEXT,Fmt:LVCFMT_LEFT,Cx:int32(c.Width),Text:uintptr(unsafe.Pointer(u16(txt))),TextMax:int32(len([]rune(txt))+1),SubItem:int32(i)};pSendMessageW.Call(grid,LVM_INSERTCOLUMNW,uintptr(i),uintptr(unsafe.Pointer(&col)))};pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("STATIC"))),0,WS_CHILD|WS_VISIBLE,0,0,500,24,hwnd,idStatus,inst,0);updateMainView(hwnd)}
-func layoutMain(hwnd uintptr){var r rect;pGetClientRect.Call(hwnd,uintptr(unsafe.Pointer(&r)));w:=int(r.Right-r.Left);h:=int(r.Bottom-r.Top);if w<800{w=800};if h<500{h=500};x:=20;move:=func(id,cw int){if v:=getDlgItem(hwnd,id);v!=0{pMoveWindow.Call(v,uintptr(x),8,uintptr(cw),28,1);x+=cw+6}};move(idOpenXLSX,105);for _,b:=range toolbar{move(b.id,len([]rune(b.text))*8+22)};move(idPageSize,55);fy:=48;labels:=[]int{idFiltroSO,idFiltroEstado,idFiltroSKU,idFiltroSuma,idFiltroSDSRP2};widths:=[]int{130,130,110,130,130};xx:=20;for i,id:=range labels{if v:=getDlgItem(hwnd,id+100);v!=0{pMoveWindow.Call(v,uintptr(xx),uintptr(fy),65,20,1)};if v:=getDlgItem(hwnd,id);v!=0{pMoveWindow.Call(v,uintptr(xx+68),uintptr(fy),uintptr(widths[i]),24,1)};xx+=widths[i]+78};if v:=getDlgItem(hwnd,idFiltrar);v!=0{pMoveWindow.Call(v,uintptr(xx),uintptr(fy),85,26,1);xx+=91};if v:=getDlgItem(hwnd,idLimpiar);v!=0{pMoveWindow.Call(v,uintptr(xx),uintptr(fy),85,26,1)};if v:=getDlgItem(hwnd,idGrid);v!=0{pMoveWindow.Call(v,20,80,uintptr(w-40),uintptr(h-140),1)};if v:=getDlgItem(hwnd,idStatus);v!=0{pMoveWindow.Call(v,uintptr(w/2),uintptr(h-52),uintptr(w/2-20),42,1)}}
-func handleCommand(hwnd,wParam,lParam uintptr)uintptr{id:=int(wParam&0xffff);notify:=uint16((wParam>>16)&0xffff);if notify!=BN_CLICKED&&id!=idFiltrar&&id!=idLimpiar{return 0};switch id{case idOpenXLSX:openXLSXDialog(hwnd);case idFiltrar:applyHeaderFilters(hwnd);case idLimpiar:clearHeaderFilters(hwnd);default:logf("UI stub button id=%d",id)};return 0}
-func handleNotify(hwnd,wParam,lParam uintptr)uintptr{return handleMainNotify(hwnd,wParam,lParam)};func handleMainNotify(hwnd,wParam,lParam uintptr)uintptr{return 0}
-func mainWndProc(hwnd uintptr,msgID uint32,wParam,lParam uintptr)uintptr{switch msgID{case WM_CREATE:installMultiSelectButton(hwnd);return 0;case WM_COMMAND:return handleCommand(hwnd,wParam,lParam);case WM_NOTIFY:return handleNotify(hwnd,wParam,lParam);case WM_SIZE:layoutMain(hwnd);return 0;case WM_DESTROY:pPostQuitMessage.Call(0);return 0};ret,_,_:=pDefWindowProcW.Call(hwnd,uintptr(msgID),wParam,lParam);return ret}
-func msgLoop(){var m msg;for{r,_,_:=pGetMessageW.Call(uintptr(unsafe.Pointer(&m)),0,0,0);if int32(r)<=0{return};pTranslateMessage.Call(uintptr(unsafe.Pointer(&m)));pDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))}}
-func installMultiSelectButton(hwnd uintptr){logf("ABRIR XLSX multi-select hook installed hwnd=%x",hwnd);_=findWindowByTitles([]string{"Gestion SO V54","GestionSO V54"})}
-func openXLSXDialog(owner uintptr){files:=pickMultipleXLSX(owner);if len(files)==0{return};selectedFiles=files;rows,e:=mergeXLSX(files);if e!=nil{logf("mergeXLSX error: %v",e);return};mainLines=BuildLines(rows,strings.Join(files,";"));updateMainView(owner);for _,f:=range files{feedEngineFile(owner,f)}}
-func applyHeaderFilters(hwnd uintptr){filters:=map[string]string{"SO":windowText(getDlgItem(hwnd,idFiltroSO)),"Estado":windowText(getDlgItem(hwnd,idFiltroEstado)),"SKU":windowText(getDlgItem(hwnd,idFiltroSKU)),"SUMA DE":windowText(getDlgItem(hwnd,idFiltroSuma)),"SDSRP2":windowText(getDlgItem(hwnd,idFiltroSDSRP2))};currentFilterCount=0;for _,v:=range filters{if strings.TrimSpace(v)!=""{currentFilterCount++}};currentView=BuildFilteredSortedViewByHeaders(mainLines,filters);refreshGrid(hwnd,currentView);updateStatus(hwnd,currentView,currentFilterCount)}
-func clearHeaderFilters(hwnd uintptr){for _,id:=range []int{idFiltroSO,idFiltroEstado,idFiltroSKU,idFiltroSuma,idFiltroSDSRP2}{setWindowText(getDlgItem(hwnd,id),"")};currentFilterCount=0;currentView=BuildFilteredSortedViewByHeaders(mainLines,nil);refreshGrid(hwnd,currentView);updateStatus(hwnd,currentView,0)}
-func updateMainView(hwnd uintptr){currentView=BuildFilteredSortedViewByHeaders(mainLines,nil);refreshGrid(hwnd,currentView);updateStatus(hwnd,currentView,currentFilterCount);pSetWindowTextW.Call(hwnd,uintptr(unsafe.Pointer(u16(windowTitle()))))}
-func resolveUIValue(l Line,name string)string{aliases:=map[string][]string{"SKU":{"sku"},"Descripción":{"descrip","descripcion","producto"},"SUM (%) descuento":{"sum","descuento","% descuento"},"NETO PK":{"neto pk"},"UNIDADES":{"unidades","unidad","cantidad"},"PALL":{"pall","pallet"},"PK":{"pk"},"NETO SO":{"neto so"},"TN SO":{"tn so","tn","tonelada"},"CMG":{"cmg","margen"},"PPP SO":{"ppp so","ppp"},"ORIGEN":{"origen"}};for _,a:=range aliases[name]{for k,v:=range l.Values{lk:=strings.ToLower(strings.TrimSpace(k));if lk==a||strings.Contains(lk,a){return v}}};return ""}
-func refreshGrid(hwnd uintptr,lines []Line){grid:=getDlgItem(hwnd,idGrid);if grid==0{return};pSendMessageW.Call(grid,LVM_DELETEALLITEMS,0,0);for _,l:=range lines{idx:=insertGridRow(grid,resolveUIValue(l,uiColumns[0].Name));for i:=1;i<len(uiColumns);i++{setGridCell(grid,idx,i,resolveUIValue(l,uiColumns[i].Name))}};for _,s:=range CalculateSOSubtotals(lines){idx:=insertGridRow(grid,FormatSOSubtotal(s));for i:=1;i<len(uiColumns);i++{setGridCell(grid,idx,i,"")}}}
-func insertGridRow(grid uintptr,text string)int{t:=u16(text);it:=lvitemw{Mask:LVIF_TEXT,Item:0x7fffffff,SubItem:0,Text:uintptr(unsafe.Pointer(t)),TextMax:int32(len([]rune(text))+1)};r,_,_:=pSendMessageW.Call(grid,LVM_INSERTITEMW,0,uintptr(unsafe.Pointer(&it)));return int(r)}
-func setGridCell(grid uintptr,row,col int,text string){t:=u16(text);it:=lvitemw{Mask:LVIF_TEXT,Item:int32(row),SubItem:int32(col),Text:uintptr(unsafe.Pointer(t)),TextMax:int32(len([]rune(text))+1)};pSendMessageW.Call(grid,LVM_SETITEMW,0,uintptr(unsafe.Pointer(&it)))}
-func updateStatus(hwnd uintptr,lines []Line,n int){setWindowText(getDlgItem(hwnd,idStatus),BuildStatusBar(mainConfig.Mode,lines,n,"Detalle de Descuentos Aplicados..."))}
-func pickMultipleXLSX(owner uintptr)[]string{buf:=make([]uint16,32768);filter:=u16z("Archivos XLSX (*.xlsx)\x00*.xlsx\x00Todos los archivos (*.*)\x00*.*\x00\x00");title:=u16("ABRIR XLSX");of:=openfilename{LStructSize:uint32(unsafe.Sizeof(openfilename{})),HwndOwner:owner,LpstrFilter:uintptr(unsafe.Pointer(&filter[0])),LpstrFile:uintptr(unsafe.Pointer(&buf[0])),NMaxFile:uint32(len(buf)),LpstrTitle:uintptr(unsafe.Pointer(title)),Flags:OFN_EXPLORER|OFN_ALLOWMULTISELECT|OFN_FILEMUSTEXIST|OFN_HIDEREADONLY,LpfnHook:hookProcCB};r,_,_:=pGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&of)));if r==0{return nil};return parseMultiSelectBuffer(buf)}
-func parseMultiSelectBuffer(buf []uint16)[]string{parts:=make([]string,0,8);start:=0;for start<len(buf){end:=start;for end<len(buf)&&buf[end]!=0{end++};if end==start{break};s:=syscall.UTF16ToString(buf[start:end]);if s!=""{parts=append(parts,s)};start=end+1};if len(parts)<=1{return parts};dir:=parts[0];out:=make([]string,0,len(parts)-1);for _,name:=range parts[1:]{if strings.Contains(name,`\`){out=append(out,name)}else{out=append(out,dir+`\`+name)}};return out}
-func repositionOverlay(hwnd uintptr){_=hwnd};func findWindowByTitles(titles []string)uintptr{for _,t:=range titles{if h:=findWindowByTitle(t);h!=0{return h}};return 0};func findWindowByTitle(t string)uintptr{h,_,_:=pFindWindowW.Call(0,uintptr(unsafe.Pointer(u16(t))));return h};func enumTopWindows(fn func(uintptr)bool){cb:=syscall.NewCallback(func(hwnd,lParam uintptr)uintptr{if fn(hwnd){return 1};return 0});pEnumWindows.Call(cb,0)};func enumChildren(hwnd uintptr,fn func(uintptr)bool){cb:=syscall.NewCallback(func(child,lParam uintptr)uintptr{if fn(child){return 1};return 0});pEnumChildWindows.Call(hwnd,cb,0)};func findChildByText(hwnd uintptr,text string)uintptr{var found uintptr;enumChildren(hwnd,func(c uintptr)bool{if windowText(c)==text{found=c;return false};return true});return found};func findFirstEdit(hwnd uintptr)uintptr{var found uintptr;enumChildren(hwnd,func(c uintptr)bool{if strings.EqualFold(getClassName(c),"EDIT"){found=c;return false};return true});return found};func findDialogUnder(hwnd uintptr)uintptr{var found uintptr;enumTopWindows(func(w uintptr)bool{if w!=hwnd{found=w;return false};return true});return found};func windowText(hwnd uintptr)string{if hwnd==0{return ""};n,_,_:=pGetWindowTextLenW.Call(hwnd);b:=make([]uint16,n+1);pGetWindowTextW.Call(hwnd,uintptr(unsafe.Pointer(&b[0])),n+1);return syscall.UTF16ToString(b)};func getClassName(hwnd uintptr)string{b:=make([]uint16,256);n,_,_:=pGetClassNameW.Call(hwnd,uintptr(unsafe.Pointer(&b[0])),uintptr(len(b)));return syscall.UTF16ToString(b[:n])};func setWindowText(hwnd uintptr,text string){pSetWindowTextW.Call(hwnd,uintptr(unsafe.Pointer(u16(text))))};func getDlgItem(hwnd uintptr,id int)uintptr{h,_,_:=pGetDlgItem.Call(hwnd,uintptr(id));return h}
-func multiSelectHook(hwnd,msgID,wParam,lParam uintptr)uintptr{if msgID==WM_INITDIALOG{logf("multi-select dialog hook hwnd=%x",hwnd)};return 0}
-func feedEngineFile(owner uintptr,file string){engine:=os.Getenv("GESTIONSO_V54_ENGINE");if engine==""{logf("feedEngineFile owner=%x file=%q engine=not-configured",owner,file);return};logf("feedEngineFile owner=%x file=%q engine=%q",owner,file,engine)}
-var logFile *os.File;var logger *log.Logger
-func initLog(){if logger!=nil{return};path:=os.TempDir()+`\GestionSO-V57-debug.log`;f,e:=os.OpenFile(path,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0644);if e==nil{logFile=f;logger=log.New(f,"",log.LstdFlags)}}
-func logf(format string,args ...interface{}){initLog();if logger!=nil{logger.Printf(format,args...)}else{_=fmt.Sprintf(format,args...)}}
+import (
+    "syscall"
+    "unsafe"
+)
+
+type WNDCLASSEX struct {
+    CbSize        uint32
+    Style         uint32
+    LpfnWndProc   uintptr
+    CbClsExtra    int32
+    CbWndExtra    int32
+    HInstance     syscall.Handle
+    HIcon         syscall.Handle
+    HCursor       syscall.Handle
+    HbrBackground syscall.Handle
+    LpszMenuName  *uint16
+    LpszClassName *uint16
+    HIconSm       syscall.Handle
+}
+
+type RECT struct {
+    Left, Top, Right, Bottom int32
+}
+
+var (
+    hInstance  syscall.Handle
+    hwndGrid   syscall.Handle
+    hwndStatus syscall.Handle
+)
+
+func crearVentanaPrincipal() syscall.Handle {
+    hInstance = kernel32.NewProc("GetModuleHandleW").Call(0)
+    
+    className := syscall.StringToUTF16Ptr("GestionSO")
+    
+    wc := WNDCLASSEX{
+        CbSize:        uint32(unsafe.Sizeof(WNDCLASSEX{})),
+        Style:         0,
+        LpfnWndProc:   syscall.NewCallback(wndProc),
+        CbClsExtra:    0,
+        CbWndExtra:    0,
+        HInstance:     syscall.Handle(hInstance),
+        HIcon:         0,
+        HCursor:       user32.NewProc("LoadCursorW").Call(0, 32512),
+        HbrBackground: user32.NewProc("GetSysColorBrush").Call(15),
+        LpszMenuName:  0,
+        LpszClassName: className,
+        HIconSm:       0,
+    }
+    
+    user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
+    
+    hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(
+        0,
+        uintptr(unsafe.Pointer(className)),
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("Gestion SO V57"))),
+        0xCF0000|0x10000000,
+        100, 100, 800, 500,
+        0, 0, hInstance, 0,
+    )
+    
+    return syscall.Handle(hwnd)
+}
+
+func wndProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr {
+    switch msg {
+    case WM_CREATE:
+        crearControles(hwnd)
+        return 0
+    case WM_CLOSE:
+        user32.NewProc("DestroyWindow").Call(uintptr(hwnd))
+        return 0
+    case WM_DESTROY:
+        user32.NewProc("PostQuitMessage").Call(0)
+        return 0
+    }
+    return user32.NewProc("DefWindowProcW").Call(uintptr(hwnd), uintptr(msg), wParam, lParam)
+}
+
+func crearControles(hwnd syscall.Handle) {
+    var rect RECT
+    user32.NewProc("GetClientRect").Call(uintptr(hwnd), uintptr(unsafe.Pointer(&rect)))
+    
+    ancho := int(rect.Right - rect.Left)
+    alto := int(rect.Bottom - rect.Top)
+    
+    // Botón ABRIR XLSX
+    user32.NewProc("CreateWindowExW").Call(
+        0,
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("BUTTON"))),
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("ABRIR XLSX"))),
+        0x40000000|0x10000000,
+        uintptr(10), uintptr(10), uintptr(100), uintptr(28),
+        uintptr(hwnd),
+        uintptr(ID_ABRIR_XLSX),
+        hInstance,
+        0,
+    )
+    
+    // Botón EXPORTAR CSV
+    user32.NewProc("CreateWindowExW").Call(
+        0,
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("BUTTON"))),
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("EXPORTAR CSV"))),
+        0x40000000|0x10000000,
+        uintptr(120), uintptr(10), uintptr(100), uintptr(28),
+        uintptr(hwnd),
+        uintptr(ID_EXPORTAR_CSV),
+        hInstance,
+        0,
+    )
+    
+    // Status bar
+    y := alto - 30
+    hwndStatus, _, _ = user32.NewProc("CreateWindowExW").Call(
+        0,
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("STATIC"))),
+        uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("Listo"))),
+        0x40000000|0x10000000|0x00800000,
+        uintptr(10), uintptr(y),
+        uintptr(ancho-20), uintptr(30),
+        uintptr(hwnd),
+        uintptr(3002),
+        hInstance,
+        0,
+    )
+}
