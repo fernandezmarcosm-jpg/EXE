@@ -70,6 +70,17 @@ Documento de trazabilidad de la reconstrucción. Se separan hechos observados de
 - La fórmula original de totales no es recuperable. La reconstrucción suma, cuando encuentra por nombre, campos `bultos`, `pallets`, `tn`, `unidades/cantidad`, `neto`, `costo`, `resultado` y `cmg/margen`. Si no hay un campo reconocible, aporta cero. Esto **no afirma** que sea la fórmula original.
 - No se inventa una semántica específica de filtrado para cada modo porque las cadenas prueban la existencia de los modos, pero no el algoritmo interno que separa sus registros. El modo controla selección/persistencia/rotulación y la vista usa el filtro/ordenamiento genérico disponible.
 
+## Correcciones mínimas durante validación
+
+El primer build de entrega después de la mejora UI falló solamente por dos errores de compilación introducidos en `main_windows.go`:
+
+1. Se trató el retorno múltiple de `SendMessageW.Call` como un único valor al leer `CB_GETCURSEL`. Se corrigió capturando `sel, _, _` y usando `sel` como índice.
+2. La vista llamaba a `columnsForLines`, función que no existía en la reconstrucción actual. Se corrigió usando el tipo/función ya presente `availableColumns`.
+
+Además, durante la revisión de la implementación Win32 se corrigió un detalle de creación de controles: los tres textos estáticos ahora se crean explícitamente con la clase Win32 `STATIC`, en lugar de pasar una clase nula. Esto no cambia la lógica de negocio ni `feedEngineFile`; evita que la UI dependa de un control inexistente.
+
+El siguiente build de entrega y la validación integrada terminaron en verde con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
+
 ## Persistencia
 
 El ZIP analizado contiene únicamente el EXE y el LEEME. No incluye SQLite/Access ni `GestionSO_Datos.csv`. El LEEME indica expresamente que `GestionSO_Datos.csv` no está incluido.
@@ -80,20 +91,20 @@ Se agregó `core.go` con tipos, logging defensivo, lectura XLSX ZIP/XML, merge, 
 
 ## Validación integrada de compilación
 
-El workflow permanente `Validar Go` ejecutó en GitHub Actions, sobre el commit `dd27561a28bd1cbdd0eefd9eb8c84d9ece57f24e`:
+El workflow permanente `Validar Go` ejecutó en GitHub Actions sobre la revisión final de la UI:
 
 - `CGO_ENABLED=0`
 - `GOOS=windows`
 - `GOARCH=amd64`
 - Go `1.23.2`
-- `go build ./...` → **success**, sin errores de compilación.
-- `go vet ./...` → **success**, sin salida de errores.
+- `go build ./...` → **success**.
+- `go vet ./...` → **success**, sin errores.
 
-Run verificado: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33654572489
+La ejecución final debe considerarse la validación integrada de la revisión que genera el artifact entregable.
 
 ## Build de entrega
 
-Se agregó el workflow permanente `.github/workflows/build-exe.yml`, que compila como Windows GUI mediante:
+El workflow permanente `.github/workflows/build-exe.yml` compila como Windows GUI mediante:
 
 `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...`
 
