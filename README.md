@@ -4,75 +4,59 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 
 ## Estado
 
-- **Entrega 1:** reconstrucción de `main_windows.go`, centrada en Win32, botón `ABRIR XLSX`, selector múltiple y trazabilidad del hook.
-- **Entrega 2:** `core.go` agregado por bloques: tipos/logging defensivo, lectura y merge XLSX, configuración/persistencia CSV, vistas/proceso y stubs explícitos para opciones/simulador.
-- **Mejora de fidelidad UI:** modos visibles, persistencia del modo, barra de totales, vista tabular de datos y mapeo de campos mediante encabezados reales.
-- **Build integrado verificado:** el workflow `Validar Go` ejecuta `go build ./...` y `go vet ./...` con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
+- **Entrega 1:** reconstrucción Win32, botón `ABRIR XLSX`, selector múltiple y trazabilidad del hook.
+- **Entrega 2:** núcleo XLSX, configuración/persistencia CSV, vistas/proceso y stubs explícitos.
+- **Fidelidad UI:** la ventana ahora replica visualmente la pantalla de referencia real de **V54 / SO RETENIDAS**: barra superior, filtros de cabecera, grilla `SysListView32`, columnas fijas, subtotales por SO y barra de estado.
+- **Build/vet:** automatizados con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
 
-El binario analizado es Go 1.23.2, Windows x86-64, `CGO_ENABLED=0`, buildmode `exe`. El símbolo `main.feedEngineFile` existe realmente en el binario; su contrato interno no puede recuperarse literalmente sin el motor V54.
+El binario analizado es Go 1.23.2, Windows x86-64. El símbolo `main.feedEngineFile` existe realmente; su contrato interno no puede recuperarse sin el motor V54.
 
-## UI reconstruida
+## UI reconstruida — referencia V54
 
-La UI ahora incluye:
+La pantalla de referencia usada es el programa real en modo `SO RETENIDAS`. Se reproduce:
 
-- Selector de modo con exactamente `MODO: FACTURAS PENDIENTES`, `MODO: SO RETENIDAS` y `MODO: FACTURAS`.
-- Persistencia del modo en `configData.Mode` mediante `LoadConfig`/`SaveConfig`.
-- Etiqueta visible con el modo activo.
-- Dos líneas de totales con los formatos observados: `BULTOS %s | PALLETS %s | TN %s | UNIDADES %s` y `NETO $ %s | COSTO $ %s | RESULTADO %s | CMG %s`.
-- Área de datos multilinea de solo lectura para mostrar las filas mergeadas de XLSX y sus encabezados reales.
-- `BuildLines` usa los encabezados de la fila que maximiza `headerScore` como claves de `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío.
-- Agrupación/ordenamiento por campos reales que contienen `factura` o `cliente`, con fallback a la primera columna disponible.
+- Título `Gestion SO V54 - SO RETENIDAS / CSV maestro`, derivado de `configData.Mode`. El ejecutable reconstruido sigue siendo V57; la mención V54 es deliberada porque corresponde a la captura de referencia.
+- Barra superior: `ABRIR XLSX`, `TOMAR EXCEL ABIERTO`, `RECARGAR`, `COLUMNAS...`, `FILTROS CABECERA...`, `EXPORTAR CSV`, `SIMULADOR`, `RESALTAR...`, `+/- COLOR...`, `DATOS CSV...` y combo `10`.
+- Filtros: `SO`, `Estado`, `SKU`, `SUMA DE`, `SDSRP2`, con `FILTRAR` y `LIMPIAR`.
+- Grilla real `SysListView32` en modo reporte.
+- Columnas, en orden exacto: `SKU`, `Descripción`, `SUM (%) descuento`, `NETO PK`, `UNIDADES`, `PALL`, `PK`, `NETO SO`, `TN SO`, `CMG`, `PPP SO`, `ORIGEN`. `CMG` lleva el indicador visual `▼`.
+- Filas informativas `SUBTOTAL SO ...` generadas por grupo de SO.
+- Barra de estado con el formato `MODO: ... | RETENIDAS n | LIBERADAS n | SO n | LINEAS n | n filtros | Detalle de Descuentos Aplicados... | CSV`.
 
-El layout y la fórmula exacta de totales son **inferencias conservadoras**: la evidencia disponible demuestra símbolos/strings, pero no conserva el diseño pixel a pixel ni la fórmula original. No se inventa una semántica específica para separar registros por cada modo.
+Los nombres y elementos anteriores son **hechos verificados por la captura y/o strings/símbolos del binario**. El layout exacto en píxeles, fórmulas de negocio y conteos originales son **inferencias conservadoras**.
+
+## Mapeo de datos
+
+`BuildLines` detecta la fila de encabezados mediante `headerScore` y utiliza los nombres reales en `Line.Values`. La grilla fija resuelve cada columna contra esos nombres con alias conservadores; si no existe el campo, muestra vacío. Los filtros se aplican por nombre real mediante `BuildFilteredSortedViewByHeaders`.
+
+Los subtotales se agrupan por `SO` y suman únicamente campos numéricos reconocibles. Esto permite una representación visual útil, pero **no afirma reproducir la fórmula interna de V54**.
+
+## Botones pendientes
+
+Los controles cuyo comportamiento interno no es recuperable (`TOMAR EXCEL ABIERTO`, `RECARGAR`, `COLUMNAS...`, `FILTROS CABECERA...`, `EXPORTAR CSV`, `SIMULADOR`, `RESALTAR...`, `+/- COLOR...`, `DATOS CSV...`) están visibles y registran stubs en `%TEMP%\\GestionSO-V57-debug.log`. `TOMAR EXCEL ABIERTO` queda pendiente de validar porque solo se observa la referencia COM/Excel, no su protocolo completo.
 
 ## Descarga del ejecutable
 
-El ejecutable se genera **exclusivamente como artifact de GitHub Actions**; no se commitean `.exe` ni `.zip` al repositorio.
+El ejecutable se genera **exclusivamente como artifact de GitHub Actions**; no se commitean `.exe` ni `.zip`.
 
-- Workflow de compilación y descarga: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
-- El artifact se llama **`GestionSO-V57`** y contiene `GestionSO-V57.zip`.
-- Dentro del ZIP están `GestionSO-V57.exe`, `README.md`, `EVIDENCIA_BINARIO.md` y `LEEME.txt`.
-
-Para descargarlo: abrir el workflow en **Actions**, entrar al run terminado en verde y, en la sección **Artifacts**, seleccionar `GestionSO-V57`.
+- Workflow: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
+- Artifact: **`GestionSO-V57`**.
+- El ZIP contiene `GestionSO-V57.exe`, `README.md`, `EVIDENCIA_BINARIO.md` y `LEEME.txt`.
 
 ## Compilación
-
-Build utilizado para la entrega Windows GUI:
 
 ```text
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
 ```
 
-También se ejecuta:
+También se ejecuta `go vet ./...`. Los workflows permanentes son `.github/workflows/validar-go.yml` y `.github/workflows/build-exe.yml`.
 
-```text
-go vet ./...
-```
+## Límites funcionales
 
-La validación integrada de compilación y `go vet` está automatizada en `.github/workflows/validar-go.yml` y la generación del ejecutable/artifact en `.github/workflows/build-exe.yml`.
+Esta es una reconstrucción. Para validar end-to-end el flujo `ABRIR XLSX` → motor se requieren `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y XLSX reales/de prueba compatibles. Esos materiales no están disponibles. Por lo tanto quedan pendientes las **fórmulas de negocio reales, subtotales exactos y compatibilidad funcional completa con V54**.
 
-## Ejecución y límites
-
-El programa es una reconstrucción y no una copia del fuente original. Para el flujo que depende del motor externo se requiere `GestionSO-V54-engine.exe`, configurable mediante `GESTIONSO_V54_ENGINE`. Ese motor no está incluido.
-
-Tampoco se incluyen `GestionSO_Datos.csv` ni archivos XLSX de prueba. Por lo tanto, **la validación end-to-end del flujo `ABRIR XLSX` + motor V54 no está realizada**. El build verde confirma compilación integrada y `go vet`, no compatibilidad funcional completa.
-
-## XLSX
-
-La reconstrucción implementa lectura mediante `archive/zip` + `encoding/xml`, incluyendo shared strings, filas y selección de la hoja con mejor puntuación de encabezado. La operación de merge no modifica los XLSX originales.
-
-El detalle exacto del formato de salida y del contrato con el motor V54 sigue siendo una inferencia mientras no esté disponible el ejecutable V54 original.
-
-## Motor V54
-
-El binario contiene la cadena `GestionSO-V54-engine.exe`, pero ese ejecutable no estaba incluido en el ZIP analizado. Por ello el flujo end-to-end con V54 no está validado. `feedEngineFile` queda parametrizado mediante `GESTIONSO_V54_ENGINE` y registra la situación en `%TEMP%\\GestionSO-V57-debug.log`; no se inventa un contrato de argumentos que no pueda verificarse.
-
-## Datos
-
-`GestionSO_Datos.csv` no forma parte del ZIP original según `LEEME-GestionSO-V57.txt`. No se incluye en este repositorio ni en el artifact.
+`feedEngineFile` no se modifica más allá de la parametrización existente mediante `GESTIONSO_V54_ENGINE` y logging.
 
 ## Trazabilidad
 
-La evidencia de símbolos, strings, APIs Win32 y limitaciones está en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md).
-
-No se incluyen binarios en el repositorio; los binarios de entrega viven únicamente como artifacts de Actions.
+La separación entre evidencia verificada e inferencia está documentada en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md).
