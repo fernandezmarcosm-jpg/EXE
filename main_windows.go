@@ -228,9 +228,9 @@ func repositionOverlay(hwnd uintptr) { _=hwnd }
 func findWindowByTitles(titles []string) uintptr { for _,title:=range titles { if h:=findWindowByTitle(title); h!=0{return h} }; return 0 }
 func findWindowByTitle(title string) uintptr { h,_,_:=pFindWindowW.Call(0,uintptr(unsafe.Pointer(u16(title)))); return h }
 func enumTopWindows(fn func(uintptr)bool) { cb:=syscall.NewCallback(func(hwnd,lParam uintptr)uintptr{if fn(hwnd){return 1};return 0}); pEnumWindows.Call(cb,0) }
-func enumChildren(hwnd uintptr,fn func(uintptr)bool) { cb:=syscall.NewCallback(func(child,lParam uintptr)uintptr{if fn(child){return 1};return 0}); pEnumChildWindows.Call(cb,0) }
+func enumChildren(hwnd uintptr,fn func(uintptr)bool) { cb:=syscall.NewCallback(func(child,lParam uintptr)uintptr{if fn(child){return 1};return 0}); pEnumChildWindows.Call(hwnd,cb,0) }
 func findChildByText(hwnd uintptr,text string) uintptr { var found uintptr; enumChildren(hwnd,func(child uintptr)bool{if windowText(child)==text{found=child;return false};return true}); return found }
-func findFirstEdit(hwnd uintptr) uintptr { var found uintptr; enumChildren(hwnd,func(child uintptr)bool{if strings.EqualFold(getClassName(child),"EDIT"){found=child;return false};return true}); return found }
+func findFirstEdit(hwnd uintptr) uintptr { var found uintptr; enumChildren(hwnd,func(child uintptr)bool{if strings.EqualFold(getClassName(child),"EDIT"){found=child;return false};return true}) ; return found }
 func findDialogUnder(hwnd uintptr) uintptr { var found uintptr; enumTopWindows(func(w uintptr)bool{if w!=hwnd{found=w;return false};return true}); return found }
 func windowText(hwnd uintptr) string { if hwnd==0{return ""}; n,_,_:=pGetWindowTextLenW.Call(hwnd); buf:=make([]uint16,n+1); pGetWindowTextW.Call(hwnd,uintptr(unsafe.Pointer(&buf[0])),n+1); return syscall.UTF16ToString(buf) }
 func getClassName(hwnd uintptr) string { buf:=make([]uint16,256); n,_,_:=pGetClassNameW.Call(hwnd,uintptr(unsafe.Pointer(&buf[0])),uintptr(len(buf))); return syscall.UTF16ToString(buf[:n]) }
