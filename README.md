@@ -7,10 +7,11 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 - **Entrega 1:** reconstrucción Win32, botón `ABRIR XLSX`, selector múltiple y trazabilidad del hook.
 - **Entrega 2:** núcleo XLSX, configuración/persistencia CSV, vistas/proceso y stubs explícitos.
 - **Fidelidad UI:** pantalla de referencia real **V54 / SO RETENIDAS** replicada en una única implementación Win32: barra superior, filtros, grilla `SysListView32`, columnas fijas, subtotales informativos y barra de estado.
-- **Build integrado:** validado en verde con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64` mediante GitHub Actions.
-- **go vet:** validado en verde en el mismo workflow.
+- **Build integrado:** verde con Go 1.23.2, `CGO_ENABLED=0`, `GOOS=windows`, `GOARCH=amd64`.
+- **go vet:** verde en el workflow de validación.
+- **Build del ejecutable:** verde en Windows x64; artifact `GestionSO-V57` generado correctamente.
 
-La validación integrada verde corresponde al run de `Validar Go` asociado al commit `94f493793175cefd50173bbaa2573e32eee5e8c4`.
+El binario reconstruido fue generado desde el commit `4c5b893afd3139eb221a96c9b49d8da5548f477c`. El run final de compilación es `33695331006`.
 
 El binario analizado es Go 1.23.2, Windows x86-64. El símbolo `main.feedEngineFile` existe realmente; su contrato interno no puede recuperarse sin el motor V54.
 
@@ -42,10 +43,11 @@ Los controles cuyo comportamiento interno no es recuperable (`TOMAR EXCEL ABIERT
 
 El ejecutable se genera **exclusivamente como artifact de GitHub Actions**; no se commitean `.exe` ni `.zip`.
 
-- Workflow de compilación: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
+- Workflow: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
+- Run final de compilación: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33695331006
 - Artifact: **`GestionSO-V57`**.
-- El artifact contiene el ejecutable Windows generado con `-ldflags "-H=windowsgui"`.
-- Para descargarlo: abrir el workflow, entrar al run verde más reciente y, al final de la página, abrir **Artifacts → GestionSO-V57**.
+- Tamaño del artifact ZIP de Actions: aproximadamente 1,96 MB; contiene el `GestionSO-V57.exe`.
+- Para descargarlo: abrir el run y, al final de la página, entrar en **Artifacts → GestionSO-V57**.
 
 ## Compilación
 
@@ -54,7 +56,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o dis
 go vet ./...
 ```
 
-Los workflows permanentes son `.github/workflows/validar-go.yml` y `.github/workflows/build-exe.yml`.
+El workflow de build usa un runner Windows y define `CGO_ENABLED`, `GOOS` y `GOARCH` a nivel de job porque el runner ejecuta los pasos con PowerShell. El workflow permanente de validación usa el mismo objetivo Windows x64.
 
 ## Límites funcionales
 
