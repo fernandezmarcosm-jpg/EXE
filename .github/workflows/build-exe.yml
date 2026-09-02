@@ -1,0 +1,49 @@
+name: Build GestionSO V57
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+      - name: Build GestionSO V57
+        run: |
+          mkdir -p dist
+          go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
+      - name: go vet
+        run: go vet ./...
+      - name: Empaquetar ZIP
+        run: |
+          cat > dist/LEEME.txt <<'EOF'
+          GestionSO V57 — reconstrucción
+
+          Este paquete contiene una reconstrucción en Go del binario GestionSO V57.
+          Requiere GestionSO-V54-engine.exe para el flujo end-to-end.
+          La ruta del motor puede configurarse mediante la variable de entorno
+          GESTIONSO_V54_ENGINE. El motor V54 no está incluido.
+
+          GestionSO_Datos.csv y archivos XLSX de prueba tampoco están incluidos.
+          La compatibilidad funcional ABRIR XLSX + V54 no está validada sin esos datos
+          y el motor real.
+          EOF
+          cp README.md dist/README.md
+          cp docs/EVIDENCIA_BINARIO.md dist/EVIDENCIA_BINARIO.md
+          cd dist
+          zip -9 GestionSO-V57.zip GestionSO-V57.exe README.md EVIDENCIA_BINARIO.md LEEME.txt
+      - name: Subir artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionSO-V57
+          path: dist/GestionSO-V57.zip
+          if-no-files-found: error
