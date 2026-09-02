@@ -127,9 +127,9 @@ func createMainControls(hwnd uintptr) {
     combo,_,_:=pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("COMBOBOX"))),0,WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST,200,20,300,180,hwnd,idMode,inst,0)
     for _, mode := range modeStrings { pSendMessageW.Call(combo,CB_ADDSTRING,0,uintptr(unsafe.Pointer(u16(mode)))) }
     pSendMessageW.Call(combo,CB_SETCURSEL,uintptr(modeIndex),0)
-    pCreateWindowExW.Call(0,0,uintptr(unsafe.Pointer(u16(mainConfig.Mode))),WS_CHILD|WS_VISIBLE,520,20,430,32,hwnd,idModeLabel,inst,0)
-    pCreateWindowExW.Call(0,0,uintptr(unsafe.Pointer(u16("BULTOS 0 | PALLETS 0 | TN 0 | UNIDADES 0"))),WS_CHILD|WS_VISIBLE,20,65,930,24,hwnd,idTotals1,inst,0)
-    pCreateWindowExW.Call(0,0,uintptr(unsafe.Pointer(u16("NETO $ 0 | COSTO $ 0 | RESULTADO 0 | CMG 0"))),WS_CHILD|WS_VISIBLE,20,90,930,24,hwnd,idTotals2,inst,0)
+    pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("STATIC"))),uintptr(unsafe.Pointer(u16(mainConfig.Mode))),WS_CHILD|WS_VISIBLE,520,20,430,32,hwnd,idModeLabel,inst,0)
+    pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("STATIC"))),uintptr(unsafe.Pointer(u16("BULTOS 0 | PALLETS 0 | TN 0 | UNIDADES 0"))),WS_CHILD|WS_VISIBLE,20,65,930,24,hwnd,idTotals1,inst,0)
+    pCreateWindowExW.Call(0,uintptr(unsafe.Pointer(u16("STATIC"))),uintptr(unsafe.Pointer(u16("NETO $ 0 | COSTO $ 0 | RESULTADO 0 | CMG 0"))),WS_CHILD|WS_VISIBLE,20,90,930,24,hwnd,idTotals2,inst,0)
     pCreateWindowExW.Call(WS_BORDER,uintptr(unsafe.Pointer(u16("EDIT"))),0,WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY,20,125,930,500,hwnd,idData,inst,0)
     updateMainView(hwnd)
 }
@@ -228,7 +228,7 @@ func repositionOverlay(hwnd uintptr) { _=hwnd }
 func findWindowByTitles(titles []string) uintptr { for _,title:=range titles { if h:=findWindowByTitle(title); h!=0{return h} }; return 0 }
 func findWindowByTitle(title string) uintptr { h,_,_:=pFindWindowW.Call(0,uintptr(unsafe.Pointer(u16(title)))); return h }
 func enumTopWindows(fn func(uintptr)bool) { cb:=syscall.NewCallback(func(hwnd,lParam uintptr)uintptr{if fn(hwnd){return 1};return 0}); pEnumWindows.Call(cb,0) }
-func enumChildren(hwnd uintptr,fn func(uintptr)bool) { cb:=syscall.NewCallback(func(child,lParam uintptr)uintptr{if fn(child){return 1};return 0}); pEnumChildWindows.Call(hwnd,cb,0) }
+func enumChildren(hwnd uintptr,fn func(uintptr)bool) { cb:=syscall.NewCallback(func(child,lParam uintptr)uintptr{if fn(child){return 1};return 0}); pEnumChildWindows.Call(cb,0) }
 func findChildByText(hwnd uintptr,text string) uintptr { var found uintptr; enumChildren(hwnd,func(child uintptr)bool{if windowText(child)==text{found=child;return false};return true}); return found }
 func findFirstEdit(hwnd uintptr) uintptr { var found uintptr; enumChildren(hwnd,func(child uintptr)bool{if strings.EqualFold(getClassName(child),"EDIT"){found=child;return false};return true}); return found }
 func findDialogUnder(hwnd uintptr) uintptr { var found uintptr; enumTopWindows(func(w uintptr)bool{if w!=hwnd{found=w;return false};return true}); return found }
