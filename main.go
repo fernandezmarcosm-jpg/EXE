@@ -44,7 +44,7 @@ func main() {
     var msg syscall.MSG  
     for {  
         ret, _, _ := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)  
-        if ret == 0 {  
+        if int32(ret) <= 0 {  
             break  
         }  
         user32.NewProc("TranslateMessage").Call(uintptr(unsafe.Pointer(&msg)))  
