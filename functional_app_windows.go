@@ -9,6 +9,7 @@ import (
     "strings"
     "sync"
     "syscall"
+    "time"
     "unsafe"
 )
 
@@ -98,8 +99,13 @@ func appU16(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p 
 
 func appSetText(h uintptr, s string) {
     if h == 0 { return }
+    start := time.Now()
     p := appU16(s)
     user32.NewProc("SetWindowTextW").Call(h, uintptr(unsafe.Pointer(p)))
+    elapsed := time.Since(start)
+    if elapsed > 500*time.Millisecond {
+        appLog("DIAGNOSTICO: SetWindowTextW tardó %s; caracteres=%d", elapsed, len(s))
+    }
 }
 
 func appMake(parent uintptr, cls, text string, style uint32, x, y, w, h int, id uintptr) uintptr {
@@ -128,10 +134,15 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
         if int(wp&0xffff) == appIDOpen { appOpenXLSX(hwnd) }
         return 0
     case WM_APP_REFRESH:
-        appRefreshView(); return 0
+        appLog("EVENTO: inicio actualización de interfaz")
+        appRefreshView()
+        appLog("EVENTO: fin actualización de interfaz")
+        return 0
     case WM_CLOSE:
+        appLog("EVENTO: WM_CLOSE hwnd=0x%X", hwnd)
         user32.NewProc("DestroyWindow").Call(hwnd); return 0
     case WM_DESTROY:
+        appLog("EVENTO: WM_DESTROY hwnd=0x%X", hwnd)
         user32.NewProc("PostQuitMessage").Call(0); return 0
     }
     r, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, uintptr(msg), wp, lp)
@@ -203,6 +214,6 @@ func loadPreviewXLSX(path string)([]string,[]appRow,string,error){
 }
 func maxPreviewColumns(rows[][]string)int{n:=0;for _,r:=range rows{if len(r)>n{n=len(r)}};if n>80{n=80};return n}
 func makeHeaders(row[]string,n int)[]string{out:=make([]string,n);seen:=map[string]int{};for i:=0;i<n;i++{name:="Columna "+fmt.Sprint(i+1);if i<len(row)&&strings.TrimSpace(row[i])!=""{name=strings.TrimSpace(row[i])};base:=name;seen[base]++;if seen[base]>1{name=fmt.Sprintf("%s (%d)",base,seen[base])};out[i]=name};return out}
-func renderPreview(headers[]string,rows[]appRow)string{var b strings.Builder;const maxChars=2*1024*1024;for i,h:=range headers{if i>0{b.WriteByte('\t')};b.WriteString(cleanCell(h))};b.WriteString("\r\n");for _,row:=range rows{for i:=range headers{if i>0{b.WriteByte('\t')};if i<len(row.Values){b.WriteString(cleanCell(row.Values[i]))}};b.WriteString("\r\n");if b.Len()>=maxChars{b.WriteString("\r\n[Vista limitada a 2 MB]\r\n");break}};return b.String()}
+func renderPreview(headers[]string,rows[]appRow)string{var b strings.Builder;const maxChars=512*1024;for i,h:=range headers{if i>0{b.WriteByte('\t')};b.WriteString(cleanCell(h))};b.WriteString("\r\n");for _,row:=range rows{for i:=range headers{if i>0{b.WriteByte('\t')};if i<len(row.Values){b.WriteString(cleanCell(row.Values[i]))}};b.WriteString("\r\n");if b.Len()>=maxChars{b.WriteString("\r\n[Vista limitada a 512 KB para mantener la interfaz estable]\r\n");break}};return b.String()}
 func cleanCell(s string)string{return strings.NewReplacer("\r"," ","\n"," ","\t"," ").Replace(s)}
 func appRefreshView(){appStateMu.Lock();status:=appStatusText;view:=appViewText;appStateMu.Unlock();appSetText(appStatus,status);appSetText(appView,view)}
