@@ -51,7 +51,7 @@ func normalizeRows(rows [][]string)[][]string{for i:=range rows{for len(rows[i])
 func buildMergedSheet(rows [][]string)[]byte{var b bytes.Buffer;for i,r:=range rows{if i>0{b.WriteByte('\n')};for j,v:=range r{if j>0{b.WriteByte(',')};b.WriteString(xmlEscape(v))}};return b.Bytes()}
 
 func rewriteRowNumber(ref string,n int)string{if n<1{return ref};i:=0;for i<len(ref)&&((ref[i]>='A'&&ref[i]<='Z')||(ref[i]>='a'&&ref[i]<='z')){i++};return ref[:i]+strconv.Itoa(n)}
-func xmlEscape(s string)string{return strings.NewReplacer("&","&amp;","<","&lt;",">","&gt;","\"","&quot;","'","&apos;").Replace(s)}
+func xmlEscape(s string)string{return strings.NewReplacer("&","&amp;","<","&lt;",">","&gt;","\"","&quot;","'","&apos'").Replace(s)}
 func hashRow(r []string)string{h:=sha256.New();for _,v:=range r{_,_=h.Write([]byte(v));_,_=h.Write([]byte{0})};return fmt.Sprintf("%x",h.Sum(nil))}
 func colFromRef(ref string)int{n:=0;for _,r:=range strings.ToUpper(ref){if r<'A'||r>'Z'{break};n=n*26+int(r-'A'+1)};return n}
 func headerScore(row []string)int{score:=0;keys:=[]string{"factura","cliente","fecha","cuit","sku","producto","cantidad","importe","so"};for _,v:=range row{s:=strings.ToLower(strings.TrimSpace(v));for _,k:=range keys{if strings.Contains(s,k){score++}}};return score}
@@ -73,7 +73,7 @@ func BuildLines(rows [][]string,source string)[]Line{if len(rows)==0{return nil}
 func findFieldKey(l Line,candidates ...string)string{for _,cand:=range candidates{cl:=strings.ToLower(cand);for k:=range l.Values{kl:=strings.ToLower(strings.TrimSpace(k));if kl==cl||strings.Contains(kl,cl){return k}}};for k:=range l.Values{return k};return ""}
 func GroupLines(lines []Line)map[string][]Line{g:=map[string][]Line{};for _,l:=range lines{k:=findFieldKey(l,"so","factura","cliente");g[l.Values[k]]=append(g[l.Values[k]],l)};return g}
 func BuildFilteredSortedView(lines []Line,filter string)[]Line{return BuildFilteredSortedViewByHeaders(lines,map[string]string{"__all__":filter})}
-func BuildFilteredSortedViewByHeaders(lines []Line,filters map[string]string)[]Line{o:=make([]Line,0,len(lines));for _,l:=range lines{ok:=true;for field,value:=range filters{value=strings.TrimSpace(value);if value==""{continue};if !FilterValue(l,value){ok=false;break}};if ok{o=append(o,l)}};return o}
+func BuildFilteredSortedViewByHeaders(lines []Line,filters map[string]string)[]Line{o:=make([]Line,0,len(lines));for _,l:=range lines{ok:=true;for _, value := range filters{value=strings.TrimSpace(value);if value==""{continue};if !FilterValue(l,value){ok=false;break}};if ok{o=append(o,l)}};return o}
 func fieldValue(l Line,field string)string{if v,ok:=l.Values[field];ok{return v};for k,v:=range l.Values{if strings.EqualFold(strings.TrimSpace(k),strings.TrimSpace(field)){return v}};return ""}
 func FilterValue(l Line,filter string)bool{f:=strings.ToLower(filter);for _,v:=range l.Values{if strings.Contains(strings.ToLower(v),f){return true}};return false}
 func DisplayValue(l Line,col string)string{return fieldValue(l,col)}
