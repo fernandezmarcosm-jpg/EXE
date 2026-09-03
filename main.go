@@ -13,6 +13,7 @@ var (
     kernel32 = syscall.NewLazyDLL("kernel32.dll")
     comctl32 = syscall.NewLazyDLL("comctl32.dll")
     comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
+    gdi32    = syscall.NewLazyDLL("gdi32.dll")
     hInstance uintptr
 )
 
