@@ -2,6 +2,11 @@ name: Build GestionSO V57
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -21,22 +26,39 @@ jobs:
           go-version: '1.23.2'
           cache: false
 
-      - name: Download dependencies
-        run: |
-          go mod download
-          go mod tidy
-
       - name: Build GestionSO V57
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe ./...
 
       - name: go vet
+        shell: pwsh
         run: go vet ./...
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          @'
+          GestionSO V57 - reconstruccion
+
+          Este ejecutable es una reconstruccion/reimplementacion en Go de GestionSO V57; no es el fuente original.
+          Requiere Windows x64.
+
+          Para el flujo end-to-end puede requerir GestionSO-V54-engine.exe. La ruta se configura mediante la variable de entorno GESTIONSO_V54_ENGINE.
+          El motor V54 no esta incluido en este paquete.
+
+          GestionSO_Datos.csv y los XLSX de datos son datos externos y no se incluyen.
+          ' @ | Set-Content -Encoding UTF8 dist/LEEME.txt
+          Copy-Item README.md dist/README.md
+          New-Item -ItemType Directory -Force dist/docs | Out-Null
+          Copy-Item docs/EVIDENCIA_BINARIO.md dist/docs/EVIDENCIA_BINARIO.md
+          Compress-Archive -Path dist/GestionSO-V57.exe,dist/LEEME.txt,dist/README.md,dist/docs/EVIDENCIA_BINARIO.md -DestinationPath dist/GestionSO-V57.zip -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GestionSO-V57
-          path: dist/GestionSO-V57.exe
+          path: dist/GestionSO-V57.zip
+          if-no-files-found: error
           retention-days: 30
