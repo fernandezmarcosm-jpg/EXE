@@ -25,8 +25,6 @@ const (
     appIDSearch = 2008
     WM_APP_REFRESH = 0x8001
     WM_APP_COLUMNS = 0x8002
-    CB_ADDSTRING = 0x0143
-    CB_SETCURSEL = 0x014E
     BS_PUSHBUTTON = 0
     BS_CHECKBOX = 0x00000002
     BST_CHECKED = 1
@@ -36,7 +34,6 @@ const (
     WS_TABSTOP = 0x00010000
     WS_BORDER = 0x00800000
     ES_AUTOHSCROLL = 0x0080
-    ES_MULTILINE = 0x0004
     LVS_REPORT = 0x0001
     LVS_SHOWSELALWAYS = 0x0008
     LVS_SINGLESEL = 0x0004
@@ -58,7 +55,6 @@ const (
     WM_SIZE = 0x0005
     WM_COMMAND = 0x0111
     WM_CLOSE = 0x0010
-    WM_NOTIFY = 0x004E
     EN_CHANGE = 0x0300
     OFN_EXPLORER = 0x00080000
     OFN_FILEMUSTEXIST = 0x00001000
@@ -73,7 +69,6 @@ type appWndClass struct { CbSize uint32; Style uint32; LpfnWndProc uintptr; CbCl
 type appLVC struct { Mask uint32; Fmt, Cx int32; Text uintptr; TextMax int32; SubItem, Image, Order int32 }
 type appLVI struct { Mask uint32; Item, SubItem int32; State, StateMask uint32; Text uintptr; TextMax, Image int32; LParam uintptr }
 type appOpenFile struct { LStructSize uint32; Pad0 uint32; HwndOwner, HInstance, Filter, CustomFilter uintptr; MaxCustom, FilterIndex uint32; File uintptr; MaxFile uint32; Pad1 uint32; FileTitle uintptr; MaxFileTitle uint32; Pad2 uint32; InitialDir, Title uintptr; Flags uint32; FileOffset, FileExtension uint16; DefExt, CustData, Hook, Template uintptr; Reserved uintptr; Reserved2, FlagsEx uint32 }
-
 type appColumn struct { Name string; Width int; Visible bool }
 
 var (
@@ -126,7 +121,8 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
     case WM_DESTROY:
         user32.NewProc("PostQuitMessage").Call(0); return 0
     }
-    return user32.NewProc("DefWindowProcW").Call(hwnd,uintptr(msg),wp,lp)
+    r,_,_:=user32.NewProc("DefWindowProcW").Call(hwnd,uintptr(msg),wp,lp)
+    return r
 }
 
 func appBuildControls(hwnd uintptr) {
@@ -144,9 +140,9 @@ func appBuildControls(hwnd uintptr) {
 
 func appLayout(hwnd uintptr) {
     var r appRect; user32.NewProc("GetClientRect").Call(hwnd,uintptr(unsafe.Pointer(&r))); w:=int(r.Right-r.Left); h:=int(r.Bottom-r.Top); if w<900 {w=900}; if h<500 {h=500}
-    user32.NewProc("MoveWindow").Call(appSearch,785,10, max(220,w-935),30,1)
-    user32.NewProc("MoveWindow").Call(appGrid,10,50, w-20,h-90,1)
-    user32.NewProc("MoveWindow").Call(appStatus,10,h-32,w-20,25,1)
+    user32.NewProc("MoveWindow").Call(appSearch,uintptr(785),uintptr(10),uintptr(max(220,w-935)),uintptr(30),1)
+    user32.NewProc("MoveWindow").Call(appGrid,uintptr(10),uintptr(50),uintptr(w-20),uintptr(h-90),1)
+    user32.NewProc("MoveWindow").Call(appStatus,uintptr(10),uintptr(h-32),uintptr(w-20),uintptr(25),1)
 }
 func max(a,b int) int { if a>b{return a}; return b }
 
@@ -163,7 +159,7 @@ func appOpenXLSX(owner uintptr) {
     }(append([]string(nil),files...))
 }
 
-func appSetTextSafe(h uintptr,s string) { if h!=0 { user32.NewProc("PostMessageW").Call(h,0x000C,0,uintptr(unsafe.Pointer(appU16(s)))) } }
+func appSetTextSafe(h uintptr,s string) { if h!=0 { appSetText(h,s) } }
 
 func appFindMaster() string {
     exe,_:=os.Executable(); dir:=filepath.Dir(exe)
@@ -211,12 +207,15 @@ func appBuildCalculatedLines(rows [][]string,m *MasterData) []Line {
 func firstVal(m map[string]string,names ...string) string { for _,n:=range names {if v:=m[n];strings.TrimSpace(v)!="" {return v}; for k,v:=range m {if strings.EqualFold(strings.TrimSpace(k),strings.TrimSpace(n))&&strings.TrimSpace(v)!=""{return v}}};return "" }
 func number(s string) float64 {s=strings.TrimSpace(s);if s==""||strings.EqualFold(s,"#N/D")||strings.EqualFold(s,"SIN REF"){return 0};s=strings.ReplaceAll(s,"%",""); if strings.Contains(s,",")&&strings.Contains(s,".") {if strings.LastIndex(s,",")>strings.LastIndex(s,"."){s=strings.ReplaceAll(s,".","");s=strings.ReplaceAll(s,",",".")}} else if strings.Contains(s,","){s=strings.ReplaceAll(s,",",".")};v,_:=strconv.ParseFloat(s,64);return v}
 func fmtNum(v float64) string {if math.Abs(v-math.Round(v))<1e-9{return fmt.Sprintf("%.0f",v)};return strconv.FormatFloat(v,'f',3,64)}
-func fmtPct(v float64) string {return strconv.FormatFloat(v,'f',1,64)+"%"}
 
 func appRefreshGrid() {
-    if appGrid==0{return}; for {r,_,_:=user32.NewProc("SendMessageW").Call(appGrid,LVM_DELETECOLUMN,0,0);_ = r; break}; user32.NewProc("SendMessageW").Call(appGrid,LVM_DELETEALLITEMS,0,0)
-    for i,c:=range appColumns {if !c.Visible{continue}; t:=appU16(c.Name); col:=appLVC{Mask:LVCF_FMT|LVCF_WIDTH|LVCF_TEXT,Fmt:LVCFMT_LEFT,Cx:int32(c.Width),Text:uintptr(unsafe.Pointer(t)),TextMax:int32(len(syscall.StringToUTF16(c.Name))),SubItem:int32(i)};user32.NewProc("SendMessageW").Call(appGrid,LVM_INSERTCOLUMNW,uintptr(i),uintptr(unsafe.Pointer(&col)))}
-    for ri,l:=range appView {visibleIndex:=0;for _,c:=range appColumns {if !c.Visible{continue}; s:=l.Values[c.Name]; if s=="" {for k,v:=range l.Values {if strings.EqualFold(k,c.Name){s=v;break}}}; p:=appU16(s); if visibleIndex==0 {it:=appLVI{Mask:LVIF_TEXT,Item:int32(ri),SubItem:0,Text:uintptr(unsafe.Pointer(p)),TextMax:int32(len(syscall.StringToUTF16(s)))};user32.NewProc("SendMessageW").Call(appGrid,LVM_INSERTITEMW,0,uintptr(unsafe.Pointer(&it)))} else {it:=appLVI{Mask:LVIF_TEXT,Item:int32(ri),SubItem:int32(visibleIndex),Text:uintptr(unsafe.Pointer(p)),TextMax:int32(len(syscall.StringToUTF16(s)))};user32.NewProc("SendMessageW").Call(appGrid, LVM_SETITEMW,0,uintptr(unsafe.Pointer(&it)))};visibleIndex++}}
+    if appGrid==0{return}
+    send:=user32.NewProc("SendMessageW")
+    for {r,_,_:=send.Call(appGrid,LVM_DELETECOLUMN,0,0);if r==0{break}}
+    send.Call(appGrid,LVM_DELETEALLITEMS,0,0)
+    visibleIndex:=0
+    for _,c:=range appColumns {if !c.Visible{continue}; t:=appU16(c.Name); col:=appLVC{Mask:LVCF_FMT|LVCF_WIDTH|LVCF_TEXT,Fmt:LVCFMT_LEFT,Cx:int32(c.Width),Text:uintptr(unsafe.Pointer(t)),TextMax:int32(len(syscall.StringToUTF16(c.Name))),SubItem:int32(visibleIndex)};send.Call(appGrid,LVM_INSERTCOLUMNW,uintptr(visibleIndex),uintptr(unsafe.Pointer(&col)));visibleIndex++}
+    for ri,l:=range appView {visibleIndex=0;for _,c:=range appColumns {if !c.Visible{continue}; s:=l.Values[c.Name]; if s=="" {for k,v:=range l.Values {if strings.EqualFold(k,c.Name){s=v;break}}}; p:=appU16(s);if visibleIndex==0 {it:=appLVI{Mask:LVIF_TEXT,Item:int32(ri),SubItem:0,Text:uintptr(unsafe.Pointer(p)),TextMax:int32(len(syscall.StringToUTF16(s)))};send.Call(appGrid,LVM_INSERTITEMW,0,uintptr(unsafe.Pointer(&it)))} else {it:=appLVI{Mask:LVIF_TEXT,Item:int32(ri),SubItem:int32(visibleIndex),Text:uintptr(unsafe.Pointer(p)),TextMax:int32(len(syscall.StringToUTF16(s)))};send.Call(appGrid,LVM_SETITEMW,0,uintptr(unsafe.Pointer(&it)))};visibleIndex++}}
     appSetText(appStatus,fmt.Sprintf("Filas: %d | Columnas disponibles: %d | Visibles: %d",len(appView),len(appColumns),appVisibleCount()))
 }
 func appVisibleCount() int {n:=0;for _,c:=range appColumns{if c.Visible{n++}};return n}
@@ -233,7 +232,7 @@ func appShowColumns() {
     cls:=appU16("GestionSOColumns"); wc:=appWndClass{CbSize:uint32(unsafe.Sizeof(appWndClass{})),LpfnWndProc:syscall.NewCallback(appColumnsProc),HInstance:hInstance,HCursor:func()uintptr{r,_,_:=user32.NewProc("LoadCursorW").Call(0,32512);return r}(),LpszClassName:cls};user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)));title:=appU16("Columnas visibles");h,_,_:=user32.NewProc("CreateWindowExW").Call(0,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(title)),WS_OVERLAPPEDWINDOW|WS_VISIBLE,100,80,520,650,appHwnd,0,hInstance,0);appColumnsWindow=h
 }
 var appChecks=map[int]uintptr{}
-func appColumnsProc(hwnd uintptr,msg uint32,wp,lp uintptr)uintptr {switch msg {case WM_CREATE: y:=10;appChecks=map[int]uintptr{};for i,c:=range appColumns {if i>55{break};h:=appMake(hwnd,"BUTTON",c.Name,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_CHECKBOX,10,y,470,24,uintptr(3000+i));if c.Visible{user32.NewProc("SendMessageW").Call(h,0x00F1,BST_CHECKED,0)};appChecks[i]=h;y+=25};appMake(hwnd,"BUTTON","APLICAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,10,570,100,30,3999);case WM_COMMAND:if int(wp&0xffff)==3999 {for i,h:=range appChecks {r,_,_:=user32.NewProc("SendMessageW").Call(h,0x00F0,0,0);appColumns[i].Visible=(r==BST_CHECKED)};user32.NewProc("DestroyWindow").Call(hwnd)};case WM_DESTROY:appColumnsWindow=0;user32.NewProc("PostMessageW").Call(appHwnd,WM_APP_COLUMNS,0,0);};return user32.NewProc("DefWindowProcW").Call(hwnd,uintptr(msg),wp,lp)}
+func appColumnsProc(hwnd uintptr,msg uint32,wp,lp uintptr)uintptr {switch msg {case WM_CREATE: y:=10;appChecks=map[int]uintptr{};for i,c:=range appColumns {if i>55{break};h:=appMake(hwnd,"BUTTON",c.Name,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_CHECKBOX,10,y,470,24,uintptr(3000+i));if c.Visible{user32.NewProc("SendMessageW").Call(h,0x00F1,BST_CHECKED,0)};appChecks[i]=h;y+=25};appMake(hwnd,"BUTTON","APLICAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,10,570,100,30,3999);case WM_COMMAND:if int(wp&0xffff)==3999 {for i,h:=range appChecks {r,_,_:=user32.NewProc("SendMessageW").Call(h,0x00F0,0,0);appColumns[i].Visible=(r==BST_CHECKED)};user32.NewProc("DestroyWindow").Call(hwnd)};case WM_DESTROY:appColumnsWindow=0;user32.NewProc("PostMessageW").Call(appHwnd,WM_APP_COLUMNS,0,0)};r,_,_:=user32.NewProc("DefWindowProcW").Call(hwnd,uintptr(msg),wp,lp);return r}
 
 func appPickXLSX(owner uintptr) []string {
     buf:=make([]uint16,32768); filter:=syscall.StringToUTF16("Excel (*.xlsx)\x00*.xlsx\x00Todos (*.*)\x00*.*\x00\x00");of:=appOpenFile{LStructSize:uint32(unsafe.Sizeof(appOpenFile{})),HwndOwner:owner,Filter:uintptr(unsafe.Pointer(&filter[0])),File:uintptr(unsafe.Pointer(&buf[0])),MaxFile:uint32(len(buf)),Flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_ALLOWMULTISELECT|OFN_HIDEREADONLY};r,_,_:=comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&of)));if r==0{return nil};all:=syscall.UTF16ToString(buf);parts:=strings.Split(all,"\x00");if len(parts)<2{return []string{all}};dir:=parts[0];if len(parts)==2{return []string{dir}};out:=[]string{};for _,n:=range parts[1:] {if n==""{break};if filepath.IsAbs(n){out=append(out,n)}else{out=append(out,filepath.Join(dir,n))}};return out
