@@ -19,9 +19,9 @@ jobs:
         run: |
           $p = 'main_windows.go'
           $s = Get-Content $p -Raw -Encoding UTF8
-          $s = [regex]::Replace($s, 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}', 'func u16z(s string) []uint16 {`r`n`tparts := strings.Split(s, "\x00")`r`n`tout := make([]uint16, 0, len(s)+1)`r`n`tfor _, part := range parts {`r`n`t`tout = append(out, syscall.StringToUTF16(part)... )`r`n`t}`r`n`treturn out`r`n}')
-          $s = $s.Replace('OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK', 'OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY')
-          $s = $s.Replace('lpfnHook:    syscall.NewCallback(multiSelectHook),', 'lpfnHook:    0,')
+          $pattern = 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}'
+          $replacement = 'func u16z(s string) []uint16 { parts := strings.Split(s, "\x00"); out := make([]uint16, 0, len(s)+1); for _, part := range parts { out = append(out, syscall.StringToUTF16(part)...); }; return out }'
+          $s = [regex]::Replace($s, $pattern, $replacement)
           Set-Content $p $s -Encoding UTF8 -NoNewline
       - name: Build EXE
         shell: pwsh
