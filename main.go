@@ -33,12 +33,6 @@ func main() {
 	}
 	comctl32.NewProc("InitCommonControls").Call()
 
-	mainConfig = LoadConfig()
-	if mainConfig.Mode == "" {
-		mainConfig.Mode = "MODO: SO RETENIDAS"
-		_ = SaveConfig(mainConfig)
-	}
-
 	hwnd := crearVentana()
 	if hwnd == 0 {
 		log.Fatal("No se pudo crear la ventana principal")
