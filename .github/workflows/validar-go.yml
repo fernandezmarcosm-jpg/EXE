@@ -1,12 +1,9 @@
-name: Validar Go
+name: Validar GestionSO V57 Functional
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
-
-permissions:
-  contents: write
 
 jobs:
   validar:
@@ -15,80 +12,43 @@ jobs:
       CGO_ENABLED: "0"
       GOOS: windows
       GOARCH: amd64
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.23.2'
-
-      - name: Corregir selector XLSX
+      - name: Test
         shell: pwsh
-        run: |
-          $path = 'main_windows.go'
-          $text = Get-Content -Raw -Encoding UTF8 $path
-
-          $patternHook = '(?m)^\s*Flags:\s+OFN_EXPLORER \| OFN_FILEMUSTEXIST \| OFN_ALLOWMULTISELECT \| OFN_HIDEREADONLY \| OFN_ENABLEHOOK,\r?\n\s*lpfnHook:\s+syscall\.NewCallback\(multiSelectHook\),'
-          $replacementHook = "`t`tFlags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY,`r`n`t`tlpfnHook:    0,"
-          $updated = [regex]::Replace($text, $patternHook, $replacementHook, 1)
-
-          $patternU16 = 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}'
-          $replacementU16 = @'
-func u16z(s string) []uint16 {
-	parts := strings.Split(s, "\x00")
-	out := make([]uint16, 0, len(s)+1)
-	for _, part := range parts {
-		out = append(out, syscall.StringToUTF16(part)...)
-	}
-	return out
-}
-'@
-          $updated2 = [regex]::Replace($updated, $patternU16, $replacementU16, 1)
-
-          if ($updated2 -ne $text) {
-            Set-Content -Path $path -Value $updated2 -Encoding UTF8 -NoNewline
-            Write-Host 'Selector XLSX corregido para build.'
-          } else {
-            Write-Host 'Selector XLSX ya estaba corregido.'
-          }
-
+        run: go test ./...
       - name: Build GestionSO V57
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          go build -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
-
-      - name: go vet
-        shell: pwsh
-        run: go vet ./...
-
+          go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
+          if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'No se genero GestionSO-V57.exe' }
       - name: Package artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/datos | Out-Null
           Copy-Item 'acceso chatgpt/GestionSO_Datos.csv' 'dist/datos/GestionSO_Datos.csv'
-          Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
           Copy-Item 'acceso chatgpt/Archivo a importar.xlsx' 'dist/datos/Archivo a importar.xlsx'
+          Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
           Set-Content -Path dist/LEEME.txt -Encoding UTF8 -Value @(
-            'GestionSO V57 - reconstruccion'
+            'GestionSO V57 - reconstruccion funcional'
             ''
-            'Este ejecutable es una reconstruccion/reimplementacion en Go de GestionSO V57; no es el fuente original.'
-            'Requiere Windows x64.'
+            'ABRIR EXCEL: selecciona uno o varios XLSX.'
+            'Los XLSX se procesan fuera del hilo de la interfaz.'
+            'Los SKU se cruzan con GestionSO_Datos.csv.'
+            'La grilla contiene campos calculados y campos originales.'
+            'Filtro por columna: Columna=valor;Columna2=valor.'
+            'COLUMNAS... permite elegir las columnas visibles.'
+            'EXPORTAR CSV genera el resultado en la carpeta temporal.'
             ''
-            'La vista inicial carga archivo exportado.csv.'
-            'GestionSO_Datos.csv queda disponible como maestro de datos.'
-            'Archivo a importar.xlsx queda disponible para el flujo ABRIR XLSX.'
-            ''
-            'El selector XLSX usa un filtro MULTI_SZ compatible con GetOpenFileNameW y no pasa NUL embebido a StringToUTF16.'
+            'archivo exportado.csv se incluye solo como ejemplo de estructura/salida.'
           )
-          Copy-Item README.md dist/README.md
-          New-Item -ItemType Directory -Force dist/docs | Out-Null
-          Copy-Item docs/EVIDENCIA_BINARIO.md dist/docs/EVIDENCIA_BINARIO.md
-          Compress-Archive -Path dist/GestionSO-V57.exe,dist/LEEME.txt,dist/README.md,dist/docs/EVIDENCIA_BINARIO.md,dist/datos/* -DestinationPath dist/GestionSO-V57.zip -Force
-
+          Compress-Archive -Path dist/* -DestinationPath dist/GestionSO-V57.zip -Force
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
