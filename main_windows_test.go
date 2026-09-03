@@ -8,7 +8,7 @@ import (
 )
 
 func TestOPENFILENAMEWWin64Size(t *testing.T) {
-	const want = uintptr(152)
+	const want = uintptr(144)
 	if got := unsafe.Sizeof(OPENFILENAMEW{}); got != want {
 		t.Fatalf("OPENFILENAMEW size = %d, want %d", got, want)
 	}
