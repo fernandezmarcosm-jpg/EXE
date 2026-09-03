@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type MasterRow map[string]string
@@ -110,7 +111,18 @@ func saveCfg(path string, c configData) error {
 	return os.WriteFile(path, []byte(fmt.Sprintf("MasterPath=%s\nEnginePath=%s\nMode=%s\n", c.MasterPath, c.EnginePath, c.Mode)), 0644)
 }
 
-func ReadXLSX(path string) (*xlsxDoc, error) { return readXLSXDoc(path) }
+// ReadXLSX es el punto unico por el que el programa incorpora un XLSX a memoria.
+// Despues de leerlo, se integra contra GestionSO_Datos.csv en memoria usando
+// SKU del XLSX <-> CLAVE del maestro. Si el maestro no esta disponible, el
+// XLSX sigue funcionando exactamente como antes.
+func ReadXLSX(path string) (*xlsxDoc, error) {
+	d, err := readXLSXDoc(path)
+	if err != nil {
+		return nil, err
+	}
+	integrateMasterIntoWorkbook(d)
+	return d, nil
+}
 
 func readXLSXDoc(path string) (*xlsxDoc, error) {
 	z, e := zip.OpenReader(path)
@@ -386,6 +398,10 @@ func locateMaster() string {
 			return candidate
 		}
 	}
+	candidate := filepath.Join("acceso chatgpt", "GestionSO_Datos.csv")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
 	return filepath.Join(os.TempDir(), "GestionSO_Datos.csv")
 }
 
@@ -462,6 +478,87 @@ func LoadMaster(path ...string) (*MasterData, error) {
 		md.Rows = append(md.Rows, mr)
 	}
 	return md, nil
+}
+
+var masterOnce sync.Once
+var masterModel *MasterData
+
+func cachedMaster() *MasterData {
+	masterOnce.Do(func() {
+		m, err := LoadMaster()
+		if err != nil {
+			logf("master CSV no disponible: %v", err)
+			return
+		}
+		masterModel = m
+		logf("master CSV cargado en memoria; archivo=%s filas=%d", m.Path, len(m.Rows))
+	})
+	return masterModel
+}
+
+// integrateMasterIntoWorkbook conserva todas las columnas originales del XLSX
+// y agrega al final una pequeña proyeccion del maestro para cada SKU encontrado.
+// Esto deja el dato realmente integrado dentro del mismo objeto que ya guarda
+// el programa en memoria, sin introducir una base de datos ni persistencia extra.
+func integrateMasterIntoWorkbook(doc *xlsxDoc) {
+	if doc == nil {
+		return
+	}
+	master := cachedMaster()
+	if master == nil || len(master.Rows) == 0 {
+		return
+	}
+	for sheetName, rows := range doc.Sheets {
+		if len(rows) == 0 {
+			continue
+		}
+		hi := headerRowIndex(rows)
+		if hi < 0 || hi >= len(rows) {
+			continue
+		}
+		headers := uniqueHeaders(rows[hi])
+		skuCol := -1
+		for i, h := range headers {
+			if strings.EqualFold(strings.TrimSpace(h), "SKU") {
+				skuCol = i
+				break
+			}
+		}
+		if skuCol < 0 {
+			continue
+		}
+		const (
+			masterClave = iota
+			masterEstado
+			masterUnidades
+			masterPrecio
+			masterCosto
+			masterDescripcion
+		)
+		added := []string{"MASTER_CLAVE", "MASTER_ESTADO", "MASTER_UNIDADES_X_BULTO", "MASTER_PRECIO_LISTA_UNITARIO", "MASTER_COSTO_UNITARIO", "MASTER_DESCRIPCION"}
+		for i := range rows {
+			if i == hi {
+				rows[i] = append(rows[i], added...)
+				continue
+			}
+			sku := ""
+			if skuCol < len(rows[i]) {
+				sku = strings.TrimSpace(rows[i][skuCol])
+			}
+			r := MasterBySKU(master, sku)
+			values := make([]string, len(added))
+			if r != nil {
+				values[masterClave] = r["CLAVE"]
+				values[masterEstado] = r["ESTADO"]
+				values[masterUnidades] = r["UNIDADES_X_BULTO"]
+				values[masterPrecio] = r["PRECIO_LISTA_UNITARIO"]
+				values[masterCosto] = r["COSTO_UNITARIO"]
+				values[masterDescripcion] = r["DESCRIPCION"]
+			}
+			rows[i] = append(rows[i], values...)
+		}
+		doc.Sheets[sheetName] = rows
+	}
 }
 
 func MasterBySKU(m *MasterData, sku string) MasterRow {
