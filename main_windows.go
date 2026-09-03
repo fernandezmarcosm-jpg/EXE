@@ -665,8 +665,8 @@ func pickMultipleXLSX(owner uintptr) []string {
 		lpstrFile:   uintptr(unsafe.Pointer(&buf[0])),
 		nMaxFile:    uint32(len(buf)),
 		lpstrTitle:  uintptr(unsafe.Pointer(u16("ABRIR XLSX"))),
-		Flags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK,
-		lpfnHook:    syscall.NewCallback(multiSelectHook),
+		Flags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY,
+		lpfnHook:    0,
 	}
 	ret, _, _ := comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&ofn)))
 	if ret == 0 {
