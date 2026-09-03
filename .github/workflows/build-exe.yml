@@ -1,21 +1,12 @@
 name: Build GestionSO V57
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
     env:
-      # PowerShell no acepta la sintaxis POSIX CGO_ENABLED=0 delante del comando.
-      # Las variables quedan en el entorno del job para que go build/go vet las reciban.
       CGO_ENABLED: "0"
       GOOS: windows
       GOARCH: amd64
