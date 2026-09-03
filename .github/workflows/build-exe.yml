@@ -20,25 +20,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.23.2'
-          cache: false
-
       - name: Corregir selector XLSX en main_windows.go
         shell: pwsh
         run: |
           $path = 'main_windows.go'
           $text = Get-Content -Raw -Encoding UTF8 $path
-          $pattern = '(?m)^\s*Flags:\s+OFN_EXPLORER \| OFN_FILEMUSTEXIST \| OFN_ALLOWMULTISELECT \| OFN_HIDEREADONLY \| OFN_ENABLEHOOK,\r?\n\s*lpfnHook:\s+syscall\.NewCallback\(multiSelectHook\),'
-          $replacement = "`t`tFlags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY,`r`n`t`tlpfnHook:    0,"
-          $updated = [regex]::Replace($text, $pattern, $replacement, 1)
-          if ($updated -eq $text) {
-            throw 'No se encontro el bloque del selector XLSX esperado; se cancela la compilacion para no alterar otra logica.'
+
+          # El selector no debe usar hook: el binario reconstruido ya no necesita
+          # interceptar el dialogo nativo y asi evitamos callbacks Win32 innecesarios.
+          $patternHook = '(?m)^\s*Flags:\s+OFN_EXPLORER \| OFN_FILEMUSTEXIST \| OFN_ALLOWMULTISELECT \| OFN_HIDEREADONLY \| OFN_ENABLEHOOK,\r?\n\s*lpfnHook:\s+syscall\.NewCallback\(multiSelectHook\),'
+          $replacementHook = "`t`tFlags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY,`r`n`t`tlpfnHook:    0,"
+          $updated = [regex]::Replace($text, $patternHook, $replacementHook, 1)
+
+          # StringToUTF16 rechaza NUL embebido. El filtro de GetOpenFileNameW
+          # es una MULTI_SZ (varias cadenas terminadas en NUL y un NUL final),
+          # por lo que u16z debe codificarla manualmente.
+          $patternU16 = 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}'
+          $replacementU16 = @'
+func u16z(s string) []uint16 {
+	parts := strings.Split(s, "\x00")
+	out := make([]uint16, 0, len(s)+1)
+	for _, part := range parts {
+		out = append(out, syscall.StringToUTF16(part)...)
+	}
+	// StringToUTF16 agrega un NUL a cada parte; para MULTI_SZ esto produce
+	// exactamente un NUL entre cadenas y dos NUL al final.
+	return out
+}
+'@
+          $updated2 = [regex]::Replace($updated, $patternU16, $replacementU16, 1)
+
+          if ($updated2 -eq $text) {
+            throw 'No se encontro ninguna correccion esperada en main_windows.go; se cancela la compilacion para no alterar otra logica.'
           }
-          Set-Content -Path $path -Value $updated -Encoding UTF8 -NoNewline
-          Write-Host 'main_windows.go corregido: GetOpenFileNameW sin OFN_ENABLEHOOK/callback.'
+          Set-Content -Path $path -Value $updated2 -Encoding UTF8 -NoNewline
+          Write-Host 'main_windows.go corregido: selector sin hook y filtro MULTI_SZ sin StringToUTF16 sobre NUL embebido.'
 
       - name: Persistir correccion en main
         shell: pwsh
@@ -47,7 +63,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add main_windows.go
           if (-not (git diff --cached --quiet)) {
-            git commit -m 'Fix selector XLSX de GestionSO [skip ci]'
+            git commit -m 'Fix filtro MULTI_SZ del selector XLSX [skip ci]'
             git push origin HEAD:main
           } else {
             Write-Host 'No hay cambios de main_windows.go para persistir.'
@@ -81,7 +97,7 @@ jobs:
             'GestionSO_Datos.csv queda disponible como maestro de datos.'
             'Archivo a importar.xlsx queda disponible para el flujo ABRIR XLSX.'
             ''
-            'Blindaje de estabilidad: el selector XLSX se compila sin OFN_ENABLEHOOK/callback para evitar el bloqueo observado al abrir el dialogo.'
+            'Blindaje de estabilidad: el selector XLSX se compila sin OFN_ENABLEHOOK/callback y el filtro MULTI_SZ se construye sin pasar NUL embebido a StringToUTF16.'
             ''
             'Para el flujo end-to-end con el motor legado puede requerirse GestionSO-V54-engine.exe.'
             'La ruta del motor se configura mediante la variable de entorno GESTIONSO_V54_ENGINE.'
