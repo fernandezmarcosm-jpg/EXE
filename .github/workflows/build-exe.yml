@@ -31,13 +31,13 @@ jobs:
         run: |
           $path = 'main_windows.go'
           $text = Get-Content -Raw -Encoding UTF8 $path
-          $old = 'Flags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK,`r`n`t`tlpfnHook:    syscall.NewCallback(multiSelectHook),'
-          $new = 'Flags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY,`r`n`t`tlpfnHook:    0,'
-          if (-not $text.Contains($old)) {
-            throw 'No se encontro exactamente el bloque del hook XLSX esperado; se cancela la compilacion para no alterar otra logica.'
+          $pattern = '(?m)^\s*Flags:\s+OFN_EXPLORER \| OFN_FILEMUSTEXIST \| OFN_ALLOWMULTISELECT \| OFN_HIDEREADONLY \| OFN_ENABLEHOOK,\r?\n\s*lpfnHook:\s+syscall\.NewCallback\(multiSelectHook\),'
+          $replacement = "`t`tFlags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY,`r`n`t`tlpfnHook:    0,"
+          $updated = [regex]::Replace($text, $pattern, $replacement, 1)
+          if ($updated -eq $text) {
+            throw 'No se encontro el bloque del hook XLSX esperado; se cancela la compilacion para no alterar otra logica.'
           }
-          $text = $text.Replace($old, $new)
-          Set-Content -Path $path -Value $text -Encoding UTF8 -NoNewline
+          Set-Content -Path $path -Value $updated -Encoding UTF8 -NoNewline
           Write-Host 'Selector XLSX compilado sin OFN_ENABLEHOOK ni callback.'
 
       - name: Build GestionSO V57
