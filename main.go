@@ -3,6 +3,7 @@
 package main
 
 import (
+    "runtime"
     "syscall"
     "time"
     "unsafe"
@@ -19,8 +20,6 @@ var (
 type winPOINT struct{ X, Y int32 }
 
 // MSG de Win32 incluye lPrivate al final. En Windows 64-bit su tamaño es 48 bytes.
-// La definición anterior tenía 40 bytes: GetMessageW podía escribir fuera de los
-// límites de msg y corromper memoria, causando congelamientos aparentemente aleatorios.
 type winMSG struct {
     Hwnd uintptr
     Message uint32
@@ -33,9 +32,17 @@ type winMSG struct {
 }
 
 func main() {
+    // CRITICO: una ventana Win32 pertenece a la cola de mensajes del hilo que
+    // la crea. Go puede migrar una goroutine entre hilos del SO si no se fija
+    // explícitamente. Para una GUI Win32, creación de ventana + message loop
+    // deben vivir en el MISMO OS thread durante toda la vida de la aplicación.
+    runtime.LockOSThread()
+    defer runtime.UnlockOSThread()
+
     appLogInit()
     defer appRecover("main")
     appLog("EVENTO: inicio del programa")
+    appLog("EVENTO: hilo Win32 fijado con runtime.LockOSThread")
 
     console, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
     if console != 0 {
