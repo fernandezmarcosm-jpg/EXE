@@ -109,8 +109,7 @@ func appLayout(hwnd uintptr) {
 func maxInt(a,b int) int { if a>b{return a}; return b }
 
 // appPickXLSX opens the native Windows file picker and returns the selected XLSX path.
-// It is intentionally synchronous only for the dialog itself; Excel parsing remains
-// asynchronous in appOpenXLSX so the main window is never blocked while reading the file.
+// Only the dialog runs on the UI thread; XLSX parsing stays asynchronous in appOpenXLSX.
 func appPickXLSX(owner uintptr) []string {
     const (
         ofnExplorer      = 0x00080000
@@ -119,11 +118,20 @@ func appPickXLSX(owner uintptr) []string {
         ofnHideReadOnly  = 0x00000004
     )
 
+    // OPENFILENAMEW expects a double-NUL-terminated filter list. Build it
+    // from individual UTF-16 strings because UTF16FromString rejects embedded NULs.
+    f1, _ := syscall.UTF16FromString("Archivos Excel (*.xlsx)")
+    f2, _ := syscall.UTF16FromString("*.xlsx")
+    f3, _ := syscall.UTF16FromString("Todos los archivos (*.*)")
+    f4, _ := syscall.UTF16FromString("*.*")
+    filter := make([]uint16, 0, len(f1)+len(f2)+len(f3)+len(f4)+1)
+    filter = append(filter, f1...)
+    filter = append(filter, f2...)
+    filter = append(filter, f3...)
+    filter = append(filter, f4...)
+    filter = append(filter, 0)
+
     buffer := make([]uint16, 32768)
-    filter, err := syscall.UTF16FromString("Archivos Excel (*.xlsx)\x00*.xlsx\x00Todos los archivos (*.*)\x00*.*\x00\x00")
-    if err != nil {
-        return nil
-    }
     title := appU16("Seleccionar archivo Excel")
     defExt := appU16("xlsx")
 
