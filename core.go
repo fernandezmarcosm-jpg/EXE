@@ -30,8 +30,8 @@ type MasterData struct {
 }
 
 type Line struct {
-	Values   map[string]string
-	Source   string
+	Values    map[string]string
+	Source    string
 	RowNumber int
 }
 
@@ -73,7 +73,9 @@ func logf(format string, args ...interface{}) {
 
 func initLog() { logf("initLog: GestionSO V57 reconstruccion") }
 
-func defaultConfig() configData { return configData{Mode: "MODO: FACTURAS"} }
+// INFERENCIA: la captura de referencia muestra SO RETENIDAS como pantalla
+// inicial. Las tres opciones de modo siguen siendo las strings verificadas.
+func defaultConfig() configData { return configData{Mode: "MODO: SO RETENIDAS"} }
 
 func LoadConfig() configData {
 	c := defaultConfig()
@@ -261,7 +263,7 @@ func buildMergedSheet(rows [][]string) []byte {
 			}
 			b.WriteString(xmlEscape(v))
 		}
-	}
+		}
 	return b.Bytes()
 }
 
@@ -732,26 +734,26 @@ func newModeConfig() configData { return defaultConfig() }
 
 // Stubs: no-op because the internal behavior is not recoverable from the
 // available evidence. Keeping the verified symbols preserves the API surface.
-func openOption(_ uintptr)                                      {}
-func optWndProc(hwnd, msg, w, l uintptr) uintptr               { return 0 }
-func createOptControls(_ uintptr)                              {}
-func layoutOpt(_ uintptr)                                      {}
-func optChecked(_ uintptr) bool                                { return false }
-func applyOption(_ uintptr)                                    {}
-func openSimulator(_ uintptr)                                  {}
-func simWndProc(hwnd, msg, w, l uintptr) uintptr               { return 0 }
-func createSimControls(_ uintptr)                              {}
-func layoutSim(_ uintptr)                                      {}
-func rebuildSimColumns(_ uintptr)                              {}
-func captureSimState(_ uintptr) []string                       { return nil }
-func simKey(_ Line) string                                     { return "" }
-func simAdd(_ Line)                                             {}
-func simApply()                                                 {}
-func simRemove(_ int)                                           {}
-func simPopulate(_ []Line)                                      {}
-func handleSimNotify(_ uintptr, _ uintptr, _ uintptr) uintptr  { return 0 }
-func CalcSimFromMaster(_ *MasterData) float64                   { return 0 }
-func masterScore(_ MasterRow) int                               { return 0 }
+func openOption(_ uintptr)                                    {}
+func optWndProc(hwnd, msg, w, l uintptr) uintptr             { return 0 }
+func createOptControls(_ uintptr)                             {}
+func layoutOpt(_ uintptr)                                     {}
+func optChecked(_ uintptr) bool                               { return false }
+func applyOption(_ uintptr)                                   {}
+func openSimulator(_ uintptr)                                 {}
+func simWndProc(hwnd, msg, w, l uintptr) uintptr              { return 0 }
+func createSimControls(_ uintptr)                             {}
+func layoutSim(_ uintptr)                                     {}
+func rebuildSimColumns(_ uintptr)                             {}
+func captureSimState(_ uintptr) []string                      { return nil }
+func simKey(_ Line) string                                    { return "" }
+func simAdd(_ Line)                                            {}
+func simApply()                                                {}
+func simRemove(_ int)                                          {}
+func simPopulate(_ []Line)                                     {}
+func handleSimNotify(_ uintptr, _ uintptr, _ uintptr) uintptr { return 0 }
+func CalcSimFromMaster(_ *MasterData) float64                  { return 0 }
+func masterScore(_ MasterRow) int                              { return 0 }
 
 func insertAfter(s []string, after string, value string) []string {
 	for i, v := range s {
