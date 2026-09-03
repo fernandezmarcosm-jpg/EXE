@@ -62,7 +62,7 @@ const (
 	LVM_DELETEALLITEMS           = LVM_FIRST + 9
 	LVM_INSERTITEMW              = LVM_FIRST + 77
 	LVM_SETITEMW                 = LVM_FIRST + 76
-	LVM_INSERTCOLUMNW            = LVM_FIRST + 97
+	LVM_INSERTCOLUMNW             = LVM_FIRST + 97
 	LVCF_FMT                     = 0x0001
 	LVCF_WIDTH                   = 0x0002
 	LVCF_TEXT                    = 0x0004
@@ -102,14 +102,14 @@ type WNDCLASSEX struct {
 
 type RECT struct{ Left, Top, Right, Bottom int32 }
 type lvcw struct {
-	Mask     uint32
-	Fmt      int32
-	Cx       int32
-	Text     uintptr
-	TextMax  int32
-	SubItem  int32
-	Image    int32
-	Order    int32
+	Mask    uint32
+	Fmt     int32
+	Cx      int32
+	Text    uintptr
+	TextMax int32
+	SubItem int32
+	Image   int32
+	Order   int32
 }
 type lvitemw struct {
 	Mask      uint32
@@ -146,17 +146,17 @@ type OPENFILENAMEW struct {
 }
 
 var (
-	hInstance         uintptr
-	hwndMain          uintptr
-	hwndGrid          uintptr
-	hwndStatus        uintptr
-	hwndTotals        uintptr
-	hwndMode          uintptr
-	filterHandles     = map[int]uintptr{}
-	filterLabels      = map[int]uintptr{}
-	mainConfig        configData
-	mainLines         []Line
-	currentView       []Line
+	hInstance          uintptr
+	hwndMain           uintptr
+	hwndGrid           uintptr
+	hwndStatus         uintptr
+	hwndTotals         uintptr
+	hwndMode           uintptr
+	filterHandles      = map[int]uintptr{}
+	filterLabels       = map[int]uintptr{}
+	mainConfig         configData
+	mainLines          []Line
+	currentView        []Line
 	currentFilterCount int
 )
 
@@ -472,18 +472,18 @@ func resolveUIValue(l Line, name string) string {
 		return v
 	}
 	aliases := map[string][]string{
-		"SKU":                 {"sku"},
-		"Descripción":         {"descrip", "descripcion", "producto"},
-		"SUM (%) descuento":   {"sum", "descuento", "% descuento"},
-		"NETO PK":             {"neto pk", "neto_pk", "netopk"},
-		"UNIDADES":            {"unidades", "unidad", "cantidad"},
-		"PALL":                {"pall", "pallets", "pallet"},
-		"PK":                  {"pk"},
-		"NETO SO":             {"neto so", "neto_so", "netoso"},
-		"TN SO":               {"tn so", "tn", "tonelada"},
-		"CMG":                 {"cmg", "margen"},
-		"PPP SO":              {"ppp so", "ppp", "precio promedio"},
-		"ORIGEN":              {"origen"},
+		"SKU":               {"sku"},
+		"Descripción":       {"descrip", "descripcion", "producto"},
+		"SUM (%) descuento": {"sum", "descuento", "% descuento"},
+		"NETO PK":           {"neto pk", "neto_pk", "netopk"},
+		"UNIDADES":          {"unidades", "unidad", "cantidad"},
+		"PALL":              {"pall", "pallets", "pallet"},
+		"PK":                {"pk"},
+		"NETO SO":           {"neto so", "neto_so", "netoso"},
+		"TN SO":             {"tn so", "tn", "tonelada"},
+		"CMG":               {"cmg", "margen"},
+		"PPP SO":            {"ppp so", "ppp", "precio promedio"},
+		"ORIGEN":            {"origen"},
 	}
 	for _, a := range aliases[name] {
 		if v := findAnyValue(l, a); v != "" {
@@ -492,12 +492,14 @@ func resolveUIValue(l Line, name string) string {
 	}
 	return ""
 }
+
 func refreshGrid(lines []Line) {
 	if hwndGrid == 0 {
 		return
 	}
 	user32.NewProc("SendMessageW").Call(hwndGrid, LVM_DELETEALLITEMS, 0, 0)
-	for rowIndex, l := range lines {
+	renderLines := appendGridSubtotals(lines)
+	for rowIndex, l := range renderLines {
 		values := make([]string, len(uiColumns))
 		for colIndex, c := range uiColumns {
 			values[colIndex] = resolveUIValue(l, c.Name)
@@ -510,11 +512,86 @@ func refreshGrid(lines []Line) {
 		}
 	}
 }
+
+// INFERENCIA: la captura muestra una fila SUBTOTAL SO después de cada grupo.
+// Los campos numéricos se obtienen de CalculateSOSubtotals; no se afirma
+// reproducir la fórmula comercial del binario original.
+func appendGridSubtotals(lines []Line) []Line {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make([]Line, 0, len(lines)+len(GroupLines(lines)))
+	var group []Line
+	currentSO := ""
+	flush := func() {
+		if len(group) == 0 {
+			return
+		}
+		out = append(out, group...)
+		if currentSO != "" {
+			out = append(out, makeSubtotalLine(currentSO, group))
+		}
+	}
+	for _, l := range lines {
+		so := strings.TrimSpace(fieldValue(l, "SO"))
+		if so == "" {
+			if len(group) > 0 {
+				flush()
+				group = nil
+				currentSO = ""
+			}
+			out = append(out, l)
+			continue
+		}
+		if currentSO != "" && so != currentSO {
+			flush()
+			group = nil
+		}
+		currentSO = so
+		group = append(group, l)
+	}
+	flush()
+	return out
+}
+
+func makeSubtotalLine(so string, group []Line) Line {
+	values := map[string]string{"SKU": fmt.Sprintf("SUBTOTAL SO %s", so)}
+	if len(group) == 0 {
+		return Line{Values: values, Source: "subtotal", RowNumber: -1}
+	}
+	first := group[0]
+	ret := 0
+	estado := ""
+	for _, l := range group {
+		state := strings.ToUpper(strings.TrimSpace(fieldValue(l, "Estado")))
+		if state == "RETENIDA" || state == "RETENIDAS" {
+			ret++
+		}
+		if estado == "" {
+			estado = fieldValue(l, "Estado")
+		}
+	}
+	cod := findAnyValue(first, "cod")
+	clienteKey := findFieldKey(first, "cliente")
+	clienteValue := fieldValue(first, clienteKey)
+	pct := resolveUIValue(first, "SUM (%) descuento")
+	values["Descripción"] = fmt.Sprintf("RET %d | %s | %s | %s", ret, estado, cod, clienteValue)
+	values["SUM (%) descuento"] = pct
+	sums := CalculateSOSubtotals(group)
+	for _, field := range []string{"BULTOS", "PALL", "PK", "UNIDADES", "NETO PK", "NETO SO", "TN SO", "CMG", "PPP SO", "RESULTADO"} {
+		if v, ok := sums[so][field]; ok {
+			values[field] = displayNumber(v)
+		}
+	}
+	return Line{Values: values, Source: "subtotal", RowNumber: -1}
+}
+
 func setGridCell(row, col int, text string) {
 	t := u16(text)
 	item := lvitemw{Mask: LVIF_TEXT, Item: int32(row), SubItem: int32(col), Text: uintptr(unsafe.Pointer(t)), TextMax: int32(len(syscall.StringToUTF16(text)))}
 	user32.NewProc("SendMessageW").Call(hwndGrid, LVM_SETITEMW, 0, uintptr(unsafe.Pointer(&item)))
 }
+
 func updateTotals(lines []Line) {
 	if hwndTotals == 0 {
 		return
@@ -532,12 +609,14 @@ func updateTotals(lines []Line) {
 	}
 	setWindowText(hwndTotals, fmt.Sprintf("BULTOS %s | PALLETS %s | TN %s | UNIDADES %s\r\nNETO $ %s | COSTO $ %s | RESULTADO %s | CMG %s", displayNumber(bultos), displayNumber(pallets), displayNumber(tn), displayNumber(unidades), displayNumber(neto), displayNumber(costo), displayNumber(resultado), displayNumber(cmg)))
 }
+
 func displayNumber(v float64) string {
 	if v == 0 {
 		return "0"
 	}
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 }
+
 func updateStatus(hwnd uintptr, lines []Line) {
 	_ = hwnd
 	setWindowText(hwndStatus, BuildStatusBar(mainConfig.Mode, lines, currentFilterCount, "Detalle de Descuentos Aplicados..."))
@@ -563,6 +642,7 @@ func openXLSXDialog(owner uintptr) {
 		logf("openXLSXDialog end lines=%d", len(mainLines))
 	})
 }
+
 func pickMultipleXLSX(owner uintptr) []string {
 	buf := make([]uint16, 32768)
 	filter := u16z("Archivos XLSX (*.xlsx)\x00*.xlsx\x00Todos los archivos (*.*)\x00*.*\x00\x00")
@@ -577,6 +657,7 @@ func pickMultipleXLSX(owner uintptr) []string {
 	}
 	return parseMultiSelectBuffer(buf)
 }
+
 func parseMultiSelectBuffer(buf []uint16) []string {
 	if len(buf) == 0 || buf[0] == 0 {
 		return nil
@@ -602,12 +683,14 @@ func parseMultiSelectBuffer(buf []uint16) []string {
 	}
 	return result
 }
+
 func filepathJoin(a, b string) string {
 	if strings.HasSuffix(a, "\\") || strings.HasSuffix(a, "/") {
 		return a + b
 	}
 	return a + "\\" + b
 }
+
 func multiSelectHook(hwnd, msg, wParam, lParam uintptr) uintptr {
 	_ = wParam
 	_ = lParam
@@ -626,6 +709,7 @@ func findWindowByTitles(titles []string) uintptr {
 	}
 	return 0
 }
+
 func enumTopWindows(fn func(uintptr) bool) {
 	cb := syscall.NewCallback(func(hwnd, lParam uintptr) uintptr {
 		_ = lParam
@@ -636,6 +720,7 @@ func enumTopWindows(fn func(uintptr) bool) {
 	})
 	user32.NewProc("EnumWindows").Call(cb, 0)
 }
+
 func enumChildren(hwnd uintptr, fn func(uintptr) bool) {
 	cb := syscall.NewCallback(func(child, lParam uintptr) uintptr {
 		_ = lParam
@@ -646,6 +731,7 @@ func enumChildren(hwnd uintptr, fn func(uintptr) bool) {
 	})
 	user32.NewProc("EnumChildWindows").Call(hwnd, cb, 0)
 }
+
 func findChildByText(hwnd uintptr, text string) uintptr {
 	var found uintptr
 	enumChildren(hwnd, func(c uintptr) bool {
@@ -657,6 +743,7 @@ func findChildByText(hwnd uintptr, text string) uintptr {
 	})
 	return found
 }
+
 func findFirstEdit(hwnd uintptr) uintptr {
 	var found uintptr
 	enumChildren(hwnd, func(c uintptr) bool {
@@ -668,6 +755,7 @@ func findFirstEdit(hwnd uintptr) uintptr {
 	})
 	return found
 }
+
 func findDialogUnder(hwnd uintptr) uintptr {
 	// INFERENCIA/PENDIENTE: no se puede recuperar con certeza la relación
 	// entre el owner y el diálogo del selector V54. No devolver una ventana
@@ -675,6 +763,7 @@ func findDialogUnder(hwnd uintptr) uintptr {
 	_ = hwnd
 	return 0
 }
+
 func getClassName(hwnd uintptr) string {
 	b := make([]uint16, 256)
 	n, _, _ := user32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
@@ -683,6 +772,7 @@ func getClassName(hwnd uintptr) string {
 	}
 	return syscall.UTF16ToString(b[:n])
 }
+
 func repositionOverlay(hwnd uintptr) { _ = hwnd }
 
 func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
@@ -709,9 +799,11 @@ func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	r, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, msg, wParam, lParam)
 	return r
 }
+
 func handleNotify(hwnd, wParam, lParam uintptr) uintptr {
 	return handleMainNotify(hwnd, wParam, lParam)
 }
+
 func handleMainNotify(hwnd, wParam, lParam uintptr) uintptr {
 	_ = hwnd
 	_ = wParam
