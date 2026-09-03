@@ -122,8 +122,16 @@ type lvitemw struct {
 	Image     int32
 	LParam    uintptr
 }
+
+// OPENFILENAMEW must match the Win64 ABI exactly. The Windows structure has
+// pointer-alignment padding after lStructSize, nMaxFile and nMaxFileTitle and
+// also contains reserved/FlagsEx fields at the tail. A shorter Go struct makes
+// GetOpenFileNameW read the wrong offsets and can prevent the dialog from opening.
+// HECHO VERIFICADO: GetOpenFileNameW consumes an OPENFILENAMEW structure.
+// INFERENCIA/IMPLEMENTACION: unused padding/tail fields are left zeroed.
 type OPENFILENAMEW struct {
 	LStructSize       uint32
+	_pad0             uint32
 	HwndOwner         uintptr
 	HInstance         uintptr
 	lpstrFilter       uintptr
@@ -132,8 +140,10 @@ type OPENFILENAMEW struct {
 	nFilterIndex      uint32
 	lpstrFile         uintptr
 	nMaxFile           uint32
+	_pad1             uint32
 	lpstrFileTitle     uintptr
 	nMaxFileTitle      uint32
+	_pad2             uint32
 	lpstrInitialDir    uintptr
 	lpstrTitle         uintptr
 	Flags              uint32
@@ -143,6 +153,9 @@ type OPENFILENAMEW struct {
 	lCustData          uintptr
 	lpfnHook           uintptr
 	lpTemplateName     uintptr
+	pvReserved         uintptr
+	dwReserved         uint32
+	FlagsEx            uint32
 }
 
 var (
@@ -616,7 +629,6 @@ func displayNumber(v float64) string {
 	}
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 }
-
 func updateStatus(hwnd uintptr, lines []Line) {
 	_ = hwnd
 	setWindowText(hwndStatus, BuildStatusBar(mainConfig.Mode, lines, currentFilterCount, "Detalle de Descuentos Aplicados..."))
@@ -646,12 +658,23 @@ func openXLSXDialog(owner uintptr) {
 func pickMultipleXLSX(owner uintptr) []string {
 	buf := make([]uint16, 32768)
 	filter := u16z("Archivos XLSX (*.xlsx)\x00*.xlsx\x00Todos los archivos (*.*)\x00*.*\x00\x00")
-	ofn := OPENFILENAMEW{LStructSize: uint32(unsafe.Sizeof(OPENFILENAMEW{})), HwndOwner: owner, lpstrFilter: uintptr(unsafe.Pointer(&filter[0])), lpstrFile: uintptr(unsafe.Pointer(&buf[0])), nMaxFile: uint32(len(buf)), lpstrTitle: uintptr(unsafe.Pointer(u16("ABRIR XLSX"))), Flags: OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK, lpfnHook: syscall.NewCallback(multiSelectHook)}
+	ofn := OPENFILENAMEW{
+		LStructSize: uint32(unsafe.Sizeof(OPENFILENAMEW{})),
+		HwndOwner:   owner,
+		lpstrFilter: uintptr(unsafe.Pointer(&filter[0])),
+		lpstrFile:   uintptr(unsafe.Pointer(&buf[0])),
+		nMaxFile:    uint32(len(buf)),
+		lpstrTitle:  uintptr(unsafe.Pointer(u16("ABRIR XLSX"))),
+		Flags:       OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK,
+		lpfnHook:    syscall.NewCallback(multiSelectHook),
+	}
 	ret, _, _ := comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&ofn)))
 	if ret == 0 {
 		errCode, _, _ := comdlg32.NewProc("CommDlgExtendedError").Call()
 		if errCode != 0 {
 			logf("GetOpenFileNameW failed code=%d", errCode)
+		} else {
+			logf("GetOpenFileNameW canceled or returned no selection")
 		}
 		return nil
 	}
@@ -662,8 +685,14 @@ func parseMultiSelectBuffer(buf []uint16) []string {
 	if len(buf) == 0 || buf[0] == 0 {
 		return nil
 	}
-	first := syscall.UTF16ToString(buf)
-	end := len(first)
+	// El buffer se indexa en unidades UTF-16; len(string) mide bytes.
+	// Usar len(UTF16ToString(...)) puede romper el cálculo del segundo NUL
+	// cuando la ruta contiene caracteres no ASCII.
+	end := 0
+	for end < len(buf) && buf[end] != 0 {
+		end++
+	}
+	first := syscall.UTF16ToString(buf[:end])
 	if end+1 >= len(buf) || buf[end+1] == 0 {
 		return []string{first}
 	}
@@ -709,7 +738,6 @@ func findWindowByTitles(titles []string) uintptr {
 	}
 	return 0
 }
-
 func enumTopWindows(fn func(uintptr) bool) {
 	cb := syscall.NewCallback(func(hwnd, lParam uintptr) uintptr {
 		_ = lParam
@@ -720,7 +748,6 @@ func enumTopWindows(fn func(uintptr) bool) {
 	})
 	user32.NewProc("EnumWindows").Call(cb, 0)
 }
-
 func enumChildren(hwnd uintptr, fn func(uintptr) bool) {
 	cb := syscall.NewCallback(func(child, lParam uintptr) uintptr {
 		_ = lParam
@@ -731,7 +758,6 @@ func enumChildren(hwnd uintptr, fn func(uintptr) bool) {
 	})
 	user32.NewProc("EnumChildWindows").Call(hwnd, cb, 0)
 }
-
 func findChildByText(hwnd uintptr, text string) uintptr {
 	var found uintptr
 	enumChildren(hwnd, func(c uintptr) bool {
@@ -743,7 +769,6 @@ func findChildByText(hwnd uintptr, text string) uintptr {
 	})
 	return found
 }
-
 func findFirstEdit(hwnd uintptr) uintptr {
 	var found uintptr
 	enumChildren(hwnd, func(c uintptr) bool {
@@ -755,7 +780,6 @@ func findFirstEdit(hwnd uintptr) uintptr {
 	})
 	return found
 }
-
 func findDialogUnder(hwnd uintptr) uintptr {
 	// INFERENCIA/PENDIENTE: no se puede recuperar con certeza la relación
 	// entre el owner y el diálogo del selector V54. No devolver una ventana
@@ -763,7 +787,6 @@ func findDialogUnder(hwnd uintptr) uintptr {
 	_ = hwnd
 	return 0
 }
-
 func getClassName(hwnd uintptr) string {
 	b := make([]uint16, 256)
 	n, _, _ := user32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))
@@ -772,7 +795,6 @@ func getClassName(hwnd uintptr) string {
 	}
 	return syscall.UTF16ToString(b[:n])
 }
-
 func repositionOverlay(hwnd uintptr) { _ = hwnd }
 
 func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
@@ -803,7 +825,6 @@ func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 func handleNotify(hwnd, wParam, lParam uintptr) uintptr {
 	return handleMainNotify(hwnd, wParam, lParam)
 }
-
 func handleMainNotify(hwnd, wParam, lParam uintptr) uintptr {
 	_ = hwnd
 	_ = wParam
