@@ -20,16 +20,13 @@ func appWndProcLogged(hwnd uintptr, msg uint32, wp, lp uintptr) (ret uintptr) {
         }
         // Registrar sólo mensajes relevantes y callbacks anormalmente lentos.
         // Esto permite distinguir un crash de un bloqueo dentro de Win32.
-        if msg == WM_COMMAND || msg == WM_APP_REFRESH || msg == WM_CLOSE || msg == WM_DESTROY || elapsed > 500*time.Millisecond {
+        if msg == WM_COMMAND || msg == WM_CLOSE || msg == WM_DESTROY || elapsed > 500*time.Millisecond {
             appLog("WNDPROC salida msg=0x%X hwnd=0x%X wp=0x%X lp=0x%X duración=%s ret=0x%X", msg, hwnd, wp, lp, elapsed, ret)
         }
     }()
 
     if msg == WM_COMMAND {
         appLog("WM_COMMAND entrada hwnd=0x%X id=%d code=%d", hwnd, int(wp&0xffff), uint32((wp>>16)&0xffff))
-    }
-    if msg == WM_APP_REFRESH {
-        appLog("WM_APP_REFRESH entrada hwnd=0x%X", hwnd)
     }
     if msg == 0x000F { // WM_PAINT
         appLog("WM_PAINT entrada hwnd=0x%X", hwnd)
