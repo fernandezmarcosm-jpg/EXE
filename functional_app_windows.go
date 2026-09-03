@@ -31,11 +31,12 @@ const (
     WS_VSCROLL = 0x00200000
     WS_HSCROLL = 0x00100000
     BS_PUSHBUTTON = 0
-    ES_MULTILINE = 0x0004
-    ES_AUTOVSCROLL = 0x0040
-    ES_AUTOHSCROLL = 0x0080
-    ES_READONLY = 0x0800
-    ES_WANTRETURN = 0x1000
+    LBS_NOINTEGRALHEIGHT = 0x0100
+    LBS_USETABSTOPS = 0x0080
+    LB_RESETCONTENT = 0x0184
+    LB_ADDSTRING = 0x0180
+    LB_SETHORIZONTALEXTENT = 0x0194
+    LB_SETCURSEL = 0x0186
     ofnExplorer = 0x00080000
     ofnPathMustExist = 0x00000800
     ofnFileMustExist = 0x00001000
@@ -108,6 +109,31 @@ func appSetText(h uintptr, s string) {
     }
 }
 
+// The previous preview used a multiline EDIT control. The last runtime log
+// stopped immediately after that control sent EN_SETFOCUS (2007/256). Use a
+// native LISTBOX for the read-only preview: it has native row/scroll handling
+// and does not run the multiline EDIT focus/formatting path.
+func appSetListBox(h uintptr, s string) {
+    if h == 0 { return }
+    start := time.Now()
+    send := user32.NewProc("SendMessageW")
+    send.Call(h, LB_RESETCONTENT, 0, 0)
+    maxExtent := 0
+    lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+    for _, line := range lines {
+        if line == "" { continue }
+        p := appU16(line)
+        send.Call(h, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(p)))
+        if n := len([]rune(line)); n > maxExtent { maxExtent = n }
+    }
+    if maxExtent > 0 { send.Call(h, LB_SETHORIZONTALEXTENT, uintptr(maxExtent*8), 0) }
+    if len(lines) > 1 { send.Call(h, LB_SETCURSEL, 0, 0) }
+    elapsed := time.Since(start)
+    if elapsed > 500*time.Millisecond {
+        appLog("DIAGNOSTICO: actualización LISTBOX tardó %s; líneas=%d caracteres=%d", elapsed, len(lines), len(s))
+    }
+}
+
 func appMake(parent uintptr, cls, text string, style uint32, x, y, w, h int, id uintptr) uintptr {
     c := appU16(cls); t := appU16(text)
     r, _, _ := user32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(c)), uintptr(unsafe.Pointer(t)), uintptr(style), uintptr(x), uintptr(y), uintptr(w), uintptr(h), parent, id, appHInstance, 0)
@@ -131,7 +157,10 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
     case WM_SIZE:
         appLayout(hwnd); return 0
     case WM_COMMAND:
-        if int(wp&0xffff) == appIDOpen { appOpenXLSX(hwnd) }
+        id := int(wp & 0xffff)
+        code := uint32((wp >> 16) & 0xffff)
+        if id == appIDOpen { appOpenXLSX(hwnd); return 0 }
+        if id == appIDGrid && code == 256 { return 0 }
         return 0
     case WM_APP_REFRESH:
         appLog("EVENTO: inicio actualización de interfaz")
@@ -152,7 +181,7 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 func appBuildControls(hwnd uintptr) {
     appMake(hwnd,"BUTTON","ABRIR EXCEL",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,10,10,130,32,appIDOpen)
     appStatus=appMake(hwnd,"STATIC","Listo. Seleccione uno o varios archivos XLSX para comenzar.",WS_CHILD|WS_VISIBLE,155,15,1100,24,appIDStatus)
-    appView=appMake(hwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY|ES_WANTRETURN,10,55,1360,700,appIDGrid)
+    appView=appMake(hwnd,"LISTBOX","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|LBS_NOINTEGRALHEIGHT|LBS_USETABSTOPS,10,55,1360,700,appIDGrid)
 }
 
 func appLayout(hwnd uintptr) {
@@ -186,13 +215,11 @@ func appOpenXLSX(owner uintptr) {
     appStateMu.Lock()
     if appLoading { appStateMu.Unlock(); return }
     appStateMu.Unlock()
-
     files:=appPickXLSX(owner)
     if len(files)==0{return}
     appStateMu.Lock(); appLoading=true; appStatusText=fmt.Sprintf("Leyendo %d archivo(s)...",len(files)); appStateMu.Unlock()
     appRefreshView()
     selected:=append([]string(nil),files...)
-
     go func(){
         defer appRecover("importacion XLSX")
         defer func(){appStateMu.Lock();appLoading=false;appStateMu.Unlock()}()
@@ -214,6 +241,6 @@ func loadPreviewXLSX(path string)([]string,[]appRow,string,error){
 }
 func maxPreviewColumns(rows[][]string)int{n:=0;for _,r:=range rows{if len(r)>n{n=len(r)}};if n>80{n=80};return n}
 func makeHeaders(row[]string,n int)[]string{out:=make([]string,n);seen:=map[string]int{};for i:=0;i<n;i++{name:="Columna "+fmt.Sprint(i+1);if i<len(row)&&strings.TrimSpace(row[i])!=""{name=strings.TrimSpace(row[i])};base:=name;seen[base]++;if seen[base]>1{name=fmt.Sprintf("%s (%d)",base,seen[base])};out[i]=name};return out}
-func renderPreview(headers[]string,rows[]appRow)string{var b strings.Builder;const maxChars=512*1024;for i,h:=range headers{if i>0{b.WriteByte('\t')};b.WriteString(cleanCell(h))};b.WriteString("\r\n");for _,row:=range rows{for i:=range headers{if i>0{b.WriteByte('\t')};if i<len(row.Values){b.WriteString(cleanCell(row.Values[i]))}};b.WriteString("\r\n");if b.Len()>=maxChars{b.WriteString("\r\n[Vista limitada a 512 KB para mantener la interfaz estable]\r\n");break}};return b.String()}
+func renderPreview(headers[]string,rows[]appRow)string{var b strings.Builder;const maxChars=256*1024;for i,h:=range headers{if i>0{b.WriteByte('\t')};b.WriteString(cleanCell(h))};b.WriteString("\r\n");for _,row:=range rows{for i:=range headers{if i>0{b.WriteByte('\t')};if i<len(row.Values){b.WriteString(cleanCell(row.Values[i]))}};b.WriteString("\r\n");if b.Len()>=maxChars{b.WriteString("\r\n[Vista limitada a 256 KB para mantener la interfaz estable]\r\n");break}};return b.String()}
 func cleanCell(s string)string{return strings.NewReplacer("\r"," ","\n"," ","\t"," ").Replace(s)}
-func appRefreshView(){appStateMu.Lock();status:=appStatusText;view:=appViewText;appStateMu.Unlock();appSetText(appStatus,status);appSetText(appView,view)}
+func appRefreshView(){appStateMu.Lock();status:=appStatusText;view:=appViewText;appStateMu.Unlock();appSetText(appStatus,status);appSetListBox(appView,view)}
