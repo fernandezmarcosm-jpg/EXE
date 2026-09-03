@@ -26,11 +26,13 @@ func (x *sheetXML) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 
 			// Decode each row explicitly. This avoids depending on a direct
 			// worksheet->row XML mapping and handles normal Excel worksheet XML.
-			for {
+			sheetDataDone := false
+			for !sheetDataDone {
 				rowTok, err := d.Token()
 				if err != nil {
 					return err
 				}
+
 				switch r := rowTok.(type) {
 				case xml.StartElement:
 					if r.Name.Local == "row" {
@@ -44,12 +46,11 @@ func (x *sheetXML) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 					}
 				case xml.EndElement:
 					if r.Name.Local == "sheetData" {
-						goto sheetDataDone
+						sheetDataDone = true
 					}
 				}
 			}
 
-		sheetDataDone:
 		case xml.EndElement:
 			if t.Name == start.Name {
 				return nil
