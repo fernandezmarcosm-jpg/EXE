@@ -16,20 +16,41 @@ var (
 )
 
 type winPOINT struct{ X, Y int32 }
-type winMSG struct{ Hwnd uintptr; Message uint32; WParam, LParam uintptr; Time uint32; Pt winPOINT }
+type winMSG struct {
+	Hwnd uintptr
+	Message uint32
+	WParam, LParam uintptr
+	Time uint32
+	Pt winPOINT
+}
 
 // Punto de entrada único de la reconstrucción Win32.
 func main() {
 	console, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
-	if console != 0 { user32.NewProc("ShowWindow").Call(console, 0) }
+	if console != 0 {
+		user32.NewProc("ShowWindow").Call(console, 0)
+	}
 	comctl32.NewProc("InitCommonControls").Call()
-	// Crear ventana y bucle de mensajes
+
+	// La ventana envía WM_CREATE durante CreateWindowExW. Cargar antes la
+	// configuración permite que el combo de modo nazca con el valor persistido.
+	mainConfig = LoadConfig()
+	if mainConfig.Mode == "" {
+		mainConfig.Mode = "MODO: SO RETENIDAS"
+		_ = SaveConfig(mainConfig)
+	}
+
 	hwnd := crearVentana()
-	if hwnd == 0 { log.Fatal("No se pudo crear la ventana principal") }
+	if hwnd == 0 {
+		log.Fatal("No se pudo crear la ventana principal")
+	}
+
 	var msg winMSG
 	for {
 		ret, _, _ := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-		if int32(ret) <= 0 { break }
+		if int32(ret) <= 0 {
+			break
+		}
 		user32.NewProc("TranslateMessage").Call(uintptr(unsafe.Pointer(&msg)))
 		user32.NewProc("DispatchMessageW").Call(uintptr(unsafe.Pointer(&msg)))
 	}
