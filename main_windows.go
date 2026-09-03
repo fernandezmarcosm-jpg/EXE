@@ -9,6 +9,28 @@ import (
 	"unsafe"
 )
 
+// ========== CONSTANTES AGREGADAS ==========
+const (
+	ID_ABRIR_XLSX    = 1001
+	ID_TOMAR_EXCEL   = 1002
+	ID_COLUMNAS      = 1003
+	ID_FILTROS       = 1004
+	ID_EXPORTAR_CSV  = 1005
+	ID_SIMULADOR     = 1006
+	ID_RECARGAR      = 1007
+	ID_RESALTAR      = 1008
+	ID_COLOR         = 1009
+	ID_DATOS_CSV     = 1010
+	ID_FILTRAR       = 2001
+	ID_LIMPIAR       = 2002
+	ID_GRID          = 3001
+	ID_STATUS        = 3002
+)
+
+const BN_CLICKED = 0
+
+// ========== FIN CONSTANTES ==========
+
 type WNDCLASSEX struct {
 	CbSize        uint32
 	Style         uint32
