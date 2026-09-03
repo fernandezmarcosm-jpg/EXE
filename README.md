@@ -1,18 +1,39 @@
 # GestionSO V57 — reconstrucción
 
-Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO V57 a partir de evidencia observable en el binario `GestionSO-V57.exe` disponible durante el análisis. **No es el fuente original** y no se afirma equivalencia interna con el programa original.
+Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO V57 a partir de evidencia observable en el binario `GestionSO-V57.exe` y de los datos de trabajo recuperados. **No es el fuente original** y no se afirma equivalencia interna con el programa original.
 
-## Estado
+## Estado actual
 
 - **Reconstrucción V57:** código fuente Go/Win32 consolidado en una única implementación.
+- **Datos base recuperados:** maestro `GestionSO_Datos.csv`, export operativo `archivo exportado.csv` y workbook `Archivo a importar.xlsx`.
+- **Arranque funcional:** el ejecutable carga `archivo exportado.csv` automáticamente cuando está junto al ejecutable o dentro de `acceso chatgpt`.
+- **ABRIR XLSX:** permite reemplazar la vista inicial cargando el/los XLSX seleccionados.
 - **Auditoría 2026-09-03:** se corrigieron inconsistencias de UI, parseo XLSX, filtros por cabecera, ordenamiento, números regionales y generación de subtotales.
 - **Corrección 2026-09-03:** reparado el ABI Win64 de `OPENFILENAMEW`, causa concreta identificada para que `GetOpenFileNameW` no abriera correctamente el selector desde `ABRIR XLSX`.
-- **Tests:** `go test ./...` verde para las pruebas de parseo XLSX, filtros y números.
+- **Tests:** `go test ./...` verde para las pruebas existentes de parseo XLSX, filtros y números.
 - **Build objetivo:** `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` verde en la revisión auditada.
 - **go vet:** `go vet ./...` verde en la revisión auditada.
 - **Build del ejecutable:** GitHub Actions lo genera en Windows x64 como artifact, sin versionar binarios.
 
-El código fuente actual es una reconstrucción/reimplementación, no el fuente original del binario. La evidencia verificada y las inferencias están separadas en `docs/EVIDENCIA_BINARIO.md`.
+La reconstrucción usa la evidencia recuperada para reproducir la superficie observable del programa. La evidencia verificada y las inferencias están separadas en `docs/EVIDENCIA_BINARIO.md`.
+
+## Datos recuperados utilizados
+
+### `acceso chatgpt/GestionSO_Datos.csv`
+
+Maestro de productos con campos como `SKU`, `DESCRIPCION`, unidades por bulto, precio de lista unitario, costo unitario, bultos por pallet, kg por bulto, estado y base de operación. Es la referencia maestra de productos recuperada.
+
+### `acceso chatgpt/archivo exportado.csv`
+
+Export operativo detallado de órdenes de venta. Contiene `SKU`, descripción, descuentos, cantidades, pallets, `NETO SO`, `TN SO`, `CMG`, `PPP SO`, `ORIGEN`, `SO`, retención, estado, ejecutivo, cliente, factura, documento, provincia, ciudad, ajustes, flete, precio, costo y otros campos de origen. Es la base que ahora alimenta la vista inicial del ejecutable.
+
+### `acceso chatgpt/Archivo a importar.xlsx`
+
+Workbook de entrada recuperado. Se conserva como dato externo del flujo `ABRIR XLSX`; el parser XLSX reconstruido respeta referencias de celda, cadenas compartidas y `inlineStr`.
+
+### `acceso chatgpt/Imagen programa.png`
+
+Captura de referencia visual del programa real. La evidencia visual está transcripta y separada de las inferencias en `docs/EVIDENCIA_BINARIO.md`.
 
 ## UI reconstruida — referencia V54
 
@@ -40,17 +61,23 @@ Los controles cuyo comportamiento interno no es recuperable (`TOMAR EXCEL ABIERT
 
 `RECARGAR` y `EXPORTAR CSV` tienen implementación conservadora dentro de la reconstrucción: actualizan/exportan la vista disponible, sin afirmar que reproduzcan el flujo interno original.
 
-## Descarga del ejecutable
+## Paquete de entrega
 
-El ejecutable se genera exclusivamente como artifact de GitHub Actions; no se commitean `.exe` ni `.zip`.
+GitHub Actions genera el ejecutable exclusivamente como artifact; no se commitean `.exe` ni `.zip`.
 
-- Run que generó el artifact actual: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33764014134
-- Artifact: `GestionSO-V57` (artifact ID `9896720748`), generado desde el commit `1cb44122046e6a4f65ac4d2633ce67319589e4fc`.
-- Descarga: abrir el run y entrar en **Artifacts → GestionSO-V57**.
-- El ZIP incluye `GestionSO-V57.exe`, `README.md`, `docs/EVIDENCIA_BINARIO.md` y `LEEME.txt`.
-- Requiere Windows x64.
-- El flujo end-to-end puede requerir `GestionSO-V54-engine.exe`, configurado mediante `GESTIONSO_V54_ENGINE`; el motor no está incluido.
-- `GestionSO_Datos.csv` y los XLSX son datos externos y no se incluyen.
+El ZIP contiene:
+
+- `GestionSO-V57.exe`
+- `LEEME.txt`
+- `README.md`
+- `docs/EVIDENCIA_BINARIO.md`
+- `datos/GestionSO_Datos.csv`
+- `datos/archivo exportado.csv`
+- `datos/Archivo a importar.xlsx`
+
+Requiere Windows x64.
+
+El flujo end-to-end con el motor legado puede requerir `GestionSO-V54-engine.exe`, configurado mediante `GESTIONSO_V54_ENGINE`. El motor no se inventa, no se sustituye y no está incluido porque no forma parte de la evidencia entregada.
 
 ## Compilación
 
@@ -64,10 +91,10 @@ La validación permanente usa GitHub Actions. El workflow de build usa un runner
 
 ## Límites funcionales
 
-Esta es una reconstrucción. Para validar end-to-end el flujo `ABRIR XLSX` → motor se requieren `GestionSO-V54-engine.exe`, `GestionSO_Datos.csv` y XLSX de datos reales/de prueba compatibles. Esos componentes externos no están incluidos.
+Esta es una reconstrucción. La vista inicial ya no queda vacía: usa el `archivo exportado.csv` recuperado. `ABRIR XLSX` permite cargar el workbook recuperado u otros XLSX compatibles.
 
-`feedEngineFile` no se modifica más allá de la parametrización existente mediante `GESTIONSO_V54_ENGINE` y logging.
+La automatización `TOMAR EXCEL ABIERTO` y el contrato interno de `GestionSO-V54-engine.exe` siguen pendientes porque no existe evidencia suficiente para reconstruirlos sin inventar comportamiento.
 
 ## Trazabilidad
 
-La separación entre evidencia verificada e inferencia está documentada en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md), incluyendo las correcciones de compilación, la auditoría del `main` y la discrepancia V54/V57.
+La separación entre evidencia verificada e inferencia está documentada en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md), incluyendo las correcciones de compilación, la auditoría del `main`, la discrepancia V54/V57 y la integración de los datos recuperados.
