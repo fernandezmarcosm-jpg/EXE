@@ -6,6 +6,7 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 
 - **Reconstrucción V57:** código fuente Go/Win32 consolidado en una única implementación.
 - **Auditoría 2026-09-03:** se corrigieron inconsistencias de UI, parseo XLSX, filtros por cabecera, ordenamiento, números regionales y generación de subtotales.
+- **Corrección 2026-09-03:** reparado el ABI Win64 de `OPENFILENAMEW`, causa concreta identificada para que `GetOpenFileNameW` no abriera correctamente el selector desde `ABRIR XLSX`.
 - **Tests:** `go test ./...` verde para las pruebas de parseo XLSX, filtros y números.
 - **Build objetivo:** `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` verde en la revisión auditada.
 - **go vet:** `go vet ./...` verde en la revisión auditada.
