@@ -17,12 +17,19 @@ var (
 )
 
 type winPOINT struct{ X, Y int32 }
+
+// MSG de Win32 incluye lPrivate al final. En Windows 64-bit su tamaño es 48 bytes.
+// La definición anterior tenía 40 bytes: GetMessageW podía escribir fuera de los
+// límites de msg y corromper memoria, causando congelamientos aparentemente aleatorios.
 type winMSG struct {
     Hwnd uintptr
     Message uint32
+    _ uint32
     WParam, LParam uintptr
     Time uint32
     Pt winPOINT
+    LPrivate uint32
+    _ uint32
 }
 
 func main() {
