@@ -39,21 +39,29 @@ jobs:
       - name: Package artifact
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force dist/datos | Out-Null
+          Copy-Item 'acceso chatgpt/GestionSO_Datos.csv' 'dist/datos/GestionSO_Datos.csv'
+          Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
+          Copy-Item 'acceso chatgpt/Archivo a importar.xlsx' 'dist/datos/Archivo a importar.xlsx'
           Set-Content -Path dist/LEEME.txt -Encoding UTF8 -Value @(
             'GestionSO V57 - reconstruccion'
             ''
             'Este ejecutable es una reconstruccion/reimplementacion en Go de GestionSO V57; no es el fuente original.'
             'Requiere Windows x64.'
             ''
-            'Para el flujo end-to-end puede requerir GestionSO-V54-engine.exe. La ruta se configura mediante la variable de entorno GESTIONSO_V54_ENGINE.'
-            'El motor V54 no esta incluido en este paquete.'
+            'El paquete incluye los datos base aportados para esta reconstruccion.'
+            'La vista inicial carga archivo exportado.csv.'
+            'GestionSO_Datos.csv queda disponible como maestro de datos.'
+            'Archivo a importar.xlsx queda disponible para el flujo ABRIR XLSX.'
             ''
-            'GestionSO_Datos.csv y los XLSX de datos son datos externos y no se incluyen.'
+            'Para el flujo end-to-end con el motor legado puede requerirse GestionSO-V54-engine.exe.'
+            'La ruta del motor se configura mediante la variable de entorno GESTIONSO_V54_ENGINE.'
+            'El motor V54 no se inventa ni se sustituye por otro componente.'
           )
           Copy-Item README.md dist/README.md
           New-Item -ItemType Directory -Force dist/docs | Out-Null
           Copy-Item docs/EVIDENCIA_BINARIO.md dist/docs/EVIDENCIA_BINARIO.md
-          Compress-Archive -Path dist/GestionSO-V57.exe,dist/LEEME.txt,dist/README.md,dist/docs/EVIDENCIA_BINARIO.md -DestinationPath dist/GestionSO-V57.zip -Force
+          Compress-Archive -Path dist/GestionSO-V57.exe,dist/LEEME.txt,dist/README.md,dist/docs/EVIDENCIA_BINARIO.md,dist/datos/* -DestinationPath dist/GestionSO-V57.zip -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
