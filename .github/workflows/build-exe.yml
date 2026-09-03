@@ -1,4 +1,4 @@
-name: Build GestionSO V57 Functional
+name: Build GestionSO V57 Minimal
 
 on:
   push:
@@ -8,45 +8,38 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: amd64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.23.2'
-      - name: Test core
+
+      - name: Test
         shell: pwsh
         run: go test ./...
-      - name: Build Windows EXE
+
+      - name: Build EXE
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          go build -trimpath -ldflags '-H=windowsgui' -o dist/GestionSO-V57.exe .
-          if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'EXE no generado' }
-      - name: Package runtime data
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist/datos | Out-Null
-          Copy-Item 'acceso chatgpt/GestionSO_Datos.csv' 'dist/datos/GestionSO_Datos.csv'
-          Copy-Item 'acceso chatgpt/Archivo a importar.xlsx' 'dist/datos/Archivo a importar.xlsx'
-          Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
-          Set-Content dist/LEEME.txt @'
-GestionSO V57 - reconstruccion funcional
+          go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
+          if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'No se genero GestionSO-V57.exe' }
 
-ABRIR EXCEL: selecciona uno o varios XLSX.
-El procesamiento ocurre fuera del hilo de la interfaz.
-Los SKU se cruzan con datos/GestionSO_Datos.csv.
-La grilla muestra columnas calculadas y columnas originales.
-Filtro: use expresiones Columna=valor separadas por punto y coma.
-COLUMNAS... permite elegir las columnas visibles.
-EXPORTAR CSV guarda el resultado en la carpeta temporal de Windows.
-archivo exportado.csv es solo un ejemplo de estructura y no es necesario para ejecutar.
-'@
-      - name: Package ZIP
+      - name: Package EXE
         shell: pwsh
-        run: Compress-Archive -Path dist/* -DestinationPath dist/GestionSO-V57.zip -Force
+        run: Compress-Archive -Path dist/GestionSO-V57.exe -DestinationPath dist/GestionSO-V57.zip -Force
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GestionSO-V57
           path: dist/GestionSO-V57.zip
           if-no-files-found: error
+          retention-days: 30
