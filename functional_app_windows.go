@@ -32,10 +32,10 @@ const (
 
     BS_PUSHBUTTON = 0
 
-    ES_MULTILINE = 0x0004
-    ES_AUTOVSCROLL = 0x0040
-    ES_AUTOHSCROLL = 0x0080
-    ES_READONLY = 0x0800
+    ES_MULTILINE    = 0x0004
+    ES_AUTOVSCROLL  = 0x0040
+    ES_AUTOHSCROLL  = 0x0080
+    ES_READONLY     = 0x0800
 
     ofnExplorer      = 0x00080000
     ofnPathMustExist = 0x00000800
@@ -86,12 +86,13 @@ type appOpenFile struct {
 }
 
 var (
-    appHwnd   uintptr
-    appStatus uintptr
-    appView   uintptr
+    appHwnd      uintptr
+    appHInstance uintptr
+    appStatus    uintptr
+    appView      uintptr
 
-    // The imported workbook is the only data source for the next stages.
-    // The complete XLSX remains in memory after the file is closed.
+    // The complete imported workbook is kept by the process. No second read,
+    // temporary conversion or disk persistence is required for this stage.
     appImportedWorkbook *xlsxDoc
     appImportedPath string
 )
@@ -111,12 +112,8 @@ func appMake(parent uintptr, className, text string, style uint32, x, y, w, h in
     cls := appU16(className)
     txt := appU16(text)
     hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(
-        0,
-        uintptr(unsafe.Pointer(cls)),
-        uintptr(unsafe.Pointer(txt)),
-        uintptr(style),
-        uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-        parent, id, appHInstance, 0,
+        0, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(txt)), uintptr(style),
+        uintptr(x), uintptr(y), uintptr(w), uintptr(h), parent, id, appHInstance, 0,
     )
     return hwnd
 }
@@ -135,12 +132,8 @@ func crearVentana() uintptr {
 
     title := appU16("GestionSO V57 - Importar Excel")
     hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(
-        0,
-        uintptr(unsafe.Pointer(cls)),
-        uintptr(unsafe.Pointer(title)),
-        WS_OVERLAPPEDWINDOW|WS_VISIBLE,
-        0x80000000, 0x80000000, 1200, 750,
-        0, 0, appHInstance, 0,
+        0, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(title)), WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        0x80000000, 0x80000000, 1200, 750, 0, 0, appHInstance, 0,
     )
     return hwnd
 }
@@ -189,7 +182,7 @@ func appBuildControls(hwnd uintptr) {
     appStatus = appMake(hwnd, "STATIC", "Seleccione un archivo XLSX.", WS_CHILD|WS_VISIBLE, 155, 15, 1000, 24, appIDStatus)
     appView = appMake(hwnd, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, 55, 1160, 630, appIDView)
 
-    // Monospace font makes the tab-separated preview easy to inspect.
+    // Monospace font keeps the tab-separated preview readable.
     font, _, _ := user32.NewProc("CreateFontW").Call(
         18, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0,
         uintptr(unsafe.Pointer(appU16("Consolas"))),
@@ -248,8 +241,7 @@ func appPickXLSX(owner uintptr) string {
         appLog("EVENTO: selector XLSX cancelado")
         return ""
     }
-    path := syscall.UTF16ToString(buffer)
-    path = strings.TrimSpace(path)
+    path := strings.TrimSpace(syscall.UTF16ToString(buffer))
     if path != "" { appLog("EVENTO: selector devolvio archivo=%s", path) }
     return path
 }
@@ -268,9 +260,7 @@ func appOpenXLSX(owner uintptr) {
         appImportedWorkbook = nil
         appImportedPath = ""
         appSetText(appStatus, "ERROR: "+err.Error())
-        appSetText(appView, "No se pudo leer el archivo XLSX.
-
-"+err.Error())
+        appSetText(appView, "No se pudo leer el archivo XLSX.\r\n\r\n"+err.Error())
         appLog("ERROR importando XLSX: %v", err)
         return
     }
@@ -279,8 +269,8 @@ func appOpenXLSX(owner uintptr) {
     appImportedWorkbook = workbook
     appImportedPath = path
 
-    // Important: from here on the file is no longer needed. The complete
-    // workbook object is retained by the process in appImportedWorkbook.
+    // From this point on, the XLSX file is not needed. The complete parsed
+    // workbook remains reachable from appImportedWorkbook in process memory.
     status := fmt.Sprintf("EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(workbook.Sheets), rows, cells, filepath.Base(path))
     appSetText(appStatus, status)
     appSetText(appView, renderWorkbookPreview(workbook))
@@ -300,8 +290,8 @@ func workbookSize(doc *xlsxDoc) (rows, cells int) {
 func renderWorkbookPreview(doc *xlsxDoc) string {
     if doc == nil || len(doc.Sheets) == 0 { return "Excel vacío o sin hojas legibles." }
 
-    // Only the preview is sent to the window. The complete workbook stays in
-    // memory, avoiding a giant UI update and keeping the message loop simple.
+    // Only a small preview is sent to the Win32 control. The complete book
+    // remains in memory, so the UI never has to render thousands of cells.
     const maxRows = 60
     const maxCols = 25
 
