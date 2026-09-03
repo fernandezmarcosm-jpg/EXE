@@ -366,7 +366,7 @@ func BuildFilteredSortedViewByHeaders(lines []Line, filters map[string]string) [
 	o := make([]Line, 0, len(lines))
 	for _, l := range lines {
 		ok := true
-		for field, value := range filters {
+		for _, value := range filters {
 			value = strings.TrimSpace(value)
 			if value == "" { continue }
 			if !FilterValue(l, value) { ok = false; break }
