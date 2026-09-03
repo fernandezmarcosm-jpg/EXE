@@ -27,6 +27,7 @@ type MasterData struct {
 	Headers []string
 	Rows    []MasterRow
 	Path    string
+	ByKey   map[string]MasterRow
 }
 
 type Line struct {
@@ -263,7 +264,7 @@ func buildMergedSheet(rows [][]string) []byte {
 			}
 			b.WriteString(xmlEscape(v))
 		}
-		}
+	}
 	return b.Bytes()
 }
 
@@ -327,7 +328,7 @@ func headerRowIndex(rows [][]string) int {
 }
 
 func normalizedHeader(v string, index int) string {
-	v = strings.TrimSpace(v)
+	v = strings.TrimSpace(strings.TrimPrefix(v, "\ufeff"))
 	if v == "" {
 		return fmt.Sprintf("C%d", index+1)
 	}
@@ -379,11 +380,17 @@ func locateMaster() string {
 	if c.MasterPath != "" {
 		return c.MasterPath
 	}
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "GestionSO_Datos.csv")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
 	return filepath.Join(os.TempDir(), "GestionSO_Datos.csv")
 }
 
 func openMasterCSV() (*os.File, error) {
-	return os.OpenFile(locateMaster(), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	return os.Open(locateMaster())
 }
 
 func ensureMasterHeaders(path string, headers []string) error {
@@ -416,27 +423,66 @@ func LoadMaster(path ...string) (*MasterData, error) {
 	}
 	defer f.Close()
 	r := csv.NewReader(f)
+	r.FieldsPerRecord = -1
 	rows, e := r.ReadAll()
 	if e != nil {
 		return nil, e
 	}
-	md := &MasterData{Path: p}
-	if len(rows) > 0 {
-		md.Headers = rows[0]
-		for i := 1; i < len(rows); i++ {
-			row := rows[i]
-			mr := MasterRow{}
-			for j, h := range md.Headers {
-				if j < len(row) {
-					mr[h] = row[j]
-				} else {
-					mr[h] = ""
-				}
-			}
-			md.Rows = append(md.Rows, mr)
+	md := &MasterData{Path: p, ByKey: map[string]MasterRow{}}
+	if len(rows) == 0 {
+		return md, nil
+	}
+	md.Headers = make([]string, len(rows[0]))
+	for i, h := range rows[0] {
+		md.Headers[i] = normalizedHeader(h, i)
+	}
+	keyIndex := -1
+	for i, h := range md.Headers {
+		if strings.EqualFold(strings.TrimSpace(h), "CLAVE") || strings.EqualFold(strings.TrimSpace(h), "SKU") {
+			keyIndex = i
+			break
 		}
 	}
+	for i := 1; i < len(rows); i++ {
+		row := rows[i]
+		mr := MasterRow{}
+		for j, h := range md.Headers {
+			if j < len(row) {
+				mr[h] = strings.TrimSpace(row[j])
+			} else {
+				mr[h] = ""
+			}
+		}
+		if keyIndex >= 0 && keyIndex < len(row) {
+			key := strings.ToUpper(strings.TrimSpace(row[keyIndex]))
+			if key != "" {
+				md.ByKey[key] = mr
+			}
+		}
+		md.Rows = append(md.Rows, mr)
+	}
 	return md, nil
+}
+
+func MasterBySKU(m *MasterData, sku string) MasterRow {
+	if m == nil {
+		return nil
+	}
+	key := strings.ToUpper(strings.TrimSpace(sku))
+	if key == "" {
+		return nil
+	}
+	if m.ByKey != nil {
+		if r, ok := m.ByKey[key]; ok {
+			return r
+		}
+	}
+	for _, r := range m.Rows {
+		if strings.EqualFold(strings.TrimSpace(r["CLAVE"]), sku) || strings.EqualFold(strings.TrimSpace(r["SKU"]), sku) {
+			return r
+		}
+	}
+	return nil
 }
 
 func SaveWithBackup(path string, data []byte) error {
@@ -450,12 +496,16 @@ func SaveWithBackup(path string, data []byte) error {
 
 func EnsureSKU(m *MasterData, sku string) MasterRow {
 	for _, r := range m.Rows {
-		if r["SKU"] == sku {
+		if r["CLAVE"] == sku || r["SKU"] == sku {
 			return r
 		}
 	}
-	r := MasterRow{"SKU": sku}
+	r := MasterRow{"CLAVE": sku, "SKU": sku}
 	m.Rows = append(m.Rows, r)
+	if m.ByKey == nil {
+		m.ByKey = map[string]MasterRow{}
+	}
+	m.ByKey[strings.ToUpper(strings.TrimSpace(sku))] = r
 	return r
 }
 
@@ -516,324 +566,4 @@ func GroupLines(lines []Line) map[string][]Line {
 		g[l.Values[k]] = append(g[l.Values[k]], l)
 	}
 	return g
-}
-
-func BuildFilteredSortedView(lines []Line, filter string) []Line {
-	return BuildFilteredSortedViewByHeaders(lines, map[string]string{"__all__": filter})
-}
-
-func BuildFilteredSortedViewByHeaders(lines []Line, filters map[string]string) []Line {
-	o := make([]Line, 0, len(lines))
-	for _, l := range lines {
-		ok := true
-		for field, value := range filters {
-			value = strings.TrimSpace(value)
-			if value == "" {
-				continue
-			}
-			if field == "__all__" {
-				if !FilterValue(l, value) {
-					ok = false
-					break
-				}
-			} else if !filterFieldValue(l, field, value) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			o = append(o, l)
-		}
-	}
-	sort.SliceStable(o, func(i, j int) bool {
-		return cmpKey(lineSortKey(o[i]), lineSortKey(o[j])) < 0
-	})
-	return o
-}
-
-func filterFieldValue(l Line, field, filter string) bool {
-	v := fieldValue(l, field)
-	if v == "" {
-		return false
-	}
-	return strings.Contains(strings.ToLower(v), strings.ToLower(filter))
-}
-
-func fieldValue(l Line, field string) string {
-	if v, ok := l.Values[field]; ok {
-		return v
-	}
-	for k, v := range l.Values {
-		if strings.EqualFold(strings.TrimSpace(k), strings.TrimSpace(field)) {
-			return v
-		}
-	}
-	return ""
-}
-
-func FilterValue(l Line, filter string) bool {
-	f := strings.ToLower(filter)
-	for _, v := range l.Values {
-		if strings.Contains(strings.ToLower(v), f) {
-			return true
-		}
-	}
-	return false
-}
-
-func DisplayValue(l Line, col string) string { return fieldValue(l, col) }
-func rawVal(l Line, col string) string        { return fieldValue(l, col) }
-func rawDisplay(l Line, col string) string    { return fieldValue(l, col) }
-
-func availableColumns(lines []Line) []ColumnDef {
-	if len(lines) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(lines[0].Values))
-	for k := range lines[0].Values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	o := make([]ColumnDef, 0, len(keys))
-	for _, k := range keys {
-		o = append(o, ColumnDef{Name: k, Width: 100})
-	}
-	return o
-}
-
-func defaultVisible(c []ColumnDef) []ColumnDef { return c }
-
-func defaultHeaderFilters(c []ColumnDef) map[string]string {
-	m := map[string]string{}
-	for _, x := range c {
-		m[x.Name] = ""
-	}
-	return m
-}
-
-func lineSortKey(l Line) string {
-	return strings.ToLower(l.Values[findFieldKey(l, "so", "factura", "cliente")])
-}
-func groupSortKey(l Line) string { return lineSortKey(l) }
-func keyText(l Line) string      { return lineSortKey(l) }
-func keyAuto(l Line) string      { return lineSortKey(l) }
-
-func cmpKey(a, b string) int {
-	a = strings.ToLower(a)
-	b = strings.ToLower(b)
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
-}
-
-func fmtPct(v float64) string { return fmt.Sprintf("%.2f%%", v) }
-
-func parseNumber(s string) (float64, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, false
-	}
-	s = strings.ReplaceAll(s, "$", "")
-	s = strings.ReplaceAll(s, " ", "")
-	s = strings.ReplaceAll(s, "'", "")
-	if strings.Contains(s, ",") && strings.Contains(s, ".") {
-		// INFERENCIA: el último separador se interpreta como decimal.
-		if strings.LastIndex(s, ",") > strings.LastIndex(s, ".") {
-			s = strings.ReplaceAll(s, ".", "")
-			s = strings.ReplaceAll(s, ",", ".")
-		} else {
-			s = strings.ReplaceAll(s, ",", "")
-		}
-	} else if strings.Contains(s, ",") {
-		parts := strings.Split(s, ",")
-		if len(parts) == 2 && len(parts[1]) <= 2 {
-			s = strings.ReplaceAll(s, ",", ".")
-		} else {
-			s = strings.ReplaceAll(s, ",", "")
-		}
-	}
-	if x, err := strconv.ParseFloat(s, 64); err == nil {
-		return x, true
-	}
-	return 0, false
-}
-
-func numericByNames(l Line, names ...string) float64 {
-	keys := make([]string, 0, len(l.Values))
-	for k := range l.Values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, n := range names {
-		n = strings.ToLower(strings.TrimSpace(n))
-		for _, k := range keys {
-			if strings.ToLower(strings.TrimSpace(k)) == n {
-				if x, ok := parseNumber(l.Values[k]); ok {
-					return x
-				}
-			}
-		}
-	}
-	for _, n := range names {
-		n = strings.ToLower(strings.TrimSpace(n))
-		for _, k := range keys {
-			if strings.Contains(strings.ToLower(strings.TrimSpace(k)), n) {
-				if x, ok := parseNumber(l.Values[k]); ok {
-					return x
-				}
-			}
-		}
-	}
-	return 0
-}
-
-func SimDisplay(v float64) string { return fmt.Sprintf("%.2f", v) }
-
-func exportVisible(lines []Line, path string) error {
-	f, e := os.Create(path)
-	if e != nil {
-		return e
-	}
-	defer f.Close()
-	w := csv.NewWriter(f)
-	cols := availableColumns(lines)
-	h := make([]string, len(cols))
-	for i, c := range cols {
-		h[i] = c.Name
-	}
-	if e := w.Write(h); e != nil {
-		return e
-	}
-	for _, l := range lines {
-		row := make([]string, len(cols))
-		for i, c := range cols {
-			row[i] = DisplayValue(l, c.Name)
-		}
-		_ = w.Write(row)
-	}
-	w.Flush()
-	return w.Error()
-}
-
-func csvWriter(w io.Writer, rows [][]string) error {
-	cw := csv.NewWriter(w)
-	for _, r := range rows {
-		if e := cw.Write(r); e != nil {
-			return e
-		}
-	}
-	cw.Flush()
-	return cw.Error()
-}
-
-func newModeConfig() configData { return defaultConfig() }
-
-// Stubs: no-op because the internal behavior is not recoverable from the
-// available evidence. Keeping the verified symbols preserves the API surface.
-func openOption(_ uintptr)                                    {}
-func optWndProc(hwnd, msg, w, l uintptr) uintptr             { return 0 }
-func createOptControls(_ uintptr)                             {}
-func layoutOpt(_ uintptr)                                     {}
-func optChecked(_ uintptr) bool                               { return false }
-func applyOption(_ uintptr)                                   {}
-func openSimulator(_ uintptr)                                 {}
-func simWndProc(hwnd, msg, w, l uintptr) uintptr              { return 0 }
-func createSimControls(_ uintptr)                             {}
-func layoutSim(_ uintptr)                                     {}
-func rebuildSimColumns(_ uintptr)                             {}
-func captureSimState(_ uintptr) []string                      { return nil }
-func simKey(_ Line) string                                    { return "" }
-func simAdd(_ Line)                                            {}
-func simApply()                                                {}
-func simRemove(_ int)                                          {}
-func simPopulate(_ []Line)                                     {}
-func handleSimNotify(_ uintptr, _ uintptr, _ uintptr) uintptr { return 0 }
-func CalcSimFromMaster(_ *MasterData) float64                  { return 0 }
-func masterScore(_ MasterRow) int                              { return 0 }
-
-func insertAfter(s []string, after string, value string) []string {
-	for i, v := range s {
-		if v == after {
-			res := make([]string, 0, len(s)+1)
-			res = append(res, s[:i+1]...)
-			res = append(res, value)
-			res = append(res, s[i+1:]...)
-			return res
-		}
-	}
-	return append(s, value)
-}
-
-// BuildStatusBar: formato observado en la captura V54. Los conteos se derivan
-// conservadoramente de las líneas cargadas; no representan la fórmula interna.
-func BuildStatusBar(mode string, lines []Line, filterCount int, extra string) string {
-	total := len(lines)
-	var retenidas, liberadas int
-	soSet := make(map[string]bool)
-	for _, l := range lines {
-		estado := strings.ToUpper(strings.TrimSpace(fieldValue(l, "Estado")))
-		switch estado {
-		case "RETENIDA", "RETENIDAS":
-			retenidas++
-		case "LIBERADA", "LIBERADAS":
-			liberadas++
-		}
-		if so := strings.TrimSpace(fieldValue(l, "SO")); so != "" {
-			soSet[so] = true
-		}
-	}
-	mode = strings.TrimPrefix(strings.TrimSpace(mode), "MODO: ")
-	if mode == "" {
-		mode = "SO RETENIDAS"
-	}
-	return fmt.Sprintf("MODO: %s | RETENIDAS %d | LIBERADAS %d | SO %d | LINEAS %d | %d filtros | %s | CSV",
-		mode, retenidas, liberadas, len(soSet), total, filterCount, extra)
-}
-
-// CalculateSOSubtotals: suma conservadora por grupo de SO. No pretende
-// reproducir las fórmulas internas de negocio del binario original.
-func CalculateSOSubtotals(lines []Line) map[string]map[string]float64 {
-	result := make(map[string]map[string]float64)
-	for _, l := range lines {
-		so := strings.TrimSpace(fieldValue(l, "SO"))
-		if so == "" {
-			continue
-		}
-		if _, ok := result[so]; !ok {
-			result[so] = make(map[string]float64)
-		}
-		for _, field := range []string{
-			"BULTOS", "PALL", "PK", "UNIDADES", "NETO PK", "NETO SO",
-			"TN SO", "CMG", "PPP SO", "RESULTADO",
-		} {
-			if v, ok := parseNumber(fieldValue(l, field)); ok {
-				result[so][field] += v
-			}
-		}
-	}
-	return result
-}
-
-func findAnyValue(l Line, substr string) string {
-	sub := strings.ToLower(strings.TrimSpace(substr))
-	keys := make([]string, 0, len(l.Values))
-	for k := range l.Values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if strings.ToLower(strings.TrimSpace(k)) == sub {
-			return l.Values[k]
-		}
-	}
-	for _, k := range keys {
-		if strings.Contains(strings.ToLower(strings.TrimSpace(k)), sub) {
-			return l.Values[k]
-		}
-	}
-	return ""
 }
