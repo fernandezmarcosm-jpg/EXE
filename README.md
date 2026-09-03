@@ -98,3 +98,5 @@ La automatización `TOMAR EXCEL ABIERTO` y el contrato interno de `GestionSO-V54
 ## Trazabilidad
 
 La separación entre evidencia verificada e inferencia está documentada en [`docs/EVIDENCIA_BINARIO.md`](docs/EVIDENCIA_BINARIO.md), incluyendo las correcciones de compilación, la auditoría del `main`, la discrepancia V54/V57 y la integración de los datos recuperados.
+
+Build trigger: ejecución definitiva del paquete Windows x64.
