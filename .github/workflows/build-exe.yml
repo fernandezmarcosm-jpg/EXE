@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.2'
-      - name: Fix XLSX selector
+      - name: Fix XLSX selector and UI freeze
         shell: pwsh
         run: |
           $p = 'main_windows.go'
@@ -22,6 +22,10 @@ jobs:
           $pattern = 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}'
           $replacement = 'func u16z(s string) []uint16 { parts := strings.Split(s, "\x00"); out := make([]uint16, 0, len(s)+1); for _, part := range parts { out = append(out, syscall.StringToUTF16(part)...); }; return out }'
           $s = [regex]::Replace($s, $pattern, $replacement)
+          $old = 'func openXLSXDialog(owner uintptr) {'
+          $new = 'func openXLSXDialogSync(owner uintptr) {'
+          if (-not $s.Contains($old)) { throw 'openXLSXDialog function not found in main_windows.go' }
+          $s = $s.Replace($old, $new)
           Set-Content $p $s -Encoding UTF8 -NoNewline
       - name: Build EXE
         shell: pwsh
