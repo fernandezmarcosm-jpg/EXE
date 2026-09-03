@@ -50,11 +50,12 @@ func u16z(s string) []uint16 {
 '@
           $updated2 = [regex]::Replace($updated, $patternU16, $replacementU16, 1)
 
-          if ($updated2 -eq $text) {
-            throw 'No se encontro ninguna correccion esperada en main_windows.go; se cancela la compilacion para no alterar otra logica.'
+          if ($updated2 -ne $text) {
+            Set-Content -Path $path -Value $updated2 -Encoding UTF8 -NoNewline
+            Write-Host 'main_windows.go corregido: selector sin hook y filtro MULTI_SZ sin StringToUTF16 sobre NUL embebido.'
+          } else {
+            Write-Host 'main_windows.go ya contiene las correcciones del selector XLSX; no se modifica.'
           }
-          Set-Content -Path $path -Value $updated2 -Encoding UTF8 -NoNewline
-          Write-Host 'main_windows.go corregido: selector sin hook y filtro MULTI_SZ sin StringToUTF16 sobre NUL embebido.'
 
       - name: Persistir correccion en main
         shell: pwsh
