@@ -39,17 +39,17 @@ jobs:
       - name: Package artifact
         shell: pwsh
         run: |
-          @'
-          GestionSO V57 - reconstruccion
-
-          Este ejecutable es una reconstruccion/reimplementacion en Go de GestionSO V57; no es el fuente original.
-          Requiere Windows x64.
-
-          Para el flujo end-to-end puede requerir GestionSO-V54-engine.exe. La ruta se configura mediante la variable de entorno GESTIONSO_V54_ENGINE.
-          El motor V54 no esta incluido en este paquete.
-
-          GestionSO_Datos.csv y los XLSX de datos son datos externos y no se incluyen.
-          ' @ | Set-Content -Encoding UTF8 dist/LEEME.txt
+          Set-Content -Path dist/LEEME.txt -Encoding UTF8 -Value @(
+            'GestionSO V57 - reconstruccion'
+            ''
+            'Este ejecutable es una reconstruccion/reimplementacion en Go de GestionSO V57; no es el fuente original.'
+            'Requiere Windows x64.'
+            ''
+            'Para el flujo end-to-end puede requerir GestionSO-V54-engine.exe. La ruta se configura mediante la variable de entorno GESTIONSO_V54_ENGINE.'
+            'El motor V54 no esta incluido en este paquete.'
+            ''
+            'GestionSO_Datos.csv y los XLSX de datos son datos externos y no se incluyen.'
+          )
           Copy-Item README.md dist/README.md
           New-Item -ItemType Directory -Force dist/docs | Out-Null
           Copy-Item docs/EVIDENCIA_BINARIO.md dist/docs/EVIDENCIA_BINARIO.md
