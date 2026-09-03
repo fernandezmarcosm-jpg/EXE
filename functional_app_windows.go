@@ -45,7 +45,7 @@ const (
 
 type appRect struct { Left, Top, Right, Bottom int32 }
 type appWndClass struct { CbSize uint32; Style uint32; LpfnWndProc uintptr; CbClsExtra, CbWndExtra int32; HInstance, HIcon, HCursor, HbrBackground uintptr; LpszMenuName, LpszClassName *uint16; HIconSm uintptr }
-type appOpenFile struct { LStructSize uint32; _ uint32; HwndOwner uintptr; HInstance uintptr; Filter uintptr; CustomFilter uintptr; MaxCustom uint32; FilterIndex uint32; File uintptr; MaxFile uint32; _ uint32; FileTitle uintptr; MaxFileTitle uint32; _ uint32; InitialDir uintptr; Title uintptr; Flags uint32; FileOffset uint16; FileExtension uint16; DefExt uintptr; CustData uintptr; Hook uintptr; Template uintptr; Reserved uintptr; Reserved2 uint32; FlagsEx uint32 }
+type appOpenFile struct { LStructSize uint32; _ uint32; HwndOwner uintptr; HInstance uintptr; Filter uintptr; CustomFilter uintptr; MaxCustom uint32; FilterIndex uint32; File uintptr; MaxFile uint32; _ uint32; FileTitle uintptr; MaxFileTitle uint32; _ uint32; InitialDir uintptr; Title uintptr; Flags uint32; FileOffset uint16; FileExtension uint16; DefExt uintptr; CustData uintptr; Template uintptr; Reserved uintptr; Reserved2 uint32; FlagsEx uint32 }
 type appRow struct { Values []string }
 
 var (
@@ -56,6 +56,12 @@ var (
     appViewText string
     appSource string
     appLoading bool
+
+    // appImportedWorkbook is the authoritative in-memory copy of the last
+    // imported XLSX. It keeps every worksheet and every parsed cell so later
+    // calculation logic does not need to read the Excel file again.
+    appImportedWorkbook *xlsxDoc
+    appImportedPath string
 )
 
 func appU16(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
@@ -178,9 +184,8 @@ func appPickXLSX(owner uintptr) []string {
     appLog("EVENTO: selector devolvio 1 archivo"); return []string{parts[0]}
 }
 
-// La lectura del XLSX es deliberadamente síncrona después del selector.
-// El lector probado tarda milisegundos y esta estrategia elimina la dependencia
-// de WM_TIMER/PostMessage y de la coordinación entre goroutines para refrescar UI.
+// Importa el libro completo y lo conserva en memoria. La interfaz es una
+// capa posterior: ninguna futura operación debe volver a leer el XLSX.
 func appOpenXLSX(owner uintptr) {
     appStateMu.Lock()
     if appLoading { appStateMu.Unlock(); return }
@@ -198,26 +203,59 @@ func appOpenXLSX(owner uintptr) {
     appRefreshView()
 
     start := time.Now()
-    headers, rows, source, err := loadPreviewXLSX(files[0])
+    workbook, err := ReadXLSX(files[0])
     elapsed := time.Since(start)
     appLog("EVENTO: lectura XLSX finalizada; duración=%s", elapsed)
 
-    appStateMu.Lock()
     if err != nil {
-        appLog("ERROR importando XLSX: %v", err)
+        appStateMu.Lock()
         appStatusText = "ERROR: " + err.Error()
         appViewText = ""
         appSource = ""
-    } else {
-        appStatusText = fmt.Sprintf("%d fila(s) cargadas — %s", len(rows), filepath.Base(source))
-        appViewText = renderPreview(headers, rows)
-        appSource = source
-        appLog("EVENTO: XLSX cargado correctamente; filas=%d columnas=%d", len(rows), len(headers))
+        appStateMu.Unlock()
+        appLog("ERROR importando XLSX: %v", err)
+        appRefreshView()
+        return
     }
+    if len(workbook.Sheets) == 0 {
+        appStateMu.Lock()
+        appStatusText = "ERROR: el Excel no contiene hojas legibles"
+        appViewText = ""
+        appSource = ""
+        appStateMu.Unlock()
+        appLog("ERROR importando XLSX: no hay hojas")
+        appRefreshView()
+        return
+    }
+
+    totalRows, totalCells := 0, 0
+    sheetNames := make([]string, 0, len(workbook.Sheets))
+    for name, rows := range workbook.Sheets {
+        sheetNames = append(sheetNames, name)
+        totalRows += len(rows)
+        for _, row := range rows { totalCells += len(row) }
+    }
+    sort.Strings(sheetNames)
+
+    // Atomic replacement of the in-memory workbook. From this point on the
+    // workbook is the source of truth for all later calculations.
+    appStateMu.Lock()
+    appImportedWorkbook = workbook
+    appImportedPath = files[0]
+    appSource = files[0]
+    appStatusText = fmt.Sprintf("IMPORTADO EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(sheetNames), totalRows, totalCells, filepath.Base(files[0]))
+    // Do not render the whole workbook into a Win32 LISTBOX. Large synchronous
+    // UI updates were the source of the previous freezes. The data is already
+    // safely stored in appImportedWorkbook.
+    appViewText = "Importación completa en memoria. Los datos quedan disponibles para los próximos cálculos.\r\n\r\nHojas: " + strings.Join(sheetNames, " | ")
     appStateMu.Unlock()
+
+    appLog("EVENTO: XLSX completo en memoria; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(files[0]), len(sheetNames), totalRows, totalCells)
     appRefreshView()
 }
 
+// loadPreviewXLSX remains available for tests and future UI work. It reads the
+// first worksheet only; the production import path above stores the whole book.
 func loadPreviewXLSX(path string) ([]string, []appRow, string, error) {
     doc, err := ReadXLSX(path); if err != nil { return nil, nil, "", err }
     if len(doc.Sheets) == 0 { return nil, nil, "", fmt.Errorf("el Excel no contiene hojas legibles") }
@@ -225,8 +263,6 @@ func loadPreviewXLSX(path string) ([]string, []appRow, string, error) {
     rows := doc.Sheets[names[0]]
     if len(rows) == 0 { return nil, nil, "", fmt.Errorf("la hoja %q no contiene filas de datos", names[0]) }
     n := maxPreviewColumns(rows); headers := makeHeaders(rows[0], n)
-    const maxRows = 5000
-    if len(rows)-1 > maxRows { rows = rows[:maxRows+1] }
     out := make([]appRow, 0, len(rows)-1)
     for i := 1; i < len(rows); i++ {
         vals := make([]string, n)
