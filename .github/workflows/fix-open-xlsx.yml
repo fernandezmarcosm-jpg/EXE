@@ -1,3 +1,4 @@
+# One-shot repair for the V57 XLSX common dialog.
 name: Fix XLSX dialog ABI
 
 on:
@@ -19,8 +20,6 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
-
           p = Path('main_windows.go')
           s = p.read_text(encoding='utf-8')
 
@@ -47,7 +46,6 @@ jobs:
           lpTemplateName     uintptr
           }
           '''
-
           new_struct = '''// OPENFILENAMEW must match the Win64 ABI exactly. The Windows structure has
           // pointer-alignment padding after lStructSize, nMaxFile and nMaxFileTitle and
           // also contains reserved/FlagsEx fields at the tail. A shorter Go struct makes
@@ -79,11 +77,10 @@ jobs:
           	lpfnHook          uintptr
           	lpTemplateName    uintptr
           	pvReserved        uintptr
-          	dwReserved        uint32
+          	dwReserved         uint32
           	FlagsEx            uint32
           }
           '''
-
           if old_struct not in s:
               raise SystemExit('OPENFILENAMEW old definition not found; aborting without changes')
           s = s.replace(old_struct, new_struct, 1)
@@ -114,7 +111,6 @@ jobs:
           	return result
           }
           '''
-
           new_parser = '''func parseMultiSelectBuffer(buf []uint16) []string {
           	if len(buf) == 0 || buf[0] == 0 {
           		return nil
@@ -147,7 +143,6 @@ jobs:
           	return result
           }
           '''
-
           if old_parser not in s:
               raise SystemExit('parseMultiSelectBuffer old definition not found; aborting without changes')
           s = s.replace(old_parser, new_parser, 1)
