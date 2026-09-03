@@ -22,40 +22,37 @@ import (
 )
 
 type MasterRow map[string]string
-type MasterData struct {
+type MasterData struct{
 	Headers []string
-	Rows    []MasterRow
-	Path    string
+	Rows []MasterRow
+	Path string
 }
-type Line struct {
-	Values    map[string]string
-	Source    string
+type Line struct{
+	Values map[string]string
+	Source string
 	RowNumber int
 }
-type ColumnDef struct{
-	Name string
-	Width int
-	Hidden bool
-}
-type xlsxDoc struct{SharedStrings []string; Sheets map[string][][]string}
-type configData struct{MasterPath string; EnginePath string; Mode string}
+type ColumnDef struct{Name string;Width int;Hidden bool}
+type xlsxDoc struct{SharedStrings []string;Sheets map[string][][]string}
+type configData struct{MasterPath string;EnginePath string;Mode string}
 
 func panicGuard(fn func()){
-	defer func(){if r:=recover(); r!=nil { logf("panicGuard recovered: %v", r) }}()
+	defer func(){if r:=recover();r!=nil{logf("panicGuard recovered: %v",r)}}()
 	fn()
 }
-
 func logf(format string, args ...interface{}) {
 	p := filepath.Join(os.TempDir(), "GestionSO-V57-debug.log")
 	f, e := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if e != nil { return }
+	if e != nil {
+		return
+	}
 	defer f.Close()
 	fmt.Fprintf(f, format+"\n", args...)
 }
 
 func initLog() { logf("initLog: GestionSO V57 reconstruccion") }
-func defaultConfig() configData { return configData{Mode: "MODO: FACTURAS"} }
 
+func defaultConfig() configData { return configData{Mode: "MODO: FACTURAS"} }
 func LoadConfig() configData {
 	c := defaultConfig()
 	p := filepath.Join(os.TempDir(), "GestionSO-config.txt")
@@ -75,14 +72,13 @@ func LoadConfig() configData {
 	}
 	return c
 }
-
 func SaveConfig(c configData) error { return saveCfg(filepath.Join(os.TempDir(), "GestionSO-config.txt"), c) }
 func saveCfg(path string, c configData) error {
 	return os.WriteFile(path, []byte(fmt.Sprintf("MasterPath=%s\nEnginePath=%s\nMode=%s\n", c.MasterPath, c.EnginePath, c.Mode)), 0644)
 }
 
-func ReadXLSX(path string) (*xlsxDoc, error) { return readXLSXDoc(path) }
-func readXLSXDoc(path string) (*xlsxDoc, error) {
+func ReadXLSX(path string)(*xlsxDoc,error){return readXLSXDoc(path)}
+func readXLSXDoc(path string)(*xlsxDoc,error){
 	z, e := zip.OpenReader(path)
 	if e != nil { return nil, e }
 	defer z.Close()
@@ -100,8 +96,7 @@ func readXLSXDoc(path string) (*xlsxDoc, error) {
 	}
 	return d, nil
 }
-
-func readZipEntry(z *zip.ReadCloser, name string) ([]byte, error) {
+func readZipEntry(z *zip.ReadCloser, name string)([]byte,error){
 	for _, f := range z.File {
 		if f.Name == name {
 			r, e := f.Open()
@@ -113,12 +108,7 @@ func readZipEntry(z *zip.ReadCloser, name string) ([]byte, error) {
 	return nil, os.ErrNotExist
 }
 
-type sharedXML struct{
-	SI []struct{
-		T string `xml:"t"`
-		R []struct{ T string `xml:"t"` } `xml:"r"`
-	} `xml:"si"`
-}
+type sharedXML struct{SI []struct{T string `xml:"t"`;R []struct{T string `xml:"t"`} `xml:"r"`} `xml:"si"`}
 
 func parseSharedStrings(b []byte) []string {
 	var x sharedXML
@@ -134,16 +124,8 @@ func parseSharedStrings(b []byte) []string {
 	return o
 }
 
-type sheetXML struct{
-	Rows []struct{
-		Cells []struct{
-			Ref string `xml:"r,attr"`
-			Type string `xml:"t,attr"`
-			Value string `xml:"v"`
-			Inline struct{ T string `xml:"t"` } `xml:"is"`
-		} `xml:"c"`
-	} `xml:"row"`
-}
+
+type sheetXML struct{Rows []struct{Cells []struct{Ref string `xml:"r,attr"`;Type string `xml:"t,attr"`;Value string `xml:"v"`;Inline struct{T string `xml:"t"`} `xml:"is"`} `xml:"c"`} `xml:"row"`}
 
 func decodeSheet(b []byte, ss []string) [][]string {
 	var x sheetXML
@@ -384,7 +366,7 @@ func BuildFilteredSortedViewByHeaders(lines []Line, filters map[string]string) [
 	o := make([]Line, 0, len(lines))
 	for _, l := range lines {
 		ok := true
-		for _, value := range filters {
+		for field, value := range filters {
 			value = strings.TrimSpace(value)
 			if value == "" { continue }
 			if !FilterValue(l, value) { ok = false; break }
@@ -490,42 +472,4 @@ func simPopulate(_ []Line) {}
 func handleSimNotify(_ uintptr, _ uintptr, _ uintptr) uintptr { return 0 }
 func CalcSimFromMaster(_ *MasterData) float64 { return 0 }
 func masterScore(_ MasterRow) int { return 0 }
-func insertAfter(s []string, after string, value string) []string { for i, v := range s { if v == after { return append(append(append([]string{}, s[:i+1]...), value), s[i+1:]...) } }; return append(s, value) }
-
-// INFERENCIA:
-// BuildStatusBar es una implementación conservadora que resume el estado
-// a partir de los datos cargados. Los conteos (RETENIDAS/LIBERADAS), SOs y
-// líneas se derivan de Line.Values y pueden diferir de las fórmulas internas del V54.
-func BuildStatusBar(mode string, lines []Line, filterCount int, detail string) string {
-	retenidas := 0
-	liberadas := 0
-	totalLineas := len(lines)
-	soSet := map[string]struct{}{}
-
-	for _, l := range lines {
-		// Intentamos leer el campo estado (aliases comunes)
-		estado := ""
-		if v, ok := l.Values["Estado"]; ok { estado = strings.ToLower(strings.TrimSpace(v)) }
-		if estado == "" {
-			if v, ok := l.Values["estado"]; ok { estado = strings.ToLower(strings.TrimSpace(v)) }
-		}
-		// heurística simple
-		if strings.Contains(estado, "reten") || strings.Contains(estado, "retenida") {
-			retenidas++
-		} else if strings.Contains(estado, "liber") || strings.Contains(estado, "liberada") {
-			liberadas++
-		}
-		// Contar SO (alias)
-		so := ""
-		if v, ok := l.Values["SO"]; ok { so = strings.TrimSpace(v) }
-		if so == "" {
-			if v, ok := l.Values["so"]; ok { so = strings.TrimSpace(v) }
-		}
-		if so != "" { soSet[so] = struct{}{} }
-	}
-
-	totalSO := len(soSet)
-	if mode == "" { mode = "MODO: --" }
-	return fmt.Sprintf("%s | RETENIDAS %d | LIBERADAS %d | SO %d | LINEAS %d | %d filtros | %s",
-		mode, retenidas, liberadas, totalSO, totalLineas, filterCount, detail)
-}
+func insertAfter(s []string, after string, value string) []string { for i, v := range s { if v == after { return append(append(append([]string{}, s[:i+1]...), value), s[i+1:]...) } }; return appe
