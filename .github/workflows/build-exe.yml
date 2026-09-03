@@ -1,4 +1,4 @@
-name: Build GestionSO V57
+name: Build GestionSO V57 Functional
 
 on:
   push:
@@ -32,15 +32,14 @@ jobs:
           Set-Content dist/LEEME.txt @'
 GestionSO V57 - reconstruccion funcional
 
-1. Ejecute GestionSO-V57.exe.
-2. ABRIR EXCEL permite seleccionar uno o varios archivos XLSX.
-3. El programa procesa el XLSX en segundo plano y cruza los SKU con datos/GestionSO_Datos.csv.
-4. La grilla muestra campos calculados y campos originales disponibles.
-5. FILTRO acepta expresiones como SKU=PRE;Estado=RETENIDA;Cliente=EXXA.
-6. COLUMNAS... permite elegir las columnas visibles.
-7. EXPORTAR CSV genera GestionSO-V57-resultado.csv en la carpeta temporal de Windows.
-
-archivo exportado.csv se incluye solamente como ejemplo de estructura/salida y no es necesario para ejecutar el programa.
+ABRIR EXCEL: selecciona uno o varios XLSX.
+El procesamiento ocurre fuera del hilo de la interfaz.
+Los SKU se cruzan con datos/GestionSO_Datos.csv.
+La grilla muestra columnas calculadas y columnas originales.
+Filtro: use expresiones Columna=valor separadas por punto y coma.
+COLUMNAS... permite elegir las columnas visibles.
+EXPORTAR CSV guarda el resultado en la carpeta temporal de Windows.
+archivo exportado.csv es solo un ejemplo de estructura y no es necesario para ejecutar.
 '@
       - name: Package ZIP
         shell: pwsh
