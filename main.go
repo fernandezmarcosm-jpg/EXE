@@ -13,7 +13,6 @@ var (
     kernel32 = syscall.NewLazyDLL("kernel32.dll")
     comctl32 = syscall.NewLazyDLL("comctl32.dll")
     comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
-    gdi32    = syscall.NewLazyDLL("gdi32.dll")
     hInstance uintptr
 )
 
@@ -26,7 +25,6 @@ type winMSG struct {
     Pt winPOINT
 }
 
-// Punto de entrada único de la reconstrucción Win32.
 func main() {
     appLogInit()
     defer appRecover("main")
@@ -46,9 +44,6 @@ func main() {
         return
     }
 
-    // Heartbeat independiente del hilo de UI. Si el log continúa avanzando
-    // mientras la interfaz queda congelada, sabremos que el proceso vive y
-    // que el bloqueo está dentro del hilo de mensajes/Win32.
     go func() {
         ticker := time.NewTicker(2 * time.Second)
         defer ticker.Stop()
@@ -87,17 +82,8 @@ func main() {
 
 func shouldLogMessage(msg uint32) bool {
     switch msg {
-    case 0x0001, // WM_CREATE
-        0x0002, // WM_DESTROY
-        0x0005, // WM_SIZE
-        0x000F, // WM_PAINT
-        0x0010, // WM_CLOSE
-        0x0111, // WM_COMMAND
-        0x0100, // WM_KEYDOWN
-        0x0101, // WM_KEYUP
-        0x0201, // WM_LBUTTONDOWN
-        0x0202, // WM_LBUTTONUP
-        0x8001: // WM_APP_REFRESH
+    case 0x0001, 0x0002, 0x0005, 0x000F, 0x0010, 0x0111,
+        0x0100, 0x0101, 0x0201, 0x0202, 0x8001:
         return true
     default:
         return false
