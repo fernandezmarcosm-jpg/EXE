@@ -109,6 +109,7 @@ func u16z(s string) []uint16 {
           Copy-Item docs/EVIDENCIA_BINARIO.md dist/docs/EVIDENCIA_BINARIO.md
           Compress-Archive -Path dist/GestionSO-V57.exe,dist/LEEME.txt,dist/README.md,dist/docs/EVIDENCIA_BINARIO.md,dist/datos/* -DestinationPath dist/GestionSO-V57.zip -Force
 
+      # Build artifact intentionally remains the single downloadable ZIP.
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
