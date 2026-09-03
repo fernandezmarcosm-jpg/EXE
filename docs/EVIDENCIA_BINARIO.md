@@ -64,35 +64,60 @@ Estas correcciones son **hechos verificados en el árbol fuente y/o en los logs 
 - `main_windows.go`: `wndProc` usa argumentos `uintptr`, compatibles con `syscall.NewCallback`.
 - `main_windows.go`: `DefWindowProcW` captura `r, _, _` y devuelve únicamente `r`.
 - `main_windows.go`: se eliminó la duplicación de constantes e IDs que hacía colisionar controles de la toolbar con IDs de la segunda versión de `main_windows.go`.
-- `main_windows.go`: se dejó una única implementación coherente de la UI Win32. En particular, los controles se crean desde `WM_CREATE`; `crearVentana()` ya no crea una segunda copia de los controles después de `CreateWindowExW`.
-- `main_windows.go`: se almacenan handles de etiquetas y campos de filtro para que `WM_SIZE` reposicione ambos elementos, no solo los `EDIT`.
-- `main_windows.go`: `FILTRAR` conserva el resultado filtrado; la ruta anterior reconstruía la vista con filtros `nil` inmediatamente después de aplicar los filtros.
-- `main_windows.go`: `refreshGrid` ahora escribe todas las celdas de las doce columnas, no solamente `SKU`.
+- `main_windows.go`: se dejó una única implementación coherente de la UI Win32. Los controles se crean desde `WM_CREATE`; `crearVentana()` no crea una segunda copia después de `CreateWindowExW`.
+- `main_windows.go`: se almacenan handles de etiquetas y campos de filtro para que `WM_SIZE` reposicione ambos elementos.
+- `main_windows.go`: `FILTRAR` conserva el resultado filtrado; `LIMPIAR` restaura explícitamente `currentView` desde `mainLines`.
+- `main_windows.go`: `refreshGrid` escribe todas las celdas de las doce columnas y agrega filas informativas de subtotal por SO.
 - `main_windows.go`: `feedEngineFile` quedó definido una sola vez y respaldado por el símbolo real; su contrato interno queda pendiente por falta del motor V54.
 - `go.mod`: se eliminó `github.com/xuri/excelize/v2 v2.8.1`, que no es utilizado por el código reconstruido.
-- `.github/workflows/build-exe.yml`: el log real mostró que `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 ...` no puede escribirse como asignación POSIX dentro de PowerShell. Se corrigió definiendo esas variables a nivel de `job`; el comando de build quedó como `go build -ldflags "-H=windowsgui" ...`.
-- Repositorio: se eliminó el `GestionSO-V57.zip` que había quedado accidentalmente versionado. `.gitignore` mantiene la exclusión de `*.exe` y `*.zip`.
+- `.github/workflows/build-exe.yml`: se corrigió el build para PowerShell/Windows y se configuró la generación de un ZIP con el ejecutable y documentación como artifact; el binario no se versiona.
 
-## Auditoría adicional de main
+## Auditoría adicional de la revisión `main` recibida el 2026-09-03
 
-**Hechos verificados en la versión previa del árbol:**
+### Hechos verificados en el código revisado
 
-1. Había dos bloques de constantes con IDs repetidos (`ID_TOMAR_EXCEL`, `ID_SIMULADOR`, `ID_GRID`, etc.), lo que producía redeclaraciones y además provocaba colisiones de comandos.
-2. `WM_CREATE` llamaba `crearControles` y `crearVentana` volvía a llamar `crearControles`, generando una doble inicialización de controles.
-3. `applyHeaderFilters` calculaba una vista filtrada y luego `updateMainView` podía reemplazarla con una vista sin filtros.
-4. `refreshGrid` insertaba únicamente el primer campo de cada línea; las otras once columnas no quedaban pobladas.
-5. Las etiquetas de los filtros no tenían handles persistentes y no se reposicionaban en `WM_SIZE`.
-6. La carga de configuración ocurría después de `CreateWindowExW`; como `WM_CREATE` se ejecuta durante esa llamada, el combo podía inicializarse con un modo distinto del persistido.
+1. El ZIP recibido contiene una única `main_windows.go`; no se detectaron dos versiones del archivo dentro del árbol entregado.
+2. La revisión auditada compila con `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` y pasa `go vet ./...`.
+3. `main.go` carga `mainConfig` antes de crear la ventana.
+4. `main_windows.go` concentra los IDs de controles en un único bloque y usa `crearVentana()`.
+5. `LIMPIAR` restablece `currentView` a `mainLines`.
+6. `BuildFilteredSortedViewByHeaders` aplica los filtros al campo indicado, no a cualquier columna.
+7. La vista filtrada se ordena de forma estable por `SO`, con fallback a `factura` y `cliente`.
+8. El parser XLSX respeta referencias de celda (`A1`, `C1`, etc.) y conserva columnas omitidas.
+9. Las cadenas `inlineStr` con varios `<t>` se concatenan.
+10. `mergeXLSX` selecciona la primera hoja por nombre ordenado para evitar resultados dependientes del orden de un `map`.
+11. `parseNumber` admite formatos con coma y punto, incluyendo `1.234,56` y `1,234.56`.
+12. La grilla genera una fila `SUBTOTAL SO <id>` después de cada grupo de SO.
 
-**Soluciones aplicadas:** se consolidaron IDs, se centralizó la creación de controles en `WM_CREATE`, se preservó la vista filtrada, se poblaron todas las celdas de la grilla, se guardaron los handles de etiquetas y se cargó la configuración antes de crear la ventana.
+### Inferencias controladas
 
-**Inferencia controlada:** ninguna de estas correcciones pretende afirmar que el fuente original tenía exactamente este código. Son correcciones de consistencia de la reconstrucción para que su comportamiento observable sea coherente con la evidencia disponible.
+- La fórmula exacta de subtotales no se recupera del binario. La reconstrucción suma los campos numéricos disponibles.
+- El texto complementario de la fila subtotal (`RET`, estado, código y cliente) se deriva de las líneas del grupo; no se afirma equivalencia exacta.
+- El modo seleccionado se persiste y actualiza el título, pero no se aplica una regla de filtrado comercial específica a cada modo porque esa condición no está demostrada.
+- `TOMAR EXCEL ABIERTO` continúa como stub porque no está recuperado su contrato COM completo.
+- `findDialogUnder` no devuelve una ventana arbitraria; queda pendiente porque su relación exacta con el diálogo V54 no está demostrada.
+- El ajuste de anchos de toolbar y layout es aproximado y no pretende ser una reconstrucción pixel-perfect.
+
+## Pruebas agregadas
+
+`core_test.go` cubre:
+
+- números con separadores regionales;
+- preservación de columnas dispersas en XLSX;
+- aplicación de filtros sobre la cabecera indicada.
+
+Estas pruebas validan la reconstrucción implementada; no constituyen una prueba de equivalencia con el binario original.
 
 ## Validación reproducible
 
-El run de GitHub Actions disparado por el commit de auditoría `72a41b033f20aa877410af3d4ee6edefb6ba6589` terminó **SUCCESS**. El job `validar` terminó correctamente en los pasos `Build integrado` y `go vet`. Run: `33762560468`.
+En el entorno de trabajo de esta auditoría se ejecutó:
 
-La reconstrucción local de referencia también fue comprobada con `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui"` y `go vet ./...`, antes de publicar la revisión equivalente.
+- `go test ./...` → **PASS**.
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` → **PASS**.
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./...` → **PASS**.
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o GestionSO-V57.exe ./...` → **PASS**; PE32+ Windows x64 GUI generado para verificación local.
+
+El ejecutable local de verificación **no se incorpora al repositorio**.
 
 ## Persistencia y XLSX
 
