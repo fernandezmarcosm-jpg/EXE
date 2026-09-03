@@ -18,8 +18,6 @@ func appWndProcLogged(hwnd uintptr, msg uint32, wp, lp uintptr) (ret uintptr) {
             ret = 0
             return
         }
-        // Registrar sólo mensajes relevantes y callbacks anormalmente lentos.
-        // Esto permite distinguir un crash de un bloqueo dentro de Win32.
         if msg == WM_COMMAND || msg == WM_CLOSE || msg == WM_DESTROY || elapsed > 500*time.Millisecond {
             appLog("WNDPROC salida msg=0x%X hwnd=0x%X wp=0x%X lp=0x%X duración=%s ret=0x%X", msg, hwnd, wp, lp, elapsed, ret)
         }
@@ -28,16 +26,30 @@ func appWndProcLogged(hwnd uintptr, msg uint32, wp, lp uintptr) (ret uintptr) {
     if msg == WM_COMMAND {
         appLog("WM_COMMAND entrada hwnd=0x%X id=%d code=%d", hwnd, int(wp&0xffff), uint32((wp>>16)&0xffff))
     }
-    if msg == 0x000F { // WM_PAINT
+    if msg == 0x000F {
         appLog("WM_PAINT entrada hwnd=0x%X", hwnd)
     }
-    if msg == 0x0100 || msg == 0x0101 { // WM_KEYDOWN / WM_KEYUP
+    if msg == 0x0100 || msg == 0x0101 {
         appLog("TECLADO msg=0x%X hwnd=0x%X vk=0x%X", msg, hwnd, wp&0xff)
     }
-    if msg == 0x0201 || msg == 0x0202 { // WM_LBUTTONDOWN / UP
+    if msg == 0x0201 || msg == 0x0202 {
         appLog("RATON msg=0x%X hwnd=0x%X", msg, hwnd)
     }
-    return appWndProc(hwnd, msg, wp, lp)
+
+    ret = appWndProc(hwnd, msg, wp, lp)
+
+    // Se agregan los controles de columnas sin tocar el flujo estable de
+    // apertura/lectura del XLSX. El mismo objeto en memoria se vuelve a pintar.
+    if msg == WM_CREATE {
+        columnViewCreate(hwnd)
+    } else if msg == WM_SIZE {
+        columnViewLayout(hwnd)
+    } else if msg == WM_COMMAND && columnViewHandlesCommand(wp) {
+        columnViewRefresh()
+    } else if msg == WM_APP_IMPORT_DONE {
+        columnViewRefresh()
+    }
+    return ret
 }
 
 func appLogRuntimeEvent(name string) { appLog("EVENTO: %s", name) }
