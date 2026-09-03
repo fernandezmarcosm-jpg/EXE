@@ -7,11 +7,11 @@ import (
 )
 
 // El CSV del repositorio es el modelo de datos de GestionSO. Se embebe en el
-// ejecutable para que el ZIP no dependa de que el usuario copie archivos extra.
+// ejecutable para que el EXE no dependa de que el usuario copie archivos extra.
 // En ejecucion se materializa solo como cache temporal para reutilizar el
 // cargador MasterData existente.
 //
-//go:embed acceso chatgpt/GestionSO_Datos.csv
+//go:embed "acceso chatgpt/GestionSO_Datos.csv"
 var gestionSOModelCSV []byte
 
 func init() {
