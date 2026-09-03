@@ -16,10 +16,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23.2'
+      - name: Go version
+        shell: pwsh
+        run: go version
 
       - name: Test
         shell: pwsh
