@@ -6,6 +6,7 @@ import (
     "fmt"
     "path/filepath"
     "strings"
+    "sync"
     "syscall"
     "time"
     "unsafe"
@@ -21,21 +22,22 @@ const (
     WM_CLOSE   = 0x0010
     WM_DESTROY = 0x0002
     WM_COMMAND = 0x0111
+    WM_APP_IMPORT_DONE = 0x8001
 
     WS_OVERLAPPEDWINDOW = 0x00CF0000
     WS_VISIBLE          = 0x10000000
     WS_CHILD            = 0x40000000
     WS_TABSTOP          = 0x00010000
-    WS_BORDER            = 0x00800000
-    WS_VSCROLL           = 0x00200000
+    WS_BORDER           = 0x00800000
+    WS_VSCROLL          = 0x00200000
     WS_HSCROLL           = 0x00100000
 
     BS_PUSHBUTTON = 0
 
-    ES_MULTILINE    = 0x0004
-    ES_AUTOVSCROLL  = 0x0040
-    ES_AUTOHSCROLL  = 0x0080
-    ES_READONLY     = 0x0800
+    ES_MULTILINE   = 0x0004
+    ES_AUTOVSCROLL = 0x0040
+    ES_AUTOHSCROLL = 0x0080
+    ES_READONLY    = 0x0800
 
     ofnExplorer      = 0x00080000
     ofnPathMustExist = 0x00000800
@@ -55,7 +57,6 @@ type appWndClass struct {
     HIconSm uintptr
 }
 
-// Keep the Win64 OPENFILENAMEW layout used by windows_compat.go.
 type appOpenFile struct {
     LStructSize uint32
     _ uint32
@@ -86,15 +87,21 @@ type appOpenFile struct {
 }
 
 var (
-    appHwnd      uintptr
+    appHwnd uintptr
     appHInstance uintptr
-    appStatus    uintptr
-    appView      uintptr
+    appStatus uintptr
+    appView uintptr
 
-    // The complete imported workbook is kept by the process. No second read,
-    // temporary conversion or disk persistence is required for this stage.
+    // Unico almacenamiento del XLSX ya interpretado.
     appImportedWorkbook *xlsxDoc
     appImportedPath string
+
+    // Resultado del lector en segundo plano. La interfaz lo recoge mediante
+    // WM_APP_IMPORT_DONE, evitando bloquear el hilo de mensajes.
+    appImportMu sync.Mutex
+    appPendingWorkbook *xlsxDoc
+    appPendingPath string
+    appPendingErr error
 )
 
 func appU16(s string) *uint16 {
@@ -106,6 +113,13 @@ func appSetText(hwnd uintptr, text string) {
     if hwnd == 0 { return }
     p := appU16(text)
     user32.NewProc("SetWindowTextW").Call(hwnd, uintptr(unsafe.Pointer(p)))
+}
+
+func appSetEnabled(hwnd uintptr, enabled bool) {
+    if hwnd == 0 { return }
+    var v uintptr
+    if enabled { v = 1 }
+    user32.NewProc("EnableWindow").Call(hwnd, v)
 }
 
 func appMake(parent uintptr, className, text string, style uint32, x, y, w, h int, id uintptr) uintptr {
@@ -156,11 +170,14 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
         return 0
 
     case WM_COMMAND:
-        id := int(wp & 0xffff)
-        if id == appIDOpen {
+        if int(wp&0xffff) == appIDOpen {
             appOpenXLSX(hwnd)
             return 0
         }
+        return 0
+
+    case WM_APP_IMPORT_DONE:
+        appFinishImport(hwnd)
         return 0
 
     case WM_CLOSE:
@@ -181,16 +198,8 @@ func appBuildControls(hwnd uintptr) {
     appMake(hwnd, "BUTTON", "ABRIR EXCEL", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 10, 10, 130, 32, appIDOpen)
     appStatus = appMake(hwnd, "STATIC", "Seleccione un archivo XLSX.", WS_CHILD|WS_VISIBLE, 155, 15, 1000, 24, appIDStatus)
     appView = appMake(hwnd, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, 55, 1160, 630, appIDView)
-
-    // CreateFontW belongs to GDI32, not USER32. Loading it from USER32
-    // caused the WM_CREATE panic before the Excel importer could be used.
-    font, _, _ := gdi32.NewProc("CreateFontW").Call(
-        18, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0,
-        uintptr(unsafe.Pointer(appU16("Consolas"))),
-    )
-    if font != 0 {
-        user32.NewProc("SendMessageW").Call(appView, 0x0030, font, 1) // WM_SETFONT
-    }
+    // Sin fuentes personalizadas ni llamadas GDI. La interfaz utiliza la
+    // fuente estándar de Windows para mantener WM_CREATE lo más simple posible.
 }
 
 func appLayout(hwnd uintptr) {
@@ -251,18 +260,59 @@ func appOpenXLSX(owner uintptr) {
     path := appPickXLSX(owner)
     if path == "" { return }
 
+    appSetEnabled(findChildByID(owner, "BUTTON", appIDOpen), false)
     appSetText(appStatus, "Leyendo Excel...")
-    start := time.Now()
-    workbook, err := ReadXLSX(path)
-    elapsed := time.Since(start)
-    appLog("EVENTO: lectura XLSX finalizada; duración=%s", elapsed)
+    appSetText(appView, "Leyendo archivo XLSX...\r\nLa interfaz no se bloquea durante la lectura.")
+    appLog("EVENTO: iniciar lectura XLSX en segundo plano; archivo=%s", filepath.Base(path))
+
+    go func() {
+        start := time.Now()
+        workbook, err := ReadXLSX(path)
+        elapsed := time.Since(start)
+
+        appImportMu.Lock()
+        appPendingWorkbook = workbook
+        appPendingPath = path
+        appPendingErr = err
+        appImportMu.Unlock()
+
+        appLog("EVENTO: lectura XLSX finalizada; duración=%s", elapsed)
+        if err != nil {
+            appLog("ERROR importando XLSX: %v", err)
+        } else {
+            rows, cells := workbookSize(workbook)
+            appLog("EVENTO: XLSX preparado; hojas=%d filas=%d celdas=%d", len(workbook.Sheets), rows, cells)
+        }
+        user32.NewProc("PostMessageW").Call(owner, WM_APP_IMPORT_DONE, 0, 0)
+    }()
+}
+
+func findChildByID(parent uintptr, className string, id uintptr) uintptr {
+    cls := appU16(className)
+    child, _, _ := user32.NewProc("FindWindowExW").Call(parent, 0, uintptr(unsafe.Pointer(cls)), 0)
+    for child != 0 {
+        got, _, _ := user32.NewProc("GetDlgCtrlID").Call(child)
+        if got == id { return child }
+        child, _, _ = user32.NewProc("FindWindowExW").Call(parent, child, uintptr(unsafe.Pointer(cls)), 0)
+    }
+    return 0
+}
+
+func appFinishImport(hwnd uintptr) {
+    appImportMu.Lock()
+    workbook := appPendingWorkbook
+    path := appPendingPath
+    err := appPendingErr
+    appPendingWorkbook = nil
+    appPendingPath = ""
+    appPendingErr = nil
+    appImportMu.Unlock()
+
+    appSetEnabled(findChildByID(hwnd, "BUTTON", appIDOpen), true)
 
     if err != nil {
-        appImportedWorkbook = nil
-        appImportedPath = ""
-        appSetText(appStatus, "ERROR: "+err.Error())
+        appSetText(appStatus, "ERROR al leer XLSX")
         appSetText(appView, "No se pudo leer el archivo XLSX.\r\n\r\n"+err.Error())
-        appLog("ERROR importando XLSX: %v", err)
         return
     }
 
@@ -270,13 +320,10 @@ func appOpenXLSX(owner uintptr) {
     appImportedWorkbook = workbook
     appImportedPath = path
 
-    // From this point on, the XLSX file is not needed. The complete parsed
-    // workbook remains reachable from appImportedWorkbook in process memory.
     status := fmt.Sprintf("EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(workbook.Sheets), rows, cells, filepath.Base(path))
     appSetText(appStatus, status)
     appSetText(appView, renderWorkbookPreview(workbook))
-
-    appLog("EVENTO: XLSX almacenado en memoria; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(path), len(workbook.Sheets), rows, cells)
+    appLog("EVENTO: XLSX almacenado en memoria y visualizado; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(path), len(workbook.Sheets), rows, cells)
 }
 
 func workbookSize(doc *xlsxDoc) (rows, cells int) {
@@ -291,9 +338,8 @@ func workbookSize(doc *xlsxDoc) (rows, cells int) {
 func renderWorkbookPreview(doc *xlsxDoc) string {
     if doc == nil || len(doc.Sheets) == 0 { return "Excel vacío o sin hojas legibles." }
 
-    const maxRows = 60
-    const maxCols = 25
-
+    const maxRows = 40
+    const maxCols = 20
     names := make([]string, 0, len(doc.Sheets))
     for name := range doc.Sheets { names = append(names, name) }
     first := names[0]
