@@ -2,8 +2,7 @@ name: Build GestionSO V57
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -14,32 +13,38 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.2'
-      - name: Fix XLSX selector and UI freeze
+      - name: Test core
         shell: pwsh
-        run: |
-          $p = 'main_windows.go'
-          $s = Get-Content $p -Raw -Encoding UTF8
-          $pattern = 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}'
-          $replacement = 'func u16z(s string) []uint16 { parts := strings.Split(s, "\x00"); out := make([]uint16, 0, len(s)+1); for _, part := range parts { out = append(out, syscall.StringToUTF16(part)...); }; return out }'
-          $s = [regex]::Replace($s, $pattern, $replacement)
-          $old = 'func openXLSXDialog(owner uintptr) {'
-          $new = 'func openXLSXDialogSync(owner uintptr) {'
-          if (-not $s.Contains($old)) { throw 'openXLSXDialog function not found in main_windows.go' }
-          $s = $s.Replace($old, $new)
-          Set-Content $p $s -Encoding UTF8 -NoNewline
-      - name: Build EXE
+        run: go test ./...
+      - name: Build Windows EXE
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          go build -ldflags '-H=windowsgui' -o dist/GestionSO-V57.exe .
-      - name: Package ZIP
+          go build -trimpath -ldflags '-H=windowsgui' -o dist/GestionSO-V57.exe .
+          if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'EXE no generado' }
+      - name: Package runtime data
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/datos | Out-Null
           Copy-Item 'acceso chatgpt/GestionSO_Datos.csv' 'dist/datos/GestionSO_Datos.csv'
-          Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
           Copy-Item 'acceso chatgpt/Archivo a importar.xlsx' 'dist/datos/Archivo a importar.xlsx'
-          Compress-Archive -Path dist/GestionSO-V57.exe,dist/datos/* -DestinationPath dist/GestionSO-V57.zip -Force
+          Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
+          Set-Content dist/LEEME.txt @'
+GestionSO V57 - reconstruccion funcional
+
+1. Ejecute GestionSO-V57.exe.
+2. ABRIR EXCEL permite seleccionar uno o varios archivos XLSX.
+3. El programa procesa el XLSX en segundo plano y cruza los SKU con datos/GestionSO_Datos.csv.
+4. La grilla muestra campos calculados y campos originales disponibles.
+5. FILTRO acepta expresiones como SKU=PRE;Estado=RETENIDA;Cliente=EXXA.
+6. COLUMNAS... permite elegir las columnas visibles.
+7. EXPORTAR CSV genera GestionSO-V57-resultado.csv en la carpeta temporal de Windows.
+
+archivo exportado.csv se incluye solamente como ejemplo de estructura/salida y no es necesario para ejecutar el programa.
+'@
+      - name: Package ZIP
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath dist/GestionSO-V57.zip -Force
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
