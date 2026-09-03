@@ -484,3 +484,63 @@ func insertAfter(s []string, after string, value string) []string {
 	}
 	return append(s, value)
 }
+
+// ========== FUNCIONES AGREGADAS PARA COMPILAR ==========
+
+// BuildStatusBar construye la cadena de la barra de estado
+func BuildStatusBar(mode string, lines []Line, filterCount int, extra string) string {
+	total := len(lines)
+	var retenidas, liberadas int
+	soSet := make(map[string]bool)
+	for _, l := range lines {
+		estado := fieldValue(l, "Estado")
+		if estado == "RETENIDA" || estado == "RETENIDAS" {
+			retenidas++
+		} else if estado == "LIBERADA" || estado == "LIBERADAS" {
+			liberadas++
+		}
+		if so := fieldValue(l, "SO"); so != "" {
+			soSet[so] = true
+		}
+	}
+	mode = strings.TrimPrefix(mode, "MODO: ")
+	if mode == "" { mode = "SO RETENIDAS" }
+	return fmt.Sprintf("MODO: %s | RETENIDAS %d | LIBERADAS %d | SO %d | LINEAS %d | %d filtros | %s | CSV",
+		mode, retenidas, liberadas, len(soSet), total, filterCount, extra)
+}
+
+// CalculateSOSubtotals calcula subtotales por SO (para mostrar en grid)
+func CalculateSOSubtotals(lines []Line) map[string]map[string]float64 {
+	result := make(map[string]map[string]float64)
+	for _, l := range lines {
+		so := fieldValue(l, "SO")
+		if so == "" { continue }
+		if _, ok := result[so]; !ok {
+			result[so] = make(map[string]float64)
+		}
+		if v, ok := parseNumber(fieldValue(l, "NETO SO")); ok {
+			result[so]["NETO SO"] += v
+		}
+		if v, ok := parseNumber(fieldValue(l, "UNIDADES")); ok {
+			result[so]["UNIDADES"] += v
+		}
+		if v, ok := parseNumber(fieldValue(l, "PK")); ok {
+			result[so]["PK"] += v
+		}
+		if v, ok := parseNumber(fieldValue(l, "TN SO")); ok {
+			result[so]["TN SO"] += v
+		}
+	}
+	return result
+}
+
+// findAnyValue busca en todas las keys de la línea por coincidencia parcial
+func findAnyValue(l Line, substr string) string {
+	sub := strings.ToLower(substr)
+	for k, v := range l.Values {
+		if strings.Contains(strings.ToLower(k), sub) {
+			return v
+		}
+	}
+	return ""
+}
