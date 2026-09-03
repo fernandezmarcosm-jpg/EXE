@@ -45,7 +45,7 @@ const (
 
 type appRect struct { Left, Top, Right, Bottom int32 }
 type appWndClass struct { CbSize uint32; Style uint32; LpfnWndProc uintptr; CbClsExtra, CbWndExtra int32; HInstance, HIcon, HCursor, HbrBackground uintptr; LpszMenuName, LpszClassName *uint16; HIconSm uintptr }
-type appOpenFile struct { LStructSize uint32; _ uint32; HwndOwner uintptr; HInstance uintptr; Filter uintptr; CustomFilter uintptr; MaxCustom uint32; FilterIndex uint32; File uintptr; MaxFile uint32; _ uint32; FileTitle uintptr; MaxFileTitle uint32; _ uint32; InitialDir uintptr; Title uintptr; Flags uint32; FileOffset uint16; FileExtension uint16; DefExt uintptr; CustData uintptr; Template uintptr; Reserved uintptr; Reserved2 uint32; FlagsEx uint32 }
+type appOpenFile struct { LStructSize uint32; _ uint32; HwndOwner uintptr; HInstance uintptr; Filter uintptr; CustomFilter uintptr; MaxCustom uint32; FilterIndex uint32; File uintptr; MaxFile uint32; _ uint32; FileTitle uintptr; MaxFileTitle uint32; _ uint32; InitialDir uintptr; Title uintptr; Flags uint32; FileOffset uint16; FileExtension uint16; DefExt uintptr; CustData uintptr; Hook uintptr; Template uintptr; Reserved uintptr; Reserved2 uint32; FlagsEx uint32 }
 type appRow struct { Values []string }
 
 var (
@@ -89,6 +89,8 @@ func appSetListBox(h uintptr, s string) {
     }
     if maxExtent > 0 { send.Call(h, LB_SETHORIZONTALEXTENT, uintptr(maxExtent*8), 0) }
     if len(lines) > 1 { send.Call(h, LB_SETCURSEL, 0, 0) }
+    user32.NewProc("InvalidateRect").Call(h, 0, 1)
+    user32.NewProc("UpdateWindow").Call(h)
     if d := time.Since(start); d > 500*time.Millisecond { appLog("DIAGNOSTICO: actualización LISTBOX tardó %s; líneas=%d caracteres=%d", d, len(lines), len(s)) }
 }
 
@@ -184,8 +186,8 @@ func appPickXLSX(owner uintptr) []string {
     appLog("EVENTO: selector devolvio 1 archivo"); return []string{parts[0]}
 }
 
-// Importa el libro completo y lo conserva en memoria. La interfaz es una
-// capa posterior: ninguna futura operación debe volver a leer el XLSX.
+// Importa el libro completo y lo conserva en memoria. La interfaz muestra
+// solamente una confirmación y una vista corta; nunca vuelve a leer el XLSX.
 func appOpenXLSX(owner uintptr) {
     appStateMu.Lock()
     if appLoading { appStateMu.Unlock(); return }
@@ -244,14 +246,39 @@ func appOpenXLSX(owner uintptr) {
     appImportedPath = files[0]
     appSource = files[0]
     appStatusText = fmt.Sprintf("IMPORTADO EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(sheetNames), totalRows, totalCells, filepath.Base(files[0]))
-    // Do not render the whole workbook into a Win32 LISTBOX. Large synchronous
-    // UI updates were the source of the previous freezes. The data is already
-    // safely stored in appImportedWorkbook.
-    appViewText = "Importación completa en memoria. Los datos quedan disponibles para los próximos cálculos.\r\n\r\nHojas: " + strings.Join(sheetNames, " | ")
+    appViewText = renderMemoryPreview(workbook, sheetNames)
     appStateMu.Unlock()
 
     appLog("EVENTO: XLSX completo en memoria; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(files[0]), len(sheetNames), totalRows, totalCells)
     appRefreshView()
+}
+
+// renderMemoryPreview confirms that real cell data reached memory without
+// pushing the whole workbook through the UI. Full data remains in memory.
+func renderMemoryPreview(doc *xlsxDoc, names []string) string {
+    const maxRows = 40
+    const maxCols = 20
+    if len(names) == 0 { return "Importación completa en memoria." }
+    rows := doc.Sheets[names[0]]
+    var b strings.Builder
+    b.WriteString("IMPORTACIÓN OK - vista de las primeras celdas de: ")
+    b.WriteString(names[0])
+    b.WriteString("\r\n\r\n")
+    limitRows := len(rows); if limitRows > maxRows { limitRows = maxRows }
+    limitCols := 0
+    for i := 0; i < limitRows; i++ { if len(rows[i]) > limitCols { limitCols = len(rows[i]) } }
+    if limitCols > maxCols { limitCols = maxCols }
+    for i := 0; i < limitRows; i++ {
+        for j := 0; j < limitCols; j++ {
+            if j > 0 { b.WriteString("\t") }
+            if j < len(rows[i]) { b.WriteString(cleanCell(rows[i][j])) }
+        }
+        b.WriteString("\r\n")
+    }
+    if len(rows) > maxRows || limitCols < maxPreviewColumns(rows) {
+        b.WriteString("\r\n[Vista limitada; el libro completo permanece en memoria]\r\n")
+    }
+    return b.String()
 }
 
 // loadPreviewXLSX remains available for tests and future UI work. It reads the
