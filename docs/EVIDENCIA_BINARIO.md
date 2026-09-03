@@ -58,30 +58,45 @@ Estas correcciones son **hechos verificados en el árbol fuente y/o en los logs 
 - `main.go`: `GetConsoleWindow` y `GetMessageW` capturan los tres retornos de `syscall.Proc.Call` (`ret, _, _`).
 - `main.go`: se unificó el punto de entrada con `crearVentana()`.
 - `main.go`: se agregó `//go:build windows` y una estructura `winMSG` compatible con la API Win32, porque el log real de compilación mostró `./main.go:44:21: undefined: syscall.MSG`.
+- `main.go`: la configuración se carga antes de `crearVentana()`, evitando que `WM_CREATE` inicialice el combo de modo con configuración todavía vacía.
 - `main_windows.go`: `GetModuleHandleW`, `LoadCursorW` y `GetSysColorBrush` capturan sus tres retornos antes de inicializar `WNDCLASSEX`.
 - `main_windows.go`: `LpszMenuName` quedó como `nil`, porque el campo es un puntero.
 - `main_windows.go`: `wndProc` usa argumentos `uintptr`, compatibles con `syscall.NewCallback`.
 - `main_windows.go`: `DefWindowProcW` captura `r, _, _` y devuelve únicamente `r`.
-- `main_windows.go`: se consolidó una única implementación de la UI Win32, selector múltiple XLSX, filtros, grilla, subtotales y barra de estado.
-- `main_windows.go`: se agregó `WM_INITDIALOG` para el hook del selector múltiple.
-- `main_windows.go`: se dejó una única implementación de `feedEngineFile`, respaldada por el símbolo real; su contrato interno queda pendiente por falta del motor V54.
+- `main_windows.go`: se eliminó la duplicación de constantes e IDs que hacía colisionar controles de la toolbar con IDs de la segunda versión de `main_windows.go`.
+- `main_windows.go`: se dejó una única implementación coherente de la UI Win32. En particular, los controles se crean desde `WM_CREATE`; `crearVentana()` ya no crea una segunda copia de los controles después de `CreateWindowExW`.
+- `main_windows.go`: se almacenan handles de etiquetas y campos de filtro para que `WM_SIZE` reposicione ambos elementos, no solo los `EDIT`.
+- `main_windows.go`: `FILTRAR` conserva el resultado filtrado; la ruta anterior reconstruía la vista con filtros `nil` inmediatamente después de aplicar los filtros.
+- `main_windows.go`: `refreshGrid` ahora escribe todas las celdas de las doce columnas, no solamente `SKU`.
+- `main_windows.go`: `feedEngineFile` quedó definido una sola vez y respaldado por el símbolo real; su contrato interno queda pendiente por falta del motor V54.
 - `go.mod`: se eliminó `github.com/xuri/excelize/v2 v2.8.1`, que no es utilizado por el código reconstruido.
 - `.github/workflows/build-exe.yml`: el log real mostró que `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 ...` no puede escribirse como asignación POSIX dentro de PowerShell. Se corrigió definiendo esas variables a nivel de `job`; el comando de build quedó como `go build -ldflags "-H=windowsgui" ...`.
 - Repositorio: se eliminó el `GestionSO-V57.zip` que había quedado accidentalmente versionado. `.gitignore` mantiene la exclusión de `*.exe` y `*.zip`.
 
+## Auditoría adicional de main
+
+**Hechos verificados en la versión previa del árbol:**
+
+1. Había dos bloques de constantes con IDs repetidos (`ID_TOMAR_EXCEL`, `ID_SIMULADOR`, `ID_GRID`, etc.), lo que producía redeclaraciones y además provocaba colisiones de comandos.
+2. `WM_CREATE` llamaba `crearControles` y `crearVentana` volvía a llamar `crearControles`, generando una doble inicialización de controles.
+3. `applyHeaderFilters` calculaba una vista filtrada y luego `updateMainView` podía reemplazarla con una vista sin filtros.
+4. `refreshGrid` insertaba únicamente el primer campo de cada línea; las otras once columnas no quedaban pobladas.
+5. Las etiquetas de los filtros no tenían handles persistentes y no se reposicionaban en `WM_SIZE`.
+6. La carga de configuración ocurría después de `CreateWindowExW`; como `WM_CREATE` se ejecuta durante esa llamada, el combo podía inicializarse con un modo distinto del persistido.
+
+**Soluciones aplicadas:** se consolidaron IDs, se centralizó la creación de controles en `WM_CREATE`, se preservó la vista filtrada, se poblaron todas las celdas de la grilla, se guardaron los handles de etiquetas y se cargó la configuración antes de crear la ventana.
+
+**Inferencia controlada:** ninguna de estas correcciones pretende afirmar que el fuente original tenía exactamente este código. Son correcciones de consistencia de la reconstrucción para que su comportamiento observable sea coherente con la evidencia disponible.
+
 ## Validación reproducible
 
-**Build integrado en verde:** run `Validar Go` **33695199005**, asociado al código reconstruido ya consolidado; `go build ./...` terminó correctamente y `go vet ./...` también terminó correctamente.
+El run de GitHub Actions disparado por el commit de auditoría `72a41b033f20aa877410af3d4ee6edefb6ba6589` terminó **SUCCESS**. El job `validar` terminó correctamente en los pasos `Build integrado` y `go vet`. Run: `33762560468`.
 
-**Build del ejecutable en verde:** run `Build GestionSO V57` **33695331006**, sobre `main` en el commit `4c5b893afd3139eb221a96c9b49d8da5548f477c`. Los pasos `Build GestionSO V57`, `go vet` y `Upload artifact` terminaron correctamente.
-
-El artifact `GestionSO-V57` fue generado con ID `9871569226`, tamaño `1.962.292` bytes y SHA-256 del ZIP de artifact `893d26511e9e41245e7444f4d784645527a09700fdd09f4d7953229f113cb656`.
-
-La reconstrucción generada dentro del artifact es un **PE32+ Windows x86-64 GUI**. El ejecutable extraído del artifact tiene `3.302.912` bytes. Esta diferencia de tamaño respecto del binario original no implica equivalencia ni diferencia funcional por sí sola.
+La reconstrucción local de referencia también fue comprobada con `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui"` y `go vet ./...`, antes de publicar la revisión equivalente.
 
 ## Persistencia y XLSX
 
-`BuildLines` usa la fila que maximiza `headerScore` como encabezado y conserva esos nombres en `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío. `mergeXLSX` conserva la lectura de hojas y eliminación de encabezado duplicado observada en la reconstrucción previa. Los XLSX originales no se modifican.
+`BuildLines` usa la fila que maximiza `headerScore` como encabezado y conserva esos nombres en `Line.Values`, con fallback `C<n>` solamente cuando un encabezado está vacío. `mergeXLSX` conserva la lectura de hojas y selecciona de forma determinista la primera hoja por nombre ordenado. Los XLSX originales no se modifican.
 
 ## Motor V54 y límite funcional
 
