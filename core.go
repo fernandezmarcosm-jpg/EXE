@@ -472,4 +472,15 @@ func simPopulate(_ []Line) {}
 func handleSimNotify(_ uintptr, _ uintptr, _ uintptr) uintptr { return 0 }
 func CalcSimFromMaster(_ *MasterData) float64 { return 0 }
 func masterScore(_ MasterRow) int { return 0 }
-func insertAfter(s []string, after string, value string) []string { for i, v := range s { if v == after { return append(append(append([]string{}, s[:i+1]...), value), s[i+1:]...) } }; return appe
+func insertAfter(s []string, after string, value string) []string {
+	for i, v := range s {
+		if v == after {
+			res := make([]string, 0, len(s)+1)
+			res = append(res, s[:i+1]...)
+			res = append(res, value)
+			res = append(res, s[i+1:]...)
+			return res
+		}
+	}
+	return append(s, value)
+}
