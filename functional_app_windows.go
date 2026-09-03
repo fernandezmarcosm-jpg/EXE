@@ -5,109 +5,149 @@ package main
 import (
     "fmt"
     "path/filepath"
-    "sort"
     "strings"
-    "sync"
     "syscall"
     "time"
     "unsafe"
 )
 
 const (
-    appIDOpen = 2001
+    appIDOpen   = 2001
     appIDStatus = 2006
-    appIDGrid = 2007
-    WM_CREATE = 0x0001
-    WM_SIZE = 0x0005
-    WM_CLOSE = 0x0010
+    appIDView   = 2007
+
+    WM_CREATE  = 0x0001
+    WM_SIZE    = 0x0005
+    WM_CLOSE   = 0x0010
     WM_DESTROY = 0x0002
     WM_COMMAND = 0x0111
+
     WS_OVERLAPPEDWINDOW = 0x00CF0000
-    WS_VISIBLE = 0x10000000
-    WS_CHILD = 0x40000000
-    WS_TABSTOP = 0x00010000
-    WS_BORDER = 0x00800000
-    WS_VSCROLL = 0x00200000
-    WS_HSCROLL = 0x00100000
+    WS_VISIBLE          = 0x10000000
+    WS_CHILD            = 0x40000000
+    WS_TABSTOP          = 0x00010000
+    WS_BORDER            = 0x00800000
+    WS_VSCROLL           = 0x00200000
+    WS_HSCROLL           = 0x00100000
+
     BS_PUSHBUTTON = 0
-    LBS_NOINTEGRALHEIGHT = 0x0100
-    LBS_USETABSTOPS = 0x0080
-    LB_RESETCONTENT = 0x0184
-    LB_ADDSTRING = 0x0180
-    LB_SETHORIZONTALEXTENT = 0x0194
-    LB_SETCURSEL = 0x0186
-    ofnExplorer = 0x00080000
+
+    ES_MULTILINE = 0x0004
+    ES_AUTOVSCROLL = 0x0040
+    ES_AUTOHSCROLL = 0x0080
+    ES_READONLY = 0x0800
+
+    ofnExplorer      = 0x00080000
     ofnPathMustExist = 0x00000800
     ofnFileMustExist = 0x00001000
-    ofnHideReadOnly = 0x00000004
-    ofnAllowMultiSelect = 0x00000200
+    ofnHideReadOnly  = 0x00000004
 )
 
 type appRect struct { Left, Top, Right, Bottom int32 }
-type appWndClass struct { CbSize uint32; Style uint32; LpfnWndProc uintptr; CbClsExtra, CbWndExtra int32; HInstance, HIcon, HCursor, HbrBackground uintptr; LpszMenuName, LpszClassName *uint16; HIconSm uintptr }
-type appOpenFile struct { LStructSize uint32; _ uint32; HwndOwner uintptr; HInstance uintptr; Filter uintptr; CustomFilter uintptr; MaxCustom uint32; FilterIndex uint32; File uintptr; MaxFile uint32; _ uint32; FileTitle uintptr; MaxFileTitle uint32; _ uint32; InitialDir uintptr; Title uintptr; Flags uint32; FileOffset uint16; FileExtension uint16; DefExt uintptr; CustData uintptr; Hook uintptr; Template uintptr; Reserved uintptr; Reserved2 uint32; FlagsEx uint32 }
-type appRow struct { Values []string }
+
+type appWndClass struct {
+    CbSize uint32
+    Style uint32
+    LpfnWndProc uintptr
+    CbClsExtra, CbWndExtra int32
+    HInstance, HIcon, HCursor, HbrBackground uintptr
+    LpszMenuName, LpszClassName *uint16
+    HIconSm uintptr
+}
+
+// Keep the Win64 OPENFILENAMEW layout used by windows_compat.go.
+type appOpenFile struct {
+    LStructSize uint32
+    _ uint32
+    HwndOwner uintptr
+    HInstance uintptr
+    Filter uintptr
+    CustomFilter uintptr
+    MaxCustom uint32
+    FilterIndex uint32
+    File uintptr
+    MaxFile uint32
+    _ uint32
+    FileTitle uintptr
+    MaxFileTitle uint32
+    _ uint32
+    InitialDir uintptr
+    Title uintptr
+    Flags uint32
+    FileOffset uint16
+    FileExtension uint16
+    DefExt uintptr
+    CustData uintptr
+    Hook uintptr
+    Template uintptr
+    Reserved uintptr
+    Reserved2 uint32
+    FlagsEx uint32
+}
 
 var (
-    appHwnd, appView, appStatus uintptr
-    appHInstance uintptr
-    appStateMu sync.Mutex
-    appStatusText string
-    appViewText string
-    appSource string
-    appLoading bool
+    appHwnd   uintptr
+    appStatus uintptr
+    appView   uintptr
 
-    // appImportedWorkbook is the authoritative in-memory copy of the last
-    // imported XLSX. It keeps every worksheet and every parsed cell so later
-    // calculation logic does not need to read the Excel file again.
+    // The imported workbook is the only data source for the next stages.
+    // The complete XLSX remains in memory after the file is closed.
     appImportedWorkbook *xlsxDoc
     appImportedPath string
 )
 
-func appU16(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
-
-func appSetText(h uintptr, s string) {
-    if h == 0 { return }
-    start := time.Now()
-    p := appU16(s)
-    user32.NewProc("SetWindowTextW").Call(h, uintptr(unsafe.Pointer(p)))
-    if d := time.Since(start); d > 500*time.Millisecond { appLog("DIAGNOSTICO: SetWindowTextW tardó %s; caracteres=%d", d, len(s)) }
+func appU16(s string) *uint16 {
+    p, _ := syscall.UTF16PtrFromString(s)
+    return p
 }
 
-func appSetListBox(h uintptr, s string) {
-    if h == 0 { return }
-    start := time.Now()
-    send := user32.NewProc("SendMessageW")
-    send.Call(h, LB_RESETCONTENT, 0, 0)
-    maxExtent := 0
-    lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
-    for _, line := range lines {
-        if line == "" { continue }
-        p := appU16(line)
-        send.Call(h, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(p)))
-        if n := len([]rune(line)); n > maxExtent { maxExtent = n }
-    }
-    if maxExtent > 0 { send.Call(h, LB_SETHORIZONTALEXTENT, uintptr(maxExtent*8), 0) }
-    if len(lines) > 1 { send.Call(h, LB_SETCURSEL, 0, 0) }
-    user32.NewProc("InvalidateRect").Call(h, 0, 1)
-    user32.NewProc("UpdateWindow").Call(h)
-    if d := time.Since(start); d > 500*time.Millisecond { appLog("DIAGNOSTICO: actualización LISTBOX tardó %s; líneas=%d caracteres=%d", d, len(lines), len(s)) }
+func appSetText(hwnd uintptr, text string) {
+    if hwnd == 0 { return }
+    p := appU16(text)
+    user32.NewProc("SetWindowTextW").Call(hwnd, uintptr(unsafe.Pointer(p)))
 }
 
-func appMake(parent uintptr, cls, text string, style uint32, x, y, w, h int, id uintptr) uintptr {
-    c := appU16(cls); t := appU16(text)
-    r, _, _ := user32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(c)), uintptr(unsafe.Pointer(t)), uintptr(style), uintptr(x), uintptr(y), uintptr(w), uintptr(h), parent, id, appHInstance, 0)
-    return r
+func appMake(parent uintptr, className, text string, style uint32, x, y, w, h int, id uintptr) uintptr {
+    cls := appU16(className)
+    txt := appU16(text)
+    hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(
+        0,
+        uintptr(unsafe.Pointer(cls)),
+        uintptr(unsafe.Pointer(txt)),
+        uintptr(style),
+        uintptr(x), uintptr(y), uintptr(w), uintptr(h),
+        parent, id, appHInstance, 0,
+    )
+    return hwnd
 }
 
 func crearVentana() uintptr {
     appHInstance, _, _ = kernel32.NewProc("GetModuleHandleW").Call(0)
     cls := appU16("GestionSOExcelImporter")
-    wc := appWndClass{CbSize: uint32(unsafe.Sizeof(appWndClass{})), LpfnWndProc: syscall.NewCallback(appWndProcLogged), HInstance: appHInstance, HCursor: func() uintptr { r, _, _ := user32.NewProc("LoadCursorW").Call(0, 32512); return r }(), LpszClassName: cls}
+    wc := appWndClass{
+        CbSize: uint32(unsafe.Sizeof(appWndClass{})),
+        LpfnWndProc: syscall.NewCallback(appWndProcLogged),
+        HInstance: appHInstance,
+        HCursor: loadArrowCursor(),
+        LpszClassName: cls,
+    }
     user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
+
     title := appU16("GestionSO V57 - Importar Excel")
-    h, _, _ := user32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(title)), WS_OVERLAPPEDWINDOW|WS_VISIBLE, 0x80000000, 0x80000000, 1400, 820, 0, 0, appHInstance, 0)
-    return h
+    hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(
+        0,
+        uintptr(unsafe.Pointer(cls)),
+        uintptr(unsafe.Pointer(title)),
+        WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        0x80000000, 0x80000000, 1200, 750,
+        0, 0, appHInstance, 0,
+    )
+    return hwnd
+}
+
+func loadArrowCursor() uintptr {
+    cursor, _, _ := user32.NewProc("LoadCursorW").Call(0, 32512)
+    return cursor
 }
 
 func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
@@ -117,190 +157,197 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
         appBuildControls(hwnd)
         appLog("EVENTO: controles de interfaz creados")
         return 0
+
     case WM_SIZE:
         appLayout(hwnd)
         return 0
+
     case WM_COMMAND:
         id := int(wp & 0xffff)
-        code := uint32((wp >> 16) & 0xffff)
         if id == appIDOpen {
             appOpenXLSX(hwnd)
             return 0
         }
-        if id == appIDGrid && code == 256 { return 0 }
         return 0
+
     case WM_CLOSE:
-        appLog("EVENTO: WM_CLOSE hwnd=0x%X", hwnd)
         user32.NewProc("DestroyWindow").Call(hwnd)
         return 0
+
     case WM_DESTROY:
         appLog("EVENTO: WM_DESTROY hwnd=0x%X", hwnd)
         user32.NewProc("PostQuitMessage").Call(0)
         return 0
     }
+
     r, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, uintptr(msg), wp, lp)
     return r
 }
 
 func appBuildControls(hwnd uintptr) {
     appMake(hwnd, "BUTTON", "ABRIR EXCEL", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 10, 10, 130, 32, appIDOpen)
-    appStatus = appMake(hwnd, "STATIC", "Listo. Seleccione uno o varios archivos XLSX para comenzar.", WS_CHILD|WS_VISIBLE, 155, 15, 1100, 24, appIDStatus)
-    appView = appMake(hwnd, "LISTBOX", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|LBS_NOINTEGRALHEIGHT|LBS_USETABSTOPS, 10, 55, 1360, 700, appIDGrid)
+    appStatus = appMake(hwnd, "STATIC", "Seleccione un archivo XLSX.", WS_CHILD|WS_VISIBLE, 155, 15, 1000, 24, appIDStatus)
+    appView = appMake(hwnd, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, 55, 1160, 630, appIDView)
+
+    // Monospace font makes the tab-separated preview easy to inspect.
+    font, _, _ := user32.NewProc("CreateFontW").Call(
+        18, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0,
+        uintptr(unsafe.Pointer(appU16("Consolas"))),
+    )
+    if font != 0 {
+        user32.NewProc("SendMessageW").Call(appView, 0x0030, font, 1) // WM_SETFONT
+    }
 }
 
 func appLayout(hwnd uintptr) {
     var r appRect
     user32.NewProc("GetClientRect").Call(hwnd, uintptr(unsafe.Pointer(&r)))
-    w := int(r.Right-r.Left); h := int(r.Bottom-r.Top)
-    if w < 600 { w = 600 }; if h < 300 { h = 300 }
-    user32.NewProc("MoveWindow").Call(appStatus, 155, 15, uintptr(maxInt(300, w-170)), 24, 1)
+    w := int(r.Right - r.Left)
+    h := int(r.Bottom - r.Top)
+    if w < 500 { w = 500 }
+    if h < 250 { h = 250 }
+    user32.NewProc("MoveWindow").Call(appStatus, 155, 15, uintptr(maxInt(250, w-170)), 24, 1)
     user32.NewProc("MoveWindow").Call(appView, 10, 55, uintptr(w-20), uintptr(h-65), 1)
 }
 
-func maxInt(a, b int) int { if a > b { return a }; return b }
-
-func appPickXLSX(owner uintptr) []string {
-    f1, _ := syscall.UTF16FromString("Archivos Excel (*.xlsx)"); f2, _ := syscall.UTF16FromString("*.xlsx")
-    f3, _ := syscall.UTF16FromString("Todos los archivos (*.*)"); f4, _ := syscall.UTF16FromString("*.*")
-    filter := make([]uint16, 0, len(f1)+len(f2)+len(f3)+len(f4)+2)
-    filter = append(filter, f1...); filter = append(filter, f2...); filter = append(filter, f3...); filter = append(filter, f4...); filter = append(filter, 0, 0)
-    buffer := make([]uint16, 65536)
-    title := appU16("Seleccionar archivo Excel"); defExt := appU16("xlsx")
-    ofn := appOpenFile{LStructSize: uint32(unsafe.Sizeof(appOpenFile{})), HwndOwner: owner, Filter: uintptr(unsafe.Pointer(&filter[0])), FilterIndex: 1, File: uintptr(unsafe.Pointer(&buffer[0])), MaxFile: uint32(len(buffer)), Title: uintptr(unsafe.Pointer(title)), Flags: ofnExplorer|ofnFileMustExist|ofnPathMustExist|ofnHideReadOnly|ofnAllowMultiSelect, DefExt: uintptr(unsafe.Pointer(defExt))}
-    appLog("EVENTO: abrir selector XLSX")
-    ret, _, _ := comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&ofn)))
-    if ret == 0 { appLog("EVENTO: selector XLSX cancelado"); return nil }
-    parts := make([]string, 0, 8); pos := 0
-    for pos < len(buffer) {
-        end := pos; for end < len(buffer) && buffer[end] != 0 { end++ }
-        if end == pos { break }
-        s := strings.TrimSpace(syscall.UTF16ToString(buffer[pos:end])); if s != "" { parts = append(parts, s) }
-        pos = end + 1
-    }
-    if len(parts) == 0 { return nil }
-    if len(parts) > 1 {
-        dir := parts[0]; out := make([]string, 0, len(parts)-1)
-        for _, name := range parts[1:] { if filepath.IsAbs(name) { out = append(out, name) } else { out = append(out, filepath.Join(dir, name)) } }
-        appLog("EVENTO: selector devolvio %d archivos", len(out)); return out
-    }
-    appLog("EVENTO: selector devolvio 1 archivo"); return []string{parts[0]}
+func maxInt(a, b int) int {
+    if a > b { return a }
+    return b
 }
 
-// Importa el libro completo y lo conserva en memoria. La interfaz muestra
-// solamente una confirmación y una vista corta; nunca vuelve a leer el XLSX.
+func appPickXLSX(owner uintptr) string {
+    f1, _ := syscall.UTF16FromString("Archivos Excel (*.xlsx)")
+    f2, _ := syscall.UTF16FromString("*.xlsx")
+    f3, _ := syscall.UTF16FromString("Todos los archivos (*.*)")
+    f4, _ := syscall.UTF16FromString("*.*")
+    filter := make([]uint16, 0, len(f1)+len(f2)+len(f3)+len(f4)+2)
+    filter = append(filter, f1...)
+    filter = append(filter, f2...)
+    filter = append(filter, f3...)
+    filter = append(filter, f4...)
+    filter = append(filter, 0, 0)
+
+    buffer := make([]uint16, 32768)
+    title := appU16("Seleccionar archivo Excel")
+    defExt := appU16("xlsx")
+    ofn := appOpenFile{
+        LStructSize: uint32(unsafe.Sizeof(appOpenFile{})),
+        HwndOwner: owner,
+        Filter: uintptr(unsafe.Pointer(&filter[0])),
+        FilterIndex: 1,
+        File: uintptr(unsafe.Pointer(&buffer[0])),
+        MaxFile: uint32(len(buffer)),
+        Title: uintptr(unsafe.Pointer(title)),
+        Flags: ofnExplorer|ofnFileMustExist|ofnPathMustExist|ofnHideReadOnly,
+        DefExt: uintptr(unsafe.Pointer(defExt)),
+    }
+
+    appLog("EVENTO: abrir selector XLSX")
+    ret, _, _ := comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&ofn)))
+    if ret == 0 {
+        appLog("EVENTO: selector XLSX cancelado")
+        return ""
+    }
+    path := syscall.UTF16ToString(buffer)
+    path = strings.TrimSpace(path)
+    if path != "" { appLog("EVENTO: selector devolvio archivo=%s", path) }
+    return path
+}
+
 func appOpenXLSX(owner uintptr) {
-    appStateMu.Lock()
-    if appLoading { appStateMu.Unlock(); return }
-    appLoading = true
-    appStateMu.Unlock()
-    defer func() { appStateMu.Lock(); appLoading = false; appStateMu.Unlock() }()
+    path := appPickXLSX(owner)
+    if path == "" { return }
 
-    files := appPickXLSX(owner)
-    if len(files) == 0 { return }
-
-    appLog("EVENTO: selector finalizado; preparando lectura")
-    appStateMu.Lock()
-    appStatusText = fmt.Sprintf("Leyendo %d archivo(s)...", len(files))
-    appStateMu.Unlock()
-    appRefreshView()
-
+    appSetText(appStatus, "Leyendo Excel...")
     start := time.Now()
-    workbook, err := ReadXLSX(files[0])
+    workbook, err := ReadXLSX(path)
     elapsed := time.Since(start)
     appLog("EVENTO: lectura XLSX finalizada; duración=%s", elapsed)
 
     if err != nil {
-        appStateMu.Lock()
-        appStatusText = "ERROR: " + err.Error()
-        appViewText = ""
-        appSource = ""
-        appStateMu.Unlock()
+        appImportedWorkbook = nil
+        appImportedPath = ""
+        appSetText(appStatus, "ERROR: "+err.Error())
+        appSetText(appView, "No se pudo leer el archivo XLSX.
+
+"+err.Error())
         appLog("ERROR importando XLSX: %v", err)
-        appRefreshView()
-        return
-    }
-    if len(workbook.Sheets) == 0 {
-        appStateMu.Lock()
-        appStatusText = "ERROR: el Excel no contiene hojas legibles"
-        appViewText = ""
-        appSource = ""
-        appStateMu.Unlock()
-        appLog("ERROR importando XLSX: no hay hojas")
-        appRefreshView()
         return
     }
 
-    totalRows, totalCells := 0, 0
-    sheetNames := make([]string, 0, len(workbook.Sheets))
-    for name, rows := range workbook.Sheets {
-        sheetNames = append(sheetNames, name)
-        totalRows += len(rows)
-        for _, row := range rows { totalCells += len(row) }
-    }
-    sort.Strings(sheetNames)
-
-    // Atomic replacement of the in-memory workbook. From this point on the
-    // workbook is the source of truth for all later calculations.
-    appStateMu.Lock()
+    rows, cells := workbookSize(workbook)
     appImportedWorkbook = workbook
-    appImportedPath = files[0]
-    appSource = files[0]
-    appStatusText = fmt.Sprintf("IMPORTADO EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(sheetNames), totalRows, totalCells, filepath.Base(files[0]))
-    appViewText = renderMemoryPreview(workbook, sheetNames)
-    appStateMu.Unlock()
+    appImportedPath = path
 
-    appLog("EVENTO: XLSX completo en memoria; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(files[0]), len(sheetNames), totalRows, totalCells)
-    appRefreshView()
+    // Important: from here on the file is no longer needed. The complete
+    // workbook object is retained by the process in appImportedWorkbook.
+    status := fmt.Sprintf("EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(workbook.Sheets), rows, cells, filepath.Base(path))
+    appSetText(appStatus, status)
+    appSetText(appView, renderWorkbookPreview(workbook))
+
+    appLog("EVENTO: XLSX almacenado en memoria; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(path), len(workbook.Sheets), rows, cells)
 }
 
-// renderMemoryPreview confirms that real cell data reached memory without
-// pushing the whole workbook through the UI. Full data remains in memory.
-func renderMemoryPreview(doc *xlsxDoc, names []string) string {
-    const maxRows = 40
-    const maxCols = 20
-    if len(names) == 0 { return "Importación completa en memoria." }
-    rows := doc.Sheets[names[0]]
+func workbookSize(doc *xlsxDoc) (rows, cells int) {
+    if doc == nil { return 0, 0 }
+    for _, sheetRows := range doc.Sheets {
+        rows += len(sheetRows)
+        for _, row := range sheetRows { cells += len(row) }
+    }
+    return rows, cells
+}
+
+func renderWorkbookPreview(doc *xlsxDoc) string {
+    if doc == nil || len(doc.Sheets) == 0 { return "Excel vacío o sin hojas legibles." }
+
+    // Only the preview is sent to the window. The complete workbook stays in
+    // memory, avoiding a giant UI update and keeping the message loop simple.
+    const maxRows = 60
+    const maxCols = 25
+
+    names := make([]string, 0, len(doc.Sheets))
+    for name := range doc.Sheets { names = append(names, name) }
+    first := names[0]
+    rows := doc.Sheets[first]
+
     var b strings.Builder
-    b.WriteString("IMPORTACIÓN OK - vista de las primeras celdas de: ")
-    b.WriteString(names[0])
+    b.WriteString("DATOS CARGADOS EN MEMORIA\r\n")
+    b.WriteString("Hoja: ")
+    b.WriteString(first)
     b.WriteString("\r\n\r\n")
-    limitRows := len(rows); if limitRows > maxRows { limitRows = maxRows }
-    limitCols := 0
-    for i := 0; i < limitRows; i++ { if len(rows[i]) > limitCols { limitCols = len(rows[i]) } }
-    if limitCols > maxCols { limitCols = maxCols }
-    for i := 0; i < limitRows; i++ {
-        for j := 0; j < limitCols; j++ {
-            if j > 0 { b.WriteString("\t") }
+
+    rowLimit := len(rows)
+    if rowLimit > maxRows { rowLimit = maxRows }
+    colLimit := 0
+    for i := 0; i < rowLimit; i++ {
+        if len(rows[i]) > colLimit { colLimit = len(rows[i]) }
+    }
+    if colLimit > maxCols { colLimit = maxCols }
+
+    for i := 0; i < rowLimit; i++ {
+        for j := 0; j < colLimit; j++ {
+            if j > 0 { b.WriteByte('\t') }
             if j < len(rows[i]) { b.WriteString(cleanCell(rows[i][j])) }
         }
         b.WriteString("\r\n")
     }
-    if len(rows) > maxRows || limitCols < maxPreviewColumns(rows) {
-        b.WriteString("\r\n[Vista limitada; el libro completo permanece en memoria]\r\n")
+
+    totalRows, totalCells := workbookSize(doc)
+    if len(rows) > maxRows || colLimit < maxColumns(rows) {
+        b.WriteString("\r\n[Vista previa limitada. El contenido completo permanece en memoria.]\r\n")
     }
+    b.WriteString(fmt.Sprintf("\r\nTOTAL EN MEMORIA: %d fila(s), %d celda(s), %d hoja(s).", totalRows, totalCells, len(doc.Sheets)))
     return b.String()
 }
 
-// loadPreviewXLSX remains available for tests and future UI work. It reads the
-// first worksheet only; the production import path above stores the whole book.
-func loadPreviewXLSX(path string) ([]string, []appRow, string, error) {
-    doc, err := ReadXLSX(path); if err != nil { return nil, nil, "", err }
-    if len(doc.Sheets) == 0 { return nil, nil, "", fmt.Errorf("el Excel no contiene hojas legibles") }
-    names := make([]string, 0, len(doc.Sheets)); for n := range doc.Sheets { names = append(names, n) }; sort.Strings(names)
-    rows := doc.Sheets[names[0]]
-    if len(rows) == 0 { return nil, nil, "", fmt.Errorf("la hoja %q no contiene filas de datos", names[0]) }
-    n := maxPreviewColumns(rows); headers := makeHeaders(rows[0], n)
-    out := make([]appRow, 0, len(rows)-1)
-    for i := 1; i < len(rows); i++ {
-        vals := make([]string, n)
-        for j := 0; j < n; j++ { if j < len(rows[i]) { vals[j] = rows[i][j] } }
-        out = append(out, appRow{Values: vals})
+func maxColumns(rows [][]string) int {
+    max := 0
+    for _, row := range rows {
+        if len(row) > max { max = len(row) }
     }
-    return headers, out, path, nil
+    return max
 }
 
-func maxPreviewColumns(rows [][]string) int { n := 0; for _, r := range rows { if len(r) > n { n = len(r) } }; if n > 80 { n = 80 }; return n }
-func makeHeaders(row []string, n int) []string { out := make([]string, n); seen := map[string]int{}; for i := 0; i < n; i++ { name := "Columna " + fmt.Sprint(i+1); if i < len(row) && strings.TrimSpace(row[i]) != "" { name = strings.TrimSpace(row[i]) }; base := name; seen[base]++; if seen[base] > 1 { name = fmt.Sprintf("%s (%d)", base, seen[base]) }; out[i] = name }; return out }
-func renderPreview(headers []string, rows []appRow) string { var b strings.Builder; const maxChars = 256 * 1024; for i, h := range headers { if i > 0 { b.WriteByte('\t') }; b.WriteString(cleanCell(h)) }; b.WriteString("\r\n"); for _, row := range rows { for i := range headers { if i > 0 { b.WriteByte('\t') }; if i < len(row.Values) { b.WriteString(cleanCell(row.Values[i])) } }; b.WriteString("\r\n"); if b.Len() >= maxChars { b.WriteString("\r\n[Vista limitada a 256 KB para mantener la interfaz estable]\r\n"); break } }; return b.String() }
-func cleanCell(s string) string { return strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s) }
-func appRefreshView() { appLog("EVENTO: appRefreshView inicio"); appStateMu.Lock(); status := appStatusText; view := appViewText; appStateMu.Unlock(); appSetText(appStatus, status); appSetListBox(appView, view); appLog("EVENTO: appRefreshView fin") }
+func cleanCell(s string) string {
+    return strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)
+}
