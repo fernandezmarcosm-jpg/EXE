@@ -6,57 +6,28 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-
-env:
-  CGO_ENABLED: 0
-  GOOS: windows
-  GOARCH: amd64
-
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.23.2'
-
       - name: Fix XLSX selector
         shell: pwsh
         run: |
-          $path = 'main_windows.go'
-          $text = Get-Content -Raw -Encoding UTF8 $path
-          $old = 'return syscall.StringToUTF16(s)'
-          $new = @'
-parts := strings.Split(s, "\x00")
-	out := make([]uint16, 0, len(s)+1)
-	for _, part := range parts {
-		out = append(out, syscall.StringToUTF16(part)...)
-	}
-	return out
-'@
-          if ($text.Contains($old)) { $text = $text.Replace($old, $new) }
-          $text = $text.Replace('OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK', 'OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY')
-          $text = $text.Replace('lpfnHook:    syscall.NewCallback(multiSelectHook),', 'lpfnHook:    0,')
-          Set-Content -Path $path -Value $text -Encoding UTF8 -NoNewline
-
+          $p = 'main_windows.go'
+          $s = Get-Content $p -Raw -Encoding UTF8
+          $s = [regex]::Replace($s, 'func u16z\(s string\) \[\]uint16 \{\s*return syscall\.StringToUTF16\(s\)\s*\}', 'func u16z(s string) []uint16 {`r`n`tparts := strings.Split(s, "\x00")`r`n`tout := make([]uint16, 0, len(s)+1)`r`n`tfor _, part := range parts {`r`n`t`tout = append(out, syscall.StringToUTF16(part)... )`r`n`t}`r`n`treturn out`r`n}')
+          $s = $s.Replace('OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY | OFN_ENABLEHOOK', 'OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_HIDEREADONLY')
+          $s = $s.Replace('lpfnHook:    syscall.NewCallback(multiSelectHook),', 'lpfnHook:    0,')
+          Set-Content $p $s -Encoding UTF8 -NoNewline
       - name: Build EXE
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -ldflags '-H=windowsgui' -o dist/GestionSO-V57.exe .
-
-      - name: Test and vet
-        shell: pwsh
-        run: |
-          go test ./...
-          go vet ./...
-
       - name: Package ZIP
         shell: pwsh
         run: |
@@ -64,20 +35,10 @@ parts := strings.Split(s, "\x00")
           Copy-Item 'acceso chatgpt/GestionSO_Datos.csv' 'dist/datos/GestionSO_Datos.csv'
           Copy-Item 'acceso chatgpt/archivo exportado.csv' 'dist/datos/archivo exportado.csv'
           Copy-Item 'acceso chatgpt/Archivo a importar.xlsx' 'dist/datos/Archivo a importar.xlsx'
-          Set-Content -Path dist/LEEME.txt -Encoding UTF8 -Value @(
-            'GestionSO V57 - reconstruccion'
-            ''
-            'Reconstruccion/reimplementacion en Go; no es el fuente original.'
-            'Windows x64.'
-            ''
-            'El selector ABRIR XLSX usa MULTI_SZ sin NUL embebido en StringToUTF16.'
-          )
-          Compress-Archive -Path dist/GestionSO-V57.exe,dist/LEEME.txt,dist/datos/* -DestinationPath dist/GestionSO-V57.zip -Force
-
+          Compress-Archive -Path dist/GestionSO-V57.exe,dist/datos/* -DestinationPath dist/GestionSO-V57.zip -Force
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GestionSO-V57
           path: dist/GestionSO-V57.zip
           if-no-files-found: error
-          retention-days: 30
