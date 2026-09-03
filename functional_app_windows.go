@@ -108,6 +108,56 @@ func appLayout(hwnd uintptr) {
 }
 func maxInt(a,b int) int { if a>b{return a}; return b }
 
+// appPickXLSX opens the native Windows file picker and returns the selected XLSX path.
+// It is intentionally synchronous only for the dialog itself; Excel parsing remains
+// asynchronous in appOpenXLSX so the main window is never blocked while reading the file.
+func appPickXLSX(owner uintptr) []string {
+    const (
+        ofnExplorer      = 0x00080000
+        ofnFileMustExist = 0x00001000
+        ofnPathMustExist = 0x00000800
+        ofnHideReadOnly  = 0x00000004
+    )
+
+    buffer := make([]uint16, 32768)
+    filter, err := syscall.UTF16FromString("Archivos Excel (*.xlsx)\x00*.xlsx\x00Todos los archivos (*.*)\x00*.*\x00\x00")
+    if err != nil {
+        return nil
+    }
+    title := appU16("Seleccionar archivo Excel")
+    defExt := appU16("xlsx")
+
+    ofn := appOpenFile{
+        LStructSize: uint32(unsafe.Sizeof(appOpenFile{})),
+        HwndOwner:   owner,
+        Filter:      uintptr(unsafe.Pointer(&filter[0])),
+        FilterIndex: 1,
+        File:        uintptr(unsafe.Pointer(&buffer[0])),
+        MaxFile:     uint32(len(buffer)),
+        Title:       uintptr(unsafe.Pointer(title)),
+        Flags:       ofnExplorer | ofnFileMustExist | ofnPathMustExist | ofnHideReadOnly,
+        DefExt:      uintptr(unsafe.Pointer(defExt)),
+    }
+
+    ret, _, _ := comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&ofn)))
+    if ret == 0 {
+        return nil
+    }
+
+    n := 0
+    for n < len(buffer) && buffer[n] != 0 {
+        n++
+    }
+    if n == 0 {
+        return nil
+    }
+    path := syscall.UTF16ToString(buffer[:n])
+    if strings.TrimSpace(path) == "" {
+        return nil
+    }
+    return []string{path}
+}
+
 func appOpenXLSX(owner uintptr) {
     files:=appPickXLSX(owner); if len(files)==0 { return }
     appSetText(appStatus,fmt.Sprintf("Leyendo %d archivo(s)...",len(files)))
