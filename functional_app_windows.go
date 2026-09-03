@@ -182,8 +182,9 @@ func appBuildControls(hwnd uintptr) {
     appStatus = appMake(hwnd, "STATIC", "Seleccione un archivo XLSX.", WS_CHILD|WS_VISIBLE, 155, 15, 1000, 24, appIDStatus)
     appView = appMake(hwnd, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, 55, 1160, 630, appIDView)
 
-    // Monospace font keeps the tab-separated preview readable.
-    font, _, _ := user32.NewProc("CreateFontW").Call(
+    // CreateFontW belongs to GDI32, not USER32. Loading it from USER32
+    // caused the WM_CREATE panic before the Excel importer could be used.
+    font, _, _ := gdi32.NewProc("CreateFontW").Call(
         18, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0,
         uintptr(unsafe.Pointer(appU16("Consolas"))),
     )
@@ -290,8 +291,6 @@ func workbookSize(doc *xlsxDoc) (rows, cells int) {
 func renderWorkbookPreview(doc *xlsxDoc) string {
     if doc == nil || len(doc.Sheets) == 0 { return "Excel vacío o sin hojas legibles." }
 
-    // Only a small preview is sent to the Win32 control. The complete book
-    // remains in memory, so the UI never has to render thousands of cells.
     const maxRows = 60
     const maxCols = 25
 
