@@ -13,6 +13,7 @@ var (
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	comctl32 = syscall.NewLazyDLL("comctl32.dll")
 	comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
+	hInstance uintptr
 )
 
 type winPOINT struct{ X, Y int32 }
@@ -32,8 +33,6 @@ func main() {
 	}
 	comctl32.NewProc("InitCommonControls").Call()
 
-	// La ventana envía WM_CREATE durante CreateWindowExW. Cargar antes la
-	// configuración permite que el combo de modo nazca con el valor persistido.
 	mainConfig = LoadConfig()
 	if mainConfig.Mode == "" {
 		mainConfig.Mode = "MODO: SO RETENIDAS"
