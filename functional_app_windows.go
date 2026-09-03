@@ -87,11 +87,14 @@ func appMake(parent uintptr, cls, text string, style uint32, x,y,w,h int, id uin
 
 func crearVentana() uintptr {
     hInstance,_,_ = kernel32.NewProc("GetModuleHandleW").Call(0)
+    appLog("EVENTO: GetModuleHandleW => hInstance=0x%X", hInstance)
     cls:=appU16("GestionSOFunctional")
-    wc:=appWndClass{CbSize:uint32(unsafe.Sizeof(appWndClass{})), LpfnWndProc:syscall.NewCallback(appWndProc), HInstance:hInstance, HCursor:func() uintptr { r,_,_:=user32.NewProc("LoadCursorW").Call(0,32512); return r }(), LpszClassName:cls}
-    user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
+    wc:=appWndClass{CbSize:uint32(unsafe.Sizeof(appWndClass{})), LpfnWndProc:syscall.NewCallback(appWndProcLogged), HInstance:hInstance, HCursor:func() uintptr { r,_,_:=user32.NewProc("LoadCursorW").Call(0,32512); return r }(), LpszClassName:cls}
+    rc,_,re:=user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
+    appLog("EVENTO: RegisterClassExW rc=%d err=%v", rc, re)
     title:=appU16("GestionSO V57 - Analizador de Excel")
-    h,_,_:=user32.NewProc("CreateWindowExW").Call(0,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(title)),WS_OVERLAPPEDWINDOW|WS_VISIBLE,0x80000000,0x80000000,1400,820,0,0,hInstance,0)
+    h,_,e:=user32.NewProc("CreateWindowExW").Call(0,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(title)),WS_OVERLAPPEDWINDOW|WS_VISIBLE,0x80000000,0x80000000,1400,820,0,0,hInstance,0)
+    appLog("EVENTO: CreateWindowExW hwnd=0x%X err=%v", h, e)
     return h
 }
 
@@ -104,7 +107,7 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
     case WM_COMMAND:
         id:=int(wp&0xffff); code:=uint32((wp>>16)&0xffff)
         switch id {
-        case appIDOpen: appOpenXLSX(hwnd)
+        case appIDOpen: appLogRuntimeEvent("click ABRIR EXCEL"); appOpenXLSX(hwnd)
         case appIDFilter: appApplyFilter()
         case appIDClear: appSetText(appSearch, ""); appApplyFilter()
         case appIDColumns: appShowColumns()
@@ -147,13 +150,20 @@ func appLayout(hwnd uintptr) {
 func max(a,b int) int { if a>b{return a}; return b }
 
 func appOpenXLSX(owner uintptr) {
-    files:=appPickXLSX(owner); if len(files)==0{return}
+    appLog("EVENTO: appOpenXLSX iniciado owner=0x%X", owner)
+    files:=appPickXLSX(owner)
+    appLog("EVENTO: appPickXLSX devolvió %d archivo(s)", len(files))
+    if len(files)==0{return}
     appSetText(appStatus,fmt.Sprintf("Procesando %d archivo(s)...",len(files)))
     go func(selected []string) {
+        defer appRecover("procesamiento XLSX")
         lock:=appMu; lock<-struct{}{}; defer func(){<-lock}()
-        rows,err:=mergeXLSX(selected); if err!=nil { appSetTextSafe(appStatus,"ERROR: "+err.Error()); return }
-        masterPath:=appFindMaster(); m,err:=LoadMaster(masterPath); if err!=nil { appSetTextSafe(appStatus,"ERROR maestro: "+err.Error()); return }
+        appLog("EVENTO: mergeXLSX inicia con %d archivo(s)", len(selected))
+        rows,err:=mergeXLSX(selected); if err!=nil { appLog("ERROR mergeXLSX: %v",err); appSetTextSafe(appStatus,"ERROR: "+err.Error()); return }
+        appLog("EVENTO: mergeXLSX terminó filas=%d", len(rows))
+        masterPath:=appFindMaster(); appLog("EVENTO: maestro=%s",masterPath); m,err:=LoadMaster(masterPath); if err!=nil { appLog("ERROR LoadMaster: %v",err); appSetTextSafe(appStatus,"ERROR maestro: "+err.Error()); return }
         lines:=appBuildCalculatedLines(rows,m); appLines=lines; appView=append([]Line(nil),lines...); appMaster=m
+        appLog("EVENTO: cálculos terminados líneas=%d", len(lines))
         if len(appColumns)==0 { appInitColumns(lines) }
         user32.NewProc("PostMessageW").Call(appHwnd,WM_APP_REFRESH,0,0)
     }(append([]string(nil),files...))
@@ -235,7 +245,8 @@ var appChecks=map[int]uintptr{}
 func appColumnsProc(hwnd uintptr,msg uint32,wp,lp uintptr)uintptr {switch msg {case WM_CREATE: y:=10;appChecks=map[int]uintptr{};for i,c:=range appColumns {if i>55{break};h:=appMake(hwnd,"BUTTON",c.Name,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_CHECKBOX,10,y,470,24,uintptr(3000+i));if c.Visible{user32.NewProc("SendMessageW").Call(h,0x00F1,BST_CHECKED,0)};appChecks[i]=h;y+=25};appMake(hwnd,"BUTTON","APLICAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,10,570,100,30,3999);case WM_COMMAND:if int(wp&0xffff)==3999 {for i,h:=range appChecks {r,_,_:=user32.NewProc("SendMessageW").Call(h,0x00F0,0,0);appColumns[i].Visible=(r==BST_CHECKED)};user32.NewProc("DestroyWindow").Call(hwnd)};case WM_DESTROY:appColumnsWindow=0;user32.NewProc("PostMessageW").Call(appHwnd,WM_APP_COLUMNS,0,0)};r,_,_:=user32.NewProc("DefWindowProcW").Call(hwnd,uintptr(msg),wp,lp);return r}
 
 func appPickXLSX(owner uintptr) []string {
-    buf:=make([]uint16,32768); filter:=syscall.StringToUTF16("Excel (*.xlsx)\x00*.xlsx\x00Todos (*.*)\x00*.*\x00\x00");of:=appOpenFile{LStructSize:uint32(unsafe.Sizeof(appOpenFile{})),HwndOwner:owner,Filter:uintptr(unsafe.Pointer(&filter[0])),File:uintptr(unsafe.Pointer(&buf[0])),MaxFile:uint32(len(buf)),Flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_ALLOWMULTISELECT|OFN_HIDEREADONLY};r,_,_:=comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&of)));if r==0{return nil};all:=syscall.UTF16ToString(buf);parts:=strings.Split(all,"\x00");if len(parts)<2{return []string{all}};dir:=parts[0];if len(parts)==2{return []string{dir}};out:=[]string{};for _,n:=range parts[1:] {if n==""{break};if filepath.IsAbs(n){out=append(out,n)}else{out=append(out,filepath.Join(dir,n))}};return out
+    appLog("EVENTO: preparando diálogo GetOpenFileNameW")
+    buf:=make([]uint16,32768); filter:=syscall.StringToUTF16("Excel (*.xlsx)\x00*.xlsx\x00Todos (*.*)\x00*.*\x00\x00");of:=appOpenFile{LStructSize:uint32(unsafe.Sizeof(appOpenFile{})),HwndOwner:owner,Filter:uintptr(unsafe.Pointer(&filter[0])),File:uintptr(unsafe.Pointer(&buf[0])),MaxFile:uint32(len(buf)),Flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_ALLOWMULTISELECT|OFN_HIDEREADONLY};appLog("EVENTO: OPENFILENAME size=%d buffer=%d",unsafe.Sizeof(of),len(buf));r,_,e:=comdlg32.NewProc("GetOpenFileNameW").Call(uintptr(unsafe.Pointer(&of)));appLog("EVENTO: GetOpenFileNameW retorno=%d err=%v",r,e);if r==0{return nil};all:=syscall.UTF16ToString(buf);parts:=strings.Split(all,"\x00");if len(parts)<2{return []string{all}};dir:=parts[0];if len(parts)==2{return []string{dir}};out:=[]string{};for _,n:=range parts[1:] {if n==""{break};if filepath.IsAbs(n){out=append(out,n)}else{out=append(out,filepath.Join(dir,n))}};return out
 }
 
 func appExportCSV(owner uintptr) {
