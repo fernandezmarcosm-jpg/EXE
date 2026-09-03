@@ -9,7 +9,7 @@ Este repositorio contiene una **reconstrucción/reimplementación** de GestionSO
 - **Tests:** `go test ./...` verde para las pruebas de parseo XLSX, filtros y números.
 - **Build objetivo:** `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` verde en la revisión auditada.
 - **go vet:** `go vet ./...` verde en la revisión auditada.
-- **Build del ejecutable:** se genera mediante GitHub Actions en Windows x64 como artifact, sin versionar binarios.
+- **Build del ejecutable:** GitHub Actions lo genera en Windows x64 como artifact, sin versionar binarios.
 
 El código fuente actual es una reconstrucción/reimplementación, no el fuente original del binario. La evidencia verificada y las inferencias están separadas en `docs/EVIDENCIA_BINARIO.md`.
 
@@ -43,14 +43,13 @@ Los controles cuyo comportamiento interno no es recuperable (`TOMAR EXCEL ABIERT
 
 El ejecutable se genera exclusivamente como artifact de GitHub Actions; no se commitean `.exe` ni `.zip`.
 
-- Workflow: https://github.com/fernandezmarcosm-jpg/EXE/actions/workflows/build-exe.yml
-- El workflow se ejecuta con `workflow_dispatch` y en cada push a `main`.
+- Run que generó el artifact actual: https://github.com/fernandezmarcosm-jpg/EXE/actions/runs/33764014134
+- Artifact: `GestionSO-V57` (artifact ID `9896720748`), generado desde el commit `1cb44122046e6a4f65ac4d2633ce67319589e4fc`.
+- Descarga: abrir el run y entrar en **Artifacts → GestionSO-V57**.
 - El ZIP incluye `GestionSO-V57.exe`, `README.md`, `docs/EVIDENCIA_BINARIO.md` y `LEEME.txt`.
 - Requiere Windows x64.
 - El flujo end-to-end puede requerir `GestionSO-V54-engine.exe`, configurado mediante `GESTIONSO_V54_ENGINE`; el motor no está incluido.
 - `GestionSO_Datos.csv` y los XLSX son datos externos y no se incluyen.
-
-Para descargar: abrir el run de **Build GestionSO V57** en Actions y entrar en **Artifacts → GestionSO-V57**.
 
 ## Compilación
 
