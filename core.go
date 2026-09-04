@@ -42,8 +42,8 @@ type ColumnDef struct {
 	Hidden bool
 }
 
-// ValueType es el tipo de dato que se asigna una sola vez al incorporar una
-// celda a memoria. El valor original Raw siempre se conserva.
+// ValueType es el tipo de dato asignado a cada valor almacenado en memoria.
+// El valor original Raw siempre se conserva.
 type ValueType uint8
 
 const (
@@ -54,8 +54,8 @@ const (
 )
 
 // MemoryValue es la unidad de informacion que circula por el programa.
-// ColumnID identifica la columna; Raw conserva exactamente lo leido y los
-// campos tipados permiten calcular sin volver al XLSX.
+// ColumnID identifica la columna; Raw conserva exactamente lo leido y Number
+// permite operar matematicamente sin volver al XLSX.
 type MemoryValue struct {
 	ColumnID string
 	Raw      string
@@ -367,7 +367,7 @@ func BuildMemoryWorkbook(doc *xlsxDoc) *MemoryWorkbook {
 				if ci < len(row) {
 					raw = strings.TrimSpace(row[ci])
 				}
-				v := makeMemoryValue(col.ID, raw, col.Type)
+				v := makeMemoryValue(col.ID, raw)
 				if v.Type != ValueEmpty {
 					mr.Values[col.ID] = v
 				}
@@ -384,12 +384,14 @@ func BuildMemoryWorkbook(doc *xlsxDoc) *MemoryWorkbook {
 }
 
 // headerRowIndexStrict identifica la fila de titulos por su estructura, no
-// por nombres concretos. Como el formato de entrada es estable, buscamos la
-// primera fila no vacia con varias celdas textuales y con registros debajo.
+// por nombres concretos. Como el formato de entrada es estable, buscamos
+// entre las filas candidatas la que mejor representa una cabecera: muchas
+// celdas ocupadas, predominio de texto y registros reales debajo.
 func headerRowIndexStrict(rows [][]string) int {
-	for i := 0; i < len(rows); i++ {
-		row := rows[i]
-		if memoryRowEmpty(row) || nonEmptyCount(row) < 2 {
+	best, bestScore := -1, -1
+	for i, row := range rows {
+		nonEmpty := nonEmptyCount(row)
+		if nonEmpty < 2 || !hasDataBelow(rows, i) {
 			continue
 		}
 		textLike, numeric := 0, 0
@@ -404,13 +406,17 @@ func headerRowIndexStrict(rows [][]string) int {
 				textLike++
 			}
 		}
-		if textLike >= 2 && textLike >= numeric {
-			if hasDataBelow(rows, i) {
-				return i
-			}
+		// La cantidad de celdas ocupadas pesa fuerte porque una fila de
+		// titulo de un reporte suele tener el ancho estructural del reporte.
+		score := nonEmpty*4 + textLike*3 - numeric*4
+		if textLike < 2 || textLike < numeric {
+			continue
+		}
+		if score > bestScore {
+			best, bestScore = i, score
 		}
 	}
-	return -1
+	return best
 }
 
 func nonEmptyCount(row []string) int {
@@ -437,8 +443,8 @@ func normalizeHeaderKey(v string) string {
 	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(v, "\ufeff")))
 }
 
-// inferColumnType se basa exclusivamente en los valores debajo del titulo.
-// El nombre de la columna nunca decide el tipo.
+// inferColumnType solo informa el tipo predominante de una columna. No se
+// utiliza para decidir el tipo de cada celda: cada valor se tipa por separado.
 func inferColumnType(rows [][]string, headerIndex, col int) ValueType {
 	numberSeen, textSeen := 0, 0
 	limit := len(rows)
@@ -465,13 +471,22 @@ func inferColumnType(rows [][]string, headerIndex, col int) ValueType {
 	return ValueText
 }
 
-func makeMemoryValue(columnID, raw string, t ValueType) MemoryValue {
+func inferValueType(raw string) ValueType {
+	if strings.TrimSpace(raw) == "" {
+		return ValueEmpty
+	}
+	if _, ok := parseNumber(raw); ok {
+		return ValueNumber
+	}
+	return ValueText
+}
+
+func makeMemoryValue(columnID, raw string) MemoryValue {
+	t := inferValueType(raw)
 	v := MemoryValue{ColumnID: columnID, Raw: raw, Type: t}
 	if t == ValueNumber {
 		if n, ok := parseNumber(raw); ok {
 			v.Number = n
-		} else {
-			v.Type = ValueText
 		}
 	}
 	return v
