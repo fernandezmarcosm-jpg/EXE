@@ -116,6 +116,20 @@ Estas correcciones son **hechos verificados en el árbol fuente y/o en los logs 
 
 **Filtrado/renderizado:** la implementación de `windows_safe_view.go` mantiene el filtrado pesado fuera del hilo UI y programa el llenado de la grilla mediante mensajes `WM_APP_RENDER_BATCH`, en lotes pequeños, para que el hilo de ventana pueda volver al loop de mensajes entre lotes.
 
+### Blindaje de bucles Win32 y render
+
+**Hecho verificado en el código revisado:** `columnViewDeleteColumns` era un `for` sin cota que repetía `SendMessageW(LVM_DELETECOLUMN, índice 0)` hasta que la API devolviera cero. Ese patrón podía dejar atrapado al hilo UI si el control no progresaba correctamente.
+
+**Corrección aplicada:** ahora se obtiene el `HWND` del header con `LVM_GETHEADER` y el número real de columnas con `HDM_GETITEMCOUNT`. Se intenta borrar exactamente esa cantidad, siempre desde el índice 0, con un límite duro adicional de 512 iteraciones. Se registran las columnas detectadas y las efectivamente borradas. Si no se obtiene el header, el borrado se omite en lugar de entrar en un bucle potencialmente infinito.
+
+**Resto de bucles Win32 revisados:** `findChildByID` tiene límite de 1000 y corte si el handle no avanza. Los demás recorridos encontrados en `column_view_windows.go`, `windows_safe_view.go` y la ruta de importación son recorridos sobre slices/mapas o tienen límites derivados de cantidades finitas; no se dejó otro `for` abierto esperando indefinidamente una respuesta de `SendMessageW`/Win32.
+
+**Ruta NO-safe:** `columnViewRefresh` también pasa por la nueva `columnViewDeleteColumns`, por lo que edición de nombres, columnas y cualquier refresco tradicional queda protegido contra el mismo cuelgue.
+
+**Fuente:** `appApplyVisualPolish` usa ahora una altura negativa válida (`-14`) para `CreateFontW`, en lugar de la representación incorrecta `^uint32(8)`.
+
+**Recuperación:** `appFinishImport`, `columnViewSetDatasetSafe` y el render por lotes quedan protegidos con recuperación de pánico y registro mediante `appLog`, para evitar que un fallo inesperado derribe el proceso completo.
+
 ### Validación
 
 La modificación de estabilidad debe validarse mediante GitHub Actions con `go test ./...`, `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...`, `go vet ./...` y el workflow de generación del EXE. El éxito de compilación no se considera prueba de resolución del cuelgue de runtime: la confirmación final requiere que el log de ejecución muestre el retorno de `DispatchMessageW` para `0x8001` y, posteriormente, las etapas `import_done` y `render batch`.
