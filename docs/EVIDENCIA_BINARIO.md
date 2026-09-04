@@ -98,6 +98,28 @@ Estas correcciones son **hechos verificados en el árbol fuente y/o en los logs 
 - `findDialogUnder` no devuelve una ventana arbitraria; queda pendiente porque su relación exacta con el diálogo V54 no está demostrada.
 - El ajuste de anchos de toolbar y layout es aproximado y no pretende ser una reconstrucción pixel-perfect.
 
+## Correcciones de estabilidad
+
+### Cuelgue del handler `WM_APP_IMPORT_DONE` (0x8001)
+
+**Hecho verificado por el log de runtime:** la consolidación XLSX termina en la goroutine de fondo en decenas/centenas de milisegundos y posteriormente se publica `WM_APP_IMPORT_DONE=0x8001`. El log muestra `MSG[...] antes Translate/Dispatch msg=0x8001` pero no muestra el correspondiente `después Dispatch`; al mismo tiempo continúan los `HEARTBEAT` cada 2 segundos. Esto demuestra que el proceso sigue vivo y que el hilo Win32 queda ocupado dentro del procesamiento del mensaje.
+
+**Hecho verificado en el código:** `WM_APP_IMPORT_DONE` llama directamente a `appFinishImport`. Antes de entrar a la grilla, `appFinishImport` recupera el dataset pendiente, busca el botón `ABRIR EXCEL` mediante `findChildByID`, habilita el control y luego llama a `columnViewSetDatasetSafe`.
+
+**Causa inmediata investigada:** el primer punto a bisectar antes de la grilla era `findChildByID`, porque enumeraba repetidamente hijos mediante `FindWindowExW` sin límite. Una enumeración Win32 defectuosa podía impedir el retorno del handler.
+
+**Corrección aplicada:** `findChildByID` ahora tiene un máximo de 1000 iteraciones y verifica que el handle devuelto avance respecto del anterior. `appFinishImport` registra cada frontera crítica: entrada, Lock/Unlock, `findChildByID`, validación de error/dataset y entrada/salida de `columnViewSetDatasetSafe`.
+
+**Corrección defensiva adicional:** si la importación termina sin error pero `appPendingDataset` es `nil`, `appFinishImport` muestra un error en el estado y retorna sin tocar la grilla, evitando una desreferencia de `ds.Records`.
+
+**Separación entre hecho e inferencia:** el log verifica el bloqueo dentro del procesamiento de `WM_APP_IMPORT_DONE`, pero el log anterior por sí solo no demuestra que `findChildByID` sea definitivamente la causa raíz. La instrumentación y el límite de enumeración se agregaron precisamente para distinguir esa hipótesis de cualquier bloqueo posterior.
+
+**Filtrado/renderizado:** la implementación de `windows_safe_view.go` mantiene el filtrado pesado fuera del hilo UI y programa el llenado de la grilla mediante mensajes `WM_APP_RENDER_BATCH`, en lotes pequeños, para que el hilo de ventana pueda volver al loop de mensajes entre lotes.
+
+### Validación
+
+La modificación de estabilidad debe validarse mediante GitHub Actions con `go test ./...`, `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...`, `go vet ./...` y el workflow de generación del EXE. El éxito de compilación no se considera prueba de resolución del cuelgue de runtime: la confirmación final requiere que el log de ejecución muestre el retorno de `DispatchMessageW` para `0x8001` y, posteriormente, las etapas `import_done` y `render batch`.
+
 ## Pruebas agregadas
 
 `core_test.go` cubre:
