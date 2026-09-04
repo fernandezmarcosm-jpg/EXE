@@ -1,55 +1,8 @@
 //go:build windows
-
 package main
+import "time"
 
-import (
-    "fmt"
-    "time"
-)
-
-// Wrapper de diagnóstico alrededor del callback Win32. Un panic dentro del
-// callback queda registrado sin llevarse por delante silenciosamente la UI.
-func appWndProcLogged(hwnd uintptr, msg uint32, wp, lp uintptr) (ret uintptr) {
-    start := time.Now()
-    defer func() {
-        elapsed := time.Since(start)
-        if v := recover(); v != nil {
-            appLogPanic(fmt.Sprintf("WndProc msg=0x%X hwnd=0x%X", msg, hwnd), v)
-            ret = 0
-            return
-        }
-        if msg == WM_COMMAND || msg == WM_CLOSE || msg == WM_DESTROY || elapsed > 500*time.Millisecond {
-            appLog("WNDPROC salida msg=0x%X hwnd=0x%X wp=0x%X lp=0x%X duración=%s ret=0x%X", msg, hwnd, wp, lp, elapsed, ret)
-        }
-    }()
-
-    if msg == WM_COMMAND {
-        appLog("WM_COMMAND entrada hwnd=0x%X id=%d code=%d", hwnd, int(wp&0xffff), uint32((wp>>16)&0xffff))
-    }
-    if msg == 0x000F {
-        appLog("WM_PAINT entrada hwnd=0x%X", hwnd)
-    }
-    if msg == 0x0100 || msg == 0x0101 {
-        appLog("TECLADO msg=0x%X hwnd=0x%X vk=0x%X", msg, hwnd, wp&0xff)
-    }
-    if msg == 0x0201 || msg == 0x0202 {
-        appLog("RATON msg=0x%X hwnd=0x%X", msg, hwnd)
-    }
-
-    ret = appWndProc(hwnd, msg, wp, lp)
-
-    // Se agregan los controles de columnas sin tocar el flujo estable de
-    // apertura/lectura del XLSX. El mismo objeto en memoria se vuelve a pintar.
-    if msg == WM_CREATE {
-        columnViewCreate(hwnd)
-    } else if msg == WM_SIZE {
-        columnViewLayout(hwnd)
-    } else if msg == WM_COMMAND && columnViewHandlesCommand(wp) {
-        columnViewRefresh()
-    } else if msg == WM_APP_IMPORT_DONE {
-        columnViewRefresh()
-    }
-    return ret
-}
-
-func appLogRuntimeEvent(name string) { appLog("EVENTO: %s", name) }
+// Wrapper de diagnóstico alrededor del callback Win32. La creación de controles
+// pertenece exclusivamente a appWndProc; este wrapper nunca duplica la UI.
+func appWndProcLogged(hwnd uintptr,msg uint32,wp,lp uintptr)(ret uintptr){start:=time.Now();defer func(){if v:=recover();v!=nil{appLogPanic("WndProc",v);ret=0};if msg==WM_COMMAND||msg==WM_CLOSE||msg==WM_DESTROY||time.Since(start)>500*time.Millisecond{appLog("WNDPROC msg=0x%X hwnd=0x%X duración=%s",msg,hwnd,time.Since(start))}}();return appWndProc(hwnd,msg,wp,lp)}
+func appLogRuntimeEvent(name string){appLog("EVENTO: %s",name)}
