@@ -2,14 +2,9 @@
 
 package main
 
-import (
-    "strings"
-    "syscall"
-    "unsafe"
-)
+import "strings"
 
-// configWndProc handles only the controls created by datasetShowConfig.
-// Settings are persisted through the existing DatasetSettings serializer.
+// configWndProc handles the controls created by datasetShowConfig.
 func configWndProc(h uintptr, m uint32, w, l uintptr) uintptr {
     defer appRecover("configWndProc")
     switch m {
@@ -39,8 +34,7 @@ func configWndProc(h uintptr, m uint32, w, l uintptr) uintptr {
                 s.SubtotalColumn = ""
             }
             s.MaxColumns = strconvSafe(appGetEdit(configEdits[configIDMaxColumns]), s.MaxColumns)
-            check := appGetCheck(configEdits[configIDSubtotalCheck])
-            s.SubtotalEnabled = check
+            s.SubtotalEnabled = appGetCheck(configEdits[configIDSubtotalCheck])
             datasetSettingsNormalize(&s)
             appSettings = s
             if err := saveDatasetSettings(appSettings); err != nil {
@@ -53,7 +47,6 @@ func configWndProc(h uintptr, m uint32, w, l uintptr) uintptr {
             closeConfigWindow()
             return 0
         case configIDNames:
-            // The names editor is not implemented in this reconstruction yet.
             appLog("EVENTO: EDITAR NOMBRES solicitado; editor pendiente")
             return 0
         }
@@ -84,6 +77,4 @@ func closeConfigWindow() {
         appSetEnabled(configParent, true)
         configParent = 0
     }
-    _ = unsafe.Pointer(nil)
-    _ = syscall.Handle(0)
 }
