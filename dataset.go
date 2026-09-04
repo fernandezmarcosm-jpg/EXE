@@ -1,0 +1,51 @@
+package main
+
+import (
+	"bytes"
+	_ "embed"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+//go:embed acceso chatgpt/GestionSO_Datos.csv
+var embeddedMasterCSV []byte
+
+type DatasetSettings struct {
+	Decimals int `json:"decimals"`
+	FontSize int `json:"font_size"`
+	JoinExcelColumn string `json:"join_excel_column"`
+	FormulaTitle string `json:"formula_title"`
+	Formula string `json:"formula"`
+	SubtotalColumn string `json:"subtotal_column"`
+	SubtotalEnabled bool `json:"subtotal_enabled"`
+}
+func defaultDatasetSettings() DatasetSettings { return DatasetSettings{Decimals:2,FontSize:10,JoinExcelColumn:"SKU",FormulaTitle:"CALCULADA",Formula:"",SubtotalEnabled:false} }
+func datasetSettingsPath() string { if d,e:=os.UserConfigDir();e==nil{return filepath.Join(d,"GestionSO V57","dataset.json")};return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.json") }
+func loadDatasetSettings() DatasetSettings { s:=defaultDatasetSettings();b,e:=os.ReadFile(datasetSettingsPath());if e==nil&&json.Unmarshal(b,&s)==nil{if s.Decimals<0||s.Decimals>8{s.Decimals=2};if s.FontSize<8||s.FontSize>32{s.FontSize=10};return s};return s }
+func saveDatasetSettings(s DatasetSettings) error {p:=datasetSettingsPath();if e:=os.MkdirAll(filepath.Dir(p),0755);e!=nil{return e};b,e:=json.MarshalIndent(s,"","  ");if e!=nil{return e};return os.WriteFile(p,b,0644)}
+
+type DatasetColumn struct { ID,Title,Source string; Type ValueType; Width int; Visible bool }
+type DatasetRecord struct { SO string; Values map[string]MemoryValue }
+type MemoryDataset struct { Columns []DatasetColumn; Records []DatasetRecord; CSVRows,Enriched,DuplicateSO int; SourceFiles []string }
+type csvMaster struct { Headers []string; ByKey map[string]map[string]string }
+func normalizeJoinKey(v string) string{return strings.ToUpper(strings.TrimSpace(v))}
+func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");if strings.EqualFold(strings.TrimSpace(h[i]),"CLAVE"){ki=i}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(row[i])}};m.ByKey[k]=v};return m,source,nil}
+
+func BuildMemoryDataset(docs []*xlsxDoc,settings DatasetSettings)(*MemoryDataset,error){if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")};m,_,e:=loadMasterCSV("");if e!=nil{return nil,e};ds:=&MemoryDataset{CSVRows:len(m.ByKey)};ids:=map[string]string{};add:=func(title,src string,t ValueType)string{k:=strings.ToLower(src+"|"+strings.TrimSpace(title));if x,ok:=ids[k];ok{return x};x:=fmt.Sprintf("D%03d",len(ds.Columns)+1);ds.Columns=append(ds.Columns,DatasetColumn{ID:x,Title:strings.TrimSpace(title),Source:src,Type:t,Width:140,Visible:true});ids[k]=x;return x};seen:=map[string]bool{}
+	for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,s:=range doc.Memory.Sheets{soID,joinID:="","";mapID:=map[string]string{};for _,c:=range s.Columns{id:=add(c.Title,"XLSX",c.Type);mapID[c.ID]=id;n:=strings.TrimSpace(c.Title);if strings.EqualFold(n,"SO"){soID=c.ID};if strings.EqualFold(n,strings.TrimSpace(settings.JoinExcelColumn)){joinID=c.ID}};if soID==""{continue};for _,r:=range s.Rows{v,ok:=r.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue};key:=normalizeJoinKey(v.Raw);if seen[key]{ds.DuplicateSO++;continue};seen[key]=true;rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";for old,newID:=range mapID{if x,ok:=r.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x;if old==joinID{join=x.Raw}}};if item,ok:=m.ByKey[normalizeJoinKey(join)];ok{ds.Enriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id:=add(h,"CSV",inferValueType(raw));rec.Values[id]=makeMemoryValue(id,raw)}};ds.Records=append(ds.Records,rec)}}};if len(ds.Records)==0{return nil,fmt.Errorf("no se encontraron filas con una columna SO")};if settings.FormulaTitle!=""&&settings.Formula!=""{ds.Columns=append(ds.Columns,DatasetColumn{ID:fmt.Sprintf("D%03d",len(ds.Columns)+1),Title:settings.FormulaTitle,Source:"CALCULADA",Type:ValueNumber,Width:150,Visible:true})};return ds,nil}
+
+func (ds *MemoryDataset)columnByTitle(t string)(DatasetColumn,bool){for _,c:=range ds.Columns{if strings.EqualFold(strings.TrimSpace(c.Title),strings.TrimSpace(t)){return c,true}};return DatasetColumn{},false}
+func evaluateFormula(expr string,r DatasetRecord,cols []DatasetColumn)(float64,bool){vals:=map[string]float64{};for _,c:=range cols{if v,ok:=r.Values[c.ID];ok&&v.Type==ValueNumber{vals[strings.ToLower(strings.TrimSpace(c.Title))]=v.Number}};p:=&formulaParser{s:expr,values:vals};v,ok:=p.expr();p.skip();return v,ok&&p.pos==len(p.s)}
+type formulaParser struct{s string;values map[string]float64;pos int}
+func(p *formulaParser)skip(){for p.pos<len(p.s)&&(p.s[p.pos]==' '||p.s[p.pos]=='\t'){p.pos++}}
+func(p *formulaParser)expr()(float64,bool){a,ok:=p.term();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='+'&&o!='-'{return a,true};p.pos++;b,ok:=p.term();if !ok{return 0,false};if o=='+'{a+=b}else{a-=b}}}
+func(p *formulaParser)term()(float64,bool){a,ok:=p.factor();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='*'&&o!='/'{return a,true};p.pos++;b,ok:=p.factor();if !ok{return 0,false};if o=='*'{a*=b}else{if b==0{return 0,false};a/=b}}}
+func(p *formulaParser)factor()(float64,bool){p.skip();if p.pos>=len(p.s){return 0,false};if p.s[p.pos]=='(' {p.pos++;v,ok:=p.expr();p.skip();if p.pos>=len(p.s)||p.s[p.pos]!=')'{return 0,false};p.pos++;return v,ok};st:=p.pos;if p.s[p.pos]=='['{if e:=strings.IndexByte(p.s[st:],']');e>=0{e+=st;p.pos=e+1;v,ok:=p.values[strings.ToLower(strings.TrimSpace(p.s[st+1:e]))];return v,ok}};for p.pos<len(p.s)&&((p.s[p.pos]>='0'&&p.s[p.pos]<='9')||p.s[p.pos]=='.'||p.s[p.pos]==','){p.pos++};if p.pos>st{n:=strings.ReplaceAll(p.s[st:p.pos],",",".");v,e:=strconv.ParseFloat(n,64);return v,e==nil};return 0,false}
+func applyDatasetFormula(ds *MemoryDataset,s DatasetSettings){if ds==nil||s.Formula==""||s.FormulaTitle==""{return};c,ok:=ds.columnByTitle(s.FormulaTitle);if !ok{return};for i:=range ds.Records{if v,ok:=evaluateFormula(s.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,s.Decimals)}}}}
+func formatDatasetNumber(v float64,d int)string{if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
