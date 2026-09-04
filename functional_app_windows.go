@@ -1,6 +1,8 @@
 //go:build windows
 package main
 
+// appRecover se centraliza en crashlog_windows.go; no declarar otra variante en este archivo.
+
 import("fmt";"path/filepath";"strings";"sync";"syscall";"time";"unsafe";"unicode/utf16")
 const(appIDOpen=2001;appIDStatus=2006;appIDView=2007;appIDColumns=2008;appIDConfig=2009;WM_CREATE=1;WM_SIZE=5;WM_CLOSE=0x10;WM_DESTROY=2;WM_COMMAND=0x111;WM_NOTIFY=0x4E;WM_APP_IMPORT_DONE=0x8001;WM_APP_RENDER_BATCH=0x8002;WS_OVERLAPPEDWINDOW=0x00CF0000;WS_VISIBLE=0x10000000;WS_CHILD=0x40000000;WS_TABSTOP=0x00010000;WS_BORDER=0x00800000;BS_PUSHBUTTON=0;ofnExplorer=0x00080000;ofnPathMustExist=0x00000800;ofnFileMustExist=0x00001000;ofnHideReadOnly=4;ofnAllowMultiSelect=0x200;ofnNoChangeDir=8;WM_SETFONT=0x30)
 type appRect struct{Left,Top,Right,Bottom int32};type appWndClass struct{CbSize uint32;Style uint32;LpfnWndProc uintptr;CbClsExtra,CbWndExtra int32;HInstance,HIcon,HCursor,HbrBackground uintptr;LpszMenuName,LpszClassName *uint16;HIconSm uintptr};type appOpenFile struct{LStructSize uint32;_ uint32;HwndOwner uintptr;HInstance uintptr;Filter uintptr;CustomFilter uintptr;MaxCustom uint32;FilterIndex uint32;File uintptr;MaxFile uint32;_ uint32;FileTitle uintptr;MaxFileTitle uint32;_ uint32;InitialDir uintptr;Title uintptr;Flags uint32;FileOffset uint16;FileExtension uint16;DefExt uintptr;CustData uintptr;Hook uintptr;Template uintptr;Reserved uintptr;Reserved2 uint32;FlagsEx uint32}
