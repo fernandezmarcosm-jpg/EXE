@@ -1,7 +1,7 @@
 //go:build windows
 package main
 
-import("fmt";"strconv";"strings";"syscall";"unsafe")
+import("fmt";"strconv";"strings";"syscall";"unsafe";"unicode/utf16")
 
 const(lvmFirst=0x1000;lvmSetExtended=0x1036;lvmDeleteAll=0x1009;lvmDeleteColumn=0x100C;lvmInsertColumnW=0x1061;lvmInsertItemW=0x104D;lvmSetItemTextW=0x1074;lvmGetColumnOrderArray=0x103B;lvmSetColumnWidth=0x101E;lvmGetColumnWidth=0x101D;lvmGetHeader=0x101F;hdmGetItemCount=0x1200;lvscwAutosize int32=-1;lvifText=1;lvcfText=4;lvcfmtLeft=0;lvcfmtRight=1;lvsReport=1;lvsExGridlines=1;lvsExFullRowSelect=0x20;lvsExDoubleBuffer=0x10000;lvsExHeaderDragDrop=0x40;mfString=0;mfChecked=8;tpmRetCmd=0x100;bmGetCheck=0xF0;bmSetCheck=0xF1;bstChecked=1;configIDOK=3101;configIDCancel=3102;configIDDecimals=3103;configIDFont=3104;configIDSOColumn=3105;configIDJoin=3106;configIDFormulaTitle=3107;configIDFormula=3108;configIDSubtotal=3109;configIDSubtotalCheck=3110;configIDNames=3111;configIDMaxColumns=3112;configClass="GestionSOConfig";namesClass="GestionSONames";menuIDClearFilters=39997;menuIDSelectAll=39998;menuIDDeselectAll=39999;filterBaseID=50000;esAutoHScroll=0x80;lvnEndDrag=-109)
 
