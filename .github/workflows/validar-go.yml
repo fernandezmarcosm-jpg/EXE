@@ -24,6 +24,10 @@ jobs:
         shell: pwsh
         run: go test ./...
 
+      - name: Vet
+        shell: pwsh
+        run: go vet ./...
+
       - name: Build smoke test
         shell: pwsh
         run: |
