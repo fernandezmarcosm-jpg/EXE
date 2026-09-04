@@ -2,6 +2,7 @@
 package main
 
 import (
+    "strings"
     "syscall"
     "unsafe"
 )
@@ -25,8 +26,8 @@ func columnViewSetDatasetSafe(ds *MemoryDataset) {
 
 // columnViewRefreshSafe prepares the ListView and schedules small render batches.
 // It deliberately does not populate every row synchronously from the window
-// procedure: large ListView update bursts can make Windows report the program
-// as "not responding" even though the XLSX import itself already finished.
+// procedure. Filtering is also calculated from one snapshot of the edit boxes;
+// never call GetWindowText for every record/column combination.
 func columnViewRefreshSafe() {
     safeRenderGeneration++
     generation := safeRenderGeneration
@@ -52,10 +53,49 @@ func columnViewRefreshSafe() {
         user32.NewProc("SendMessageW").Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&lc)))
     }
 
-    safeRenderRecords = columnViewFilteredRecords()
+    safeRenderRecords = safeFilteredRecords()
     if appHwnd != 0 {
         user32.NewProc("PostMessageW").Call(appHwnd, WM_APP_RENDER_BATCH, uintptr(generation), 0)
     }
+}
+
+// safeFilteredRecords snapshots the filter controls once. The previous
+// implementation called GetWindowTextLengthW/GetWindowTextW for every record,
+// multiplying Win32 calls by rows x visible filters and blocking the UI thread.
+func safeFilteredRecords() []DatasetRecord {
+    if viewDataset == nil { return nil }
+
+    type filter struct {
+        column DatasetColumn
+        text string
+    }
+    filters := make([]filter, 0, len(viewFilters))
+    for id, h := range viewFilters {
+        text := strings.ToLower(strings.TrimSpace(appGetEdit(h)))
+        if text == "" { continue }
+        for _, c := range viewDataset.Columns {
+            if c.ID == id {
+                filters = append(filters, filter{column: c, text: text})
+                break
+            }
+        }
+    }
+    if len(filters) == 0 {
+        return append([]DatasetRecord(nil), viewDataset.Records...)
+    }
+
+    out := make([]DatasetRecord, 0, len(viewDataset.Records))
+    for _, r := range viewDataset.Records {
+        ok := true
+        for _, f := range filters {
+            if !strings.Contains(strings.ToLower(datasetCellText(r, f.column)), f.text) {
+                ok = false
+                break
+            }
+        }
+        if ok { out = append(out, r) }
+    }
+    return out
 }
 
 func columnViewRenderBatch(generation uint64) {
