@@ -75,6 +75,46 @@ func columnViewRefresh() {
 	appSetText(appView, renderSelectedColumnsForTest(appImportedWorkbook))
 }
 
+// columnHeaderRowIndexTest no utiliza el detector heuristico general. Los
+// Excel de GestionSO contienen datos que incluyen "SO", "CLIENTE", etc.; el
+// detector anterior podia elegir una fila de datos como encabezado y por eso
+// se mostraban los nombres de columnas pero ninguna fila.
+func columnHeaderRowIndexTest(rows [][]string) int {
+	best := -1
+	bestScore := -1
+	for i, row := range rows {
+		score := 0
+		for _, v := range row {
+			h := strings.ToLower(strings.TrimSpace(v))
+			switch h {
+			case "sku":
+				score += 100
+			case "descripción", "descripcion":
+				score += 100
+			case "factura", "fecha", "cliente":
+				score += 20
+			case "origen: preciounifc":
+				score += 80
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			best = i
+		}
+	}
+	return best
+}
+
+func columnHeaderIndexFlexible(headers []string, wanted ...string) int {
+	for i, h := range headers {
+		n := strings.ToLower(strings.TrimSpace(h))
+		for _, w := range wanted {
+			if n == strings.ToLower(strings.TrimSpace(w)) { return i }
+		}
+	}
+	return -1
+}
+
 func renderSelectedColumnsForTest(doc *xlsxDoc) string {
 	if doc == nil || len(doc.Sheets) == 0 { return "Excel vacío o sin hojas legibles." }
 	names := make([]string, 0, len(doc.Sheets))
@@ -83,15 +123,15 @@ func renderSelectedColumnsForTest(doc *xlsxDoc) string {
 	rows := doc.Sheets[first]
 	if len(rows) == 0 { return "Hoja sin datos." }
 
-	hi := headerRowIndex(rows)
+	hi := columnHeaderRowIndexTest(rows)
 	if hi < 0 || hi >= len(rows) { return "No se encontró la fila de encabezados." }
 	headers := uniqueHeaders(rows[hi])
-	skuIdx := columnHeaderIndex(headers, "SKU")
-	descIdx := columnHeaderIndex(headers, "MASTER_DESCRIPCION")
-	if descIdx < 0 { descIdx = columnHeaderIndex(headers, "DESCRIPCION") }
-	priceIdx := columnHeaderIndex(headers, "PRECIOUNIFC")
-	unitsIdx := columnHeaderIndex(headers, "MASTER_UNIDADES_X_BULTO")
-	if unitsIdx < 0 { unitsIdx = columnHeaderIndex(headers, "UNIDADES_X_BULTO") }
+	skuIdx := columnHeaderIndexFlexible(headers, "SKU")
+	descIdx := columnHeaderIndexFlexible(headers, "MASTER_DESCRIPCION", "DESCRIPCION", "Descripción", "ORIGEN: DESCRIPCION ITEM")
+	priceIdx := columnHeaderIndexFlexible(headers, "PRECIOUNIFC", "ORIGEN: PRECIOUNIFC")
+	unitsIdx := columnHeaderIndexFlexible(headers, "MASTER_UNIDADES_X_BULTO", "UNIDADES_X_BULTO")
+
+	master := cachedMaster()
 
 	var b strings.Builder
 	b.WriteString("COLUMNAS A MOSTRAR\r\n")
@@ -103,14 +143,34 @@ func renderSelectedColumnsForTest(doc *xlsxDoc) string {
 	if columnIsChecked(columnPrice) { b.WriteString("PRECIOUNIFC / UNIDADES_X_BULTO\t") }
 	b.WriteString("\r\n")
 
+	// Se muestran las filas reales del XLSX. Los valores del maestro se usan
+	// directamente por SKU como respaldo, por lo que la prueba funciona incluso
+	// si una versión del XLSX todavía no trae las columnas MASTER_* anexadas.
 	end := len(rows)
 	if end > hi+100 { end = hi + 100 }
 	for i := hi + 1; i < end; i++ {
+		if len(rows[i]) == 0 { continue }
+		sku := columnCellAt(rows[i], skuIdx)
+		if sku == "" { continue }
+
+		masterRow := MasterBySKU(master, sku)
+		desc := columnCellAt(rows[i], descIdx)
+		if desc == "" && masterRow != nil { desc = masterRow["DESCRIPCION"] }
+
+		price := columnCellAt(rows[i], priceIdx)
+		units := columnCellAt(rows[i], unitsIdx)
+		if masterRow != nil {
+			if units == "" { units = masterRow["UNIDADES_X_BULTO"] }
+			// El Excel de origen usa ORIGEN: PRECIOUNIFC. Si no está presente,
+			// usamos el precio unitario de lista del maestro como respaldo.
+			if price == "" { price = masterRow["PRECIO_LISTA_UNITARIO"] }
+		}
+
 		shown := false
-		if columnIsChecked(columnSKU) { b.WriteString(columnCellAt(rows[i], skuIdx)); b.WriteByte('\t'); shown = true }
-		if columnIsChecked(columnDesc) { b.WriteString(columnCellAt(rows[i], descIdx)); b.WriteByte('\t'); shown = true }
+		if columnIsChecked(columnSKU) { b.WriteString(sku); b.WriteByte('\t'); shown = true }
+		if columnIsChecked(columnDesc) { b.WriteString(desc); b.WriteByte('\t'); shown = true }
 		if columnIsChecked(columnPrice) {
-			b.WriteString(columnPricePerBoxUnit(columnCellAt(rows[i], priceIdx), columnCellAt(rows[i], unitsIdx)))
+			b.WriteString(columnPricePerBoxUnit(price, units))
 			b.WriteByte('\t')
 			shown = true
 		}
@@ -123,10 +183,7 @@ func renderSelectedColumnsForTest(doc *xlsxDoc) string {
 }
 
 func columnHeaderIndex(headers []string, wanted string) int {
-	for i, h := range headers {
-		if strings.EqualFold(strings.TrimSpace(h), wanted) { return i }
-	}
-	return -1
+	return columnHeaderIndexFlexible(headers, wanted)
 }
 
 func columnCellAt(row []string, idx int) string {
