@@ -59,10 +59,9 @@ func appApplyVisualPolish(parent uintptr) {
     gdi := syscall.NewLazyDLL("gdi32.dll")
     createFont := gdi.NewProc("CreateFontW")
     face := appU16("Segoe UI")
-    // CreateFontW receives a signed LONG height. Passing it through uint32
-    // preserves the two's-complement representation without a constant
-    // overflow on 64-bit builds.
-    fontHeight := uintptr(uint32(int32(-9)))
+    // CreateFontW receives a signed LONG height. Use its two's-complement
+    // representation as a uint32 value so the uintptr conversion is legal.
+    fontHeight := uintptr(^uint32(8))
     font, _, _ := createFont.Call(fontHeight, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
     explorer := appU16("Explorer")
 
