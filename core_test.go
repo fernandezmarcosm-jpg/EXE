@@ -83,8 +83,31 @@ func TestBuildMemoryWorkbookUsesOnlyRowsBelowHeaders(t *testing.T) {
 	if v.Type != ValueNumber || v.Number != 1234.5 || v.Raw != "1.234,50" {
 		t.Fatalf("numeric value was not normalized while preserving raw value: %#v", v)
 	}
-	if s.Rows[0].Values[s.Columns[0].ID].Type != ValueText {
-		t.Fatalf("SKU must remain text to preserve identifiers")
+	// El tipo se determina por el valor, no por el nombre de la columna.
+	// Raw conserva "001", por lo que el identificador sigue siendo utilizable
+	// para cruces externos sin depender de que su tipo visual sea TEXT.
+	if s.Rows[0].Values[s.Columns[0].ID].Type != ValueNumber {
+		t.Fatalf("a valor numerico debe quedar tipado como NUMBER")
+	}
+	if s.Rows[0].Values[s.Columns[0].ID].Raw != "001" {
+		t.Fatalf("el valor original debe conservarse sin perder ceros: %#v", s.Rows[0].Values[s.Columns[0].ID])
+	}
+}
+
+func TestMemoryWorkbookDoesNotDependOnHeaderNames(t *testing.T) {
+	doc := &xlsxDoc{Sheets: map[string][][]string{
+		"sheet1": {
+			{"CODIGO INTERNO", "ARTICULO", "VALOR"},
+			{"A001", "Producto", "100"},
+			{"A002", "Otro", "250,50"},
+		},
+	}}
+	m := BuildMemoryWorkbook(doc)
+	if len(m.Sheets) != 1 || len(m.Sheets[0].Rows) != 2 || len(m.Sheets[0].Columns) != 3 {
+		t.Fatalf("generic headers were not loaded as data structure: %#v", m)
+	}
+	if m.Sheets[0].Rows[0].Values[m.Sheets[0].Columns[2].ID].Number != 100 {
+		t.Fatalf("numeric value was not available for calculation")
 	}
 }
 
