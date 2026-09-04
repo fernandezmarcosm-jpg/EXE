@@ -101,3 +101,16 @@ func parseNumber(s string) (float64, bool) {
 	}
 	return 0, false
 }
+
+// maxColumns returns the widest row in a decoded XLSX sheet.
+// It belongs in the platform-independent helpers because BuildMemoryWorkbook
+// is compiled and tested on Windows as part of the complete package.
+func maxColumns(rows [][]string) int {
+	max := 0
+	for _, row := range rows {
+		if len(row) > max {
+			max = len(row)
+		}
+	}
+	return max
+}
