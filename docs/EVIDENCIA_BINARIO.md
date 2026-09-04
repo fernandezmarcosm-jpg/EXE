@@ -71,6 +71,11 @@ Estas correcciones son **hechos verificados en el árbol fuente y/o en los logs 
 - `main_windows.go`: `feedEngineFile` quedó definido una sola vez y respaldado por el símbolo real; su contrato interno queda pendiente por falta del motor V54.
 - `go.mod`: se eliminó `github.com/xuri/excelize/v2 v2.8.1`, que no es utilizado por el código reconstruido.
 - `.github/workflows/build-exe.yml`: se corrigió el build para PowerShell/Windows y se configuró la generación de un ZIP con el ejecutable y documentación como artifact; el binario no se versiona.
+- `functional_app_windows.go`: se eliminó la segunda definición de `appRecover()` sin argumentos. La única definición queda en `crashlog_windows.go` con firma `appRecover(where string)` y `appFinishImport` usa `defer appRecover("appFinishImport")`.
+- `main.go`, `windows_safe_view.go` y `config_windows.go`: las llamadas a `appRecover` pasan explícitamente el nombre de la función contenedora.
+- `column_view_windows.go`: se agregó el import `unicode/utf16` requerido por `appGetEdit`.
+- `column_view_windows.go`: se restauró `configWndProc` mediante `config_windows.go`, eliminando el símbolo indefinido detectado por el build.
+- `windows_safe_view.go`: la altura de fuente para `CreateFontW` se representa sin overflow de constante, mediante conversión a `int32` antes de pasarla a `uintptr`.
 
 ## Auditoría adicional de la revisión `main` recibida el 2026-09-03
 
