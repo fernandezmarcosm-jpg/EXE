@@ -3,7 +3,7 @@ name: Validar GestionSO V57 Minimal
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'fix/apprecover-build-green-20260904']
 
 jobs:
   validar:
