@@ -6,6 +6,15 @@ import (
     "unsafe"
 )
 
+var (
+    safeRenderGeneration uint64
+    safeRenderRecords []DatasetRecord
+    safeRenderVisible []DatasetColumn
+    safeRenderIndex int
+)
+
+const safeRenderBatchSize = 25
+
 func columnViewSetDatasetSafe(ds *MemoryDataset) {
     columnViewDestroyFilters()
     viewDataset = ds
@@ -14,13 +23,24 @@ func columnViewSetDatasetSafe(ds *MemoryDataset) {
     appApplyVisualPolish(appHwnd)
 }
 
+// columnViewRefreshSafe prepares the ListView and schedules small render batches.
+// It deliberately does not populate every row synchronously from the window
+// procedure: large ListView update bursts can make Windows report the program
+// as "not responding" even though the XLSX import itself already finished.
 func columnViewRefreshSafe() {
+    safeRenderGeneration++
+    generation := safeRenderGeneration
+    safeRenderRecords = nil
+    safeRenderVisible = nil
+    safeRenderIndex = 0
+
     if viewList == 0 { return }
     columnViewDeleteColumns()
     user32.NewProc("SendMessageW").Call(viewList, lvmDeleteAll, 0, 0)
     if viewDataset == nil { return }
 
     visible := columnViewVisibleColumns()
+    safeRenderVisible = append([]DatasetColumn(nil), visible...)
     for i, c := range visible {
         p := appU16(datasetColumnDisplayTitle(c))
         fmtCol := lvcfmtLeft
@@ -32,8 +52,21 @@ func columnViewRefreshSafe() {
         user32.NewProc("SendMessageW").Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&lc)))
     }
 
-    records := columnViewFilteredRecords()
-    for ri, r := range records {
+    safeRenderRecords = columnViewFilteredRecords()
+    if appHwnd != 0 {
+        user32.NewProc("PostMessageW").Call(appHwnd, WM_APP_RENDER_BATCH, uintptr(generation), 0)
+    }
+}
+
+func columnViewRenderBatch(generation uint64) {
+    if generation != safeRenderGeneration || viewList == 0 { return }
+    records := safeRenderRecords
+    visible := safeRenderVisible
+    end := safeRenderIndex + safeRenderBatchSize
+    if end > len(records) { end = len(records) }
+
+    for ri := safeRenderIndex; ri < end; ri++ {
+        r := records[ri]
         for ci, c := range visible {
             txt := datasetCellText(r, c)
             p := appU16(txt)
@@ -45,6 +78,13 @@ func columnViewRefreshSafe() {
             }
         }
     }
+    safeRenderIndex = end
+
+    if safeRenderIndex < len(records) {
+        user32.NewProc("PostMessageW").Call(appHwnd, WM_APP_RENDER_BATCH, uintptr(generation), 0)
+        return
+    }
+
     if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" {
         columnViewAddSubtotal(visible, records)
     }
