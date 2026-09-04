@@ -1,161 +1,24 @@
 //go:build windows
-
 package main
 
-import (
-	"fmt"
-	"strings"
-	"unsafe"
-)
-
-const (
-	columnViewSKU   = 2010
-	columnViewDesc  = 2011
-	columnViewPrice = 2012
-	bsAutoCheckBox  = 0x00000003
-	bmSetCheck      = 0x00F1
-	bmGetCheck      = 0x00F0
-	bstChecked      = 1
-	bnClicked       = 0
-)
-
-var (
-	columnSKU   uintptr
-	columnDesc  uintptr
-	columnPrice uintptr
-)
-
-// Esta capa solamente controla la presentacion. Nunca vuelve al XLSX crudo:
-// todos los valores salen de appImportedWorkbook.Memory.
-func columnViewCreate(hwnd uintptr) {
-	columnSKU = appMake(hwnd, "BUTTON", "SKU", WS_CHILD|WS_VISIBLE|WS_TABSTOP|bsAutoCheckBox, 10, 43, 90, 24, columnViewSKU)
-	columnDesc = appMake(hwnd, "BUTTON", "DESCRIPCION", WS_CHILD|WS_VISIBLE|WS_TABSTOP|bsAutoCheckBox, 105, 43, 150, 24, columnViewDesc)
-	columnPrice = appMake(hwnd, "BUTTON", "PRECIOUNIFC / UNIDADES_X_BULTO", WS_CHILD|WS_VISIBLE|WS_TABSTOP|bsAutoCheckBox, 260, 43, 285, 24, columnViewPrice)
-	columnSetCheck(columnSKU, true)
-	columnSetCheck(columnDesc, true)
-	columnSetCheck(columnPrice, true)
-	columnViewLayout(hwnd)
-}
-
-func columnViewLayout(hwnd uintptr) {
-	if hwnd == 0 {
-		return
-	}
-	var r appRect
-	user32.NewProc("GetClientRect").Call(hwnd, uintptr(unsafe.Pointer(&r)))
-	w := int(r.Right - r.Left)
-	h := int(r.Bottom - r.Top)
-	if w < 500 {
-		w = 500
-	}
-	if h < 300 {
-		h = 300
-	}
-	user32.NewProc("MoveWindow").Call(columnSKU, 10, 43, 90, 24, 1)
-	user32.NewProc("MoveWindow").Call(columnDesc, 105, 43, 150, 24, 1)
-	user32.NewProc("MoveWindow").Call(columnPrice, 260, 43, 285, 24, 1)
-	user32.NewProc("MoveWindow").Call(appView, 10, 73, uintptr(w-20), uintptr(h-83), 1)
-}
-
-func columnSetCheck(hwnd uintptr, checked bool) {
-	if hwnd == 0 {
-		return
-	}
-	var v uintptr
-	if checked {
-		v = bstChecked
-	}
-	user32.NewProc("SendMessageW").Call(hwnd, bmSetCheck, v, 0)
-}
-
-func columnIsChecked(hwnd uintptr) bool {
-	if hwnd == 0 {
-		return false
-	}
-	r, _, _ := user32.NewProc("SendMessageW").Call(hwnd, bmGetCheck, 0, 0)
-	return r == bstChecked
-}
-
-func columnViewHandlesCommand(wp uintptr) bool {
-	id := int(wp & 0xffff)
-	code := uint32((wp >> 16) & 0xffff)
-	return code == bnClicked && (id == columnViewSKU || id == columnViewDesc || id == columnViewPrice)
-}
-
-func columnViewRefresh() {
-	if appImportedWorkbook == nil || appImportedWorkbook.Memory == nil || appView == 0 {
-		return
-	}
-	appSetText(appView, renderSelectedMemoryPreview(appImportedWorkbook.Memory))
-}
-
-// renderSelectedMemoryPreview trabaja exclusivamente con ColumnID/Row.Values.
-// El titulo es solamente metadato de presentacion; nunca identifica el dato.
-func renderSelectedMemoryPreview(mw *MemoryWorkbook) string {
-	if mw == nil || len(mw.Sheets) == 0 {
-		return "Excel vacío o sin datos en memoria."
-	}
-	s := &mw.Sheets[0]
-	var b strings.Builder
-	b.WriteString("DATOS CARGADOS EN MEMORIA\r\n")
-	b.WriteString("Hoja: ")
-	b.WriteString(s.Name)
-	b.WriteString("\r\n\r\n")
-
-	selected := make([]MemoryColumn, 0, len(s.Columns))
-	for _, c := range s.Columns {
-		show := c.Visible
-		if c.ID == findMemoryColumnID(s, "SKU") {
-			show = columnIsChecked(columnSKU)
-		} else if c.ID == findMemoryColumnID(s, "DESCRIPCION") {
-			show = columnIsChecked(columnDesc)
-		} else if c.ID == findMemoryColumnID(s, "PRECIOUNIFC") {
-			show = columnIsChecked(columnPrice)
-		}
-		if show {
-			selected = append(selected, c)
-		}
-	}
-
-	for i, c := range selected {
-		if i > 0 {
-			b.WriteByte('\t')
-		}
-		b.WriteString(c.Title)
-	}
-	b.WriteString("\r\n")
-
-	rowLimit := len(s.Rows)
-	if rowLimit > 40 {
-		rowLimit = 40
-	}
-	for i := 0; i < rowLimit; i++ {
-		r := s.Rows[i]
-		for ci, c := range selected {
-			if ci > 0 {
-				b.WriteByte('\t')
-			}
-			v, ok := r.Values[c.ID]
-			if !ok {
-				continue
-			}
-			b.WriteString(cleanCell(MemoryValueString(v)))
-		}
-		b.WriteString("\r\n")
-	}
-
-	b.WriteString(fmt.Sprintf("\r\nTOTAL EN MEMORIA: %d fila(s), %d valor(es), %d hoja(s).", mw.TotalRows, mw.TotalValues, len(mw.Sheets)))
-	return b.String()
-}
-
-func findMemoryColumnID(s *MemorySheet, title string) string {
-	if s == nil {
-		return ""
-	}
-	for _, c := range s.Columns {
-		if strings.EqualFold(strings.TrimSpace(c.Title), title) || strings.Contains(strings.ToLower(c.Title), strings.ToLower(title)) {
-			return c.ID
-		}
-	}
-	return ""
-}
+import("fmt";"strconv";"strings";"syscall";"unsafe")
+const(lvmFirst=0x1000;lvmSetExtended=0x1036;lvmDeleteAll=0x1009;lvmInsertColumnW=0x1061;lvmInsertItemW=0x104D;lvmSetItemTextW=0x1074;lvifText=1;lvcfText=4;lvsReport=1;lvsExGridlines=1;lvsExFullRowSelect=0x20;lvsExDoubleBuffer=0x10000;mfString=0;mfChecked=8;tpmRetCmd=0x100;configIDOK=3101;configIDCancel=3102;configIDDecimals=3103;configIDFont=3104;configIDJoin=3105;configIDFormulaTitle=3106;configIDFormula=3107;configIDSubtotal=3108;configIDSubtotalCheck=3109;configClass="GestionSOConfig")
+type lvColumn struct{Mask uint32;Fmt,Cx int32;Text *uint16;TextMax,SubItem,Image,Order int32}
+type lvItem struct{Mask uint32;Item,SubItem int32;State,StateMask uint32;Text *uint16;TextMax,Image int32;Param uintptr}
+var(viewList uintptr;viewFont uintptr;viewDataset *MemoryDataset;viewMenuIDs=map[uintptr]int{};configHwnd uintptr;configEdits=map[int]uintptr{};configParent uintptr)
+func columnViewCreate(hwnd uintptr)uintptr{viewList=appMake(hwnd,"SysListView32","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|lvsReport,0,0,100,100,appIDView);user32.NewProc("SendMessageW").Call(viewList,lvmSetExtended,0,lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer);return viewList}
+func columnViewLayout(hwnd uintptr,w,h int){if viewList==0{return};user32.NewProc("MoveWindow").Call(viewList,10,55,uintptr(maxInt(300,w-20)),uintptr(maxInt(150,h-65)),1)}
+func columnViewDestroy(){if viewFont!=0{user32.NewProc("DeleteObject").Call(viewFont);viewFont=0};viewList=0}
+func columnViewSetDataset(ds *MemoryDataset){viewDataset=ds;columnViewRefresh()}
+func columnViewRefresh(){if viewList==0{return};user32.NewProc("SendMessageW").Call(viewList,lvmDeleteAll,0,0);if viewDataset==nil{return};visible:=[]DatasetColumn{};for _,c:=range viewDataset.Columns{if c.Visible{visible=append(visible,c)}};for i,c:=range visible{t:=appU16(c.Title);lc:=lvColumn{Mask:lvcfText,Cx:int32(c.Width),Text:t,SubItem:int32(i)};user32.NewProc("SendMessageW").Call(viewList,lvmInsertColumnW,uintptr(i),uintptr(unsafe.Pointer(&lc)))};for ri,r:=range viewDataset.Records{for ci,c:=range visible{txt:=datasetCellText(r,c);p:=appU16(txt);it:=lvItem{Mask:lvifText,Item:int32(ri),SubItem:int32(ci),Text:p,TextMax:int32(len([]rune(txt))+1)};if ci==0{user32.NewProc("SendMessageW").Call(viewList,lvmInsertItemW,0,uintptr(unsafe.Pointer(&it)))}else{user32.NewProc("SendMessageW").Call(viewList,lvmSetItemTextW,uintptr(ri),uintptr(unsafe.Pointer(&it)))}}};if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""{columnViewAddSubtotal(visible)};columnViewApplyFont()}
+func datasetCellText(r DatasetRecord,c DatasetColumn)string{if v,ok:=r.Values[c.ID];ok{if v.Type==ValueNumber{return formatDatasetNumber(v.Number,appSettings.Decimals)};return cleanCell(v.Raw)};return ""}
+func columnViewAddSubtotal(visible []DatasetColumn){target,ok:=viewDataset.columnByTitle(appSettings.SubtotalColumn);if !ok{return};sum:=0.0;for _,r:=range viewDataset.Records{if v,ok:=r.Values[target.ID];ok&&v.Type==ValueNumber{sum+=v.Number}};idx:=len(viewDataset.Records);for ci,c:=range visible{txt:="";if ci==0{txt="SUBTOTAL"}else if strings.EqualFold(c.Title,target.Title){txt=formatDatasetNumber(sum,appSettings.Decimals)};p:=appU16(txt);it:=lvItem{Mask:lvifText,Item:int32(idx),SubItem:int32(ci),Text:p,TextMax:int32(len([]rune(txt))+1)};if ci==0{user32.NewProc("SendMessageW").Call(viewList,lvmInsertItemW,0,uintptr(unsafe.Pointer(&it)))}else{user32.NewProc("SendMessageW").Call(viewList,lvmSetItemTextW,uintptr(idx),uintptr(unsafe.Pointer(&it)))}}}
+func columnViewApplyFont(){if viewList==0{return};if viewFont!=0{user32.NewProc("DeleteObject").Call(viewFont)};gdi:=syscall.NewLazyDLL("gdi32.dll");viewFont,_,_=gdi.NewProc("CreateFontW").Call(uintptr(-appSettings.FontSize),0,0,0,400,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(appU16("Segoe UI"))));if viewFont!=0{user32.NewProc("SendMessageW").Call(viewList,WM_SETFONT,viewFont,1)}}
+func columnViewShowMenu(hwnd uintptr){if viewDataset==nil{return};m,_,_:=user32.NewProc("CreatePopupMenu").Call();viewMenuIDs=map[uintptr]int{};for i,c:=range viewDataset.Columns{id:=uintptr(40000+i);f:=uint32(mfString);if c.Visible{f|=mfChecked};p:=appU16(c.Title);user32.NewProc("AppendMenuW").Call(m,uintptr(f),id,uintptr(unsafe.Pointer(p)));viewMenuIDs[id]=i};var pt struct{X,Y int32};user32.NewProc("GetCursorPos").Call(uintptr(unsafe.Pointer(&pt)));sel,_,_:=user32.NewProc("TrackPopupMenu").Call(m,tpmRetCmd,uintptr(pt.X),uintptr(pt.Y),0,hwnd,0);if i,ok:=viewMenuIDs[sel];ok{viewDataset.Columns[i].Visible=!viewDataset.Columns[i].Visible;columnViewRefresh()};user32.NewProc("DestroyMenu").Call(m)}
+func columnViewHandlesCommand(uintptr)bool{return false}
+func datasetShowConfig(parent uintptr){if configHwnd!=0{return};configParent=parent;cls:=appU16(configClass);wc:=appWndClass{CbSize:uint32(unsafe.Sizeof(appWndClass{})),LpfnWndProc:syscall.NewCallback(configWndProc),HInstance:appHInstance,HCursor:loadArrowCursor(),LpszClassName:cls};user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)));configHwnd,_,_=user32.NewProc("CreateWindowExW").Call(0,uintptr(unsafe.Pointer(cls)),uintptr(unsafe.Pointer(appU16("Configuración de presentación y cálculo"))),WS_OVERLAPPEDWINDOW|WS_VISIBLE,300,180,650,430,parent,0,appHInstance,0);fields:=[]struct{id int;label string;y int}{{configIDDecimals,"Decimales",25},{configIDFont,"Tamaño de fuente",65},{configIDJoin,"Columna Excel para cruzar con CSV",105},{configIDFormulaTitle,"Nombre columna calculada",145},{configIDFormula,"Fórmula (use [COLUMNA])",185},{configIDSubtotal,"Columna para subtotal",225}};for _,f:=range fields{appMake(configHwnd,"STATIC",f.label,WS_CHILD|WS_VISIBLE,20,f.y,300,22,0);configEdits[f.id]=appMake(configHwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP,325,f.y,280,24,uintptr(f.id))};appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,265,200,26,configIDSubtotalCheck);appSetEdit(configEdits[configIDDecimals],fmt.Sprint(appSettings.Decimals));appSetEdit(configEdits[configIDFont],fmt.Sprint(appSettings.FontSize));appSetEdit(configEdits[configIDJoin],appSettings.JoinExcelColumn);appSetEdit(configEdits[configIDFormulaTitle],appSettings.FormulaTitle);appSetEdit(configEdits[configIDFormula],appSettings.Formula);appSetEdit(configEdits[configIDSubtotal],appSettings.SubtotalColumn);appMake(configHwnd,"BUTTON","GUARDAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,320,100,30,configIDOK);appMake(configHwnd,"BUTTON","CANCELAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,320,100,30,configIDCancel);appSetEnabled(parent,false)}
+func appSetEdit(h uintptr,s string){p:=appU16(s);user32.NewProc("SetWindowTextW").Call(h,uintptr(unsafe.Pointer(p)))}
+func appGetEdit(h uintptr)string{n,_,_:=user32.NewProc("GetWindowTextLengthW").Call(h);b:=make([]uint16,n+1);user32.NewProc("GetWindowTextW").Call(h,uintptr(unsafe.Pointer(&b[0])),n+1);return strings.TrimSpace(syscall.UTF16ToString(b))}
+func configWndProc(hwnd uintptr,msg uint32,wp,lp uintptr)uintptr{switch msg{case WM_COMMAND:switch int(wp&0xffff){case configIDOK:d,_:=strconv.Atoi(appGetEdit(configEdits[configIDDecimals]));f,_:=strconv.Atoi(appGetEdit(configEdits[configIDFont]));if d<0||d>8{d=2};if f<8||f>32{f=10};appSettings.Decimals=d;appSettings.FontSize=f;appSettings.JoinExcelColumn=appGetEdit(configEdits[configIDJoin]);appSettings.FormulaTitle=appGetEdit(configEdits[configIDFormulaTitle]);appSettings.Formula=appGetEdit(configEdits[configIDFormula]);appSettings.SubtotalColumn=appGetEdit(configEdits[configIDSubtotal]);appSettings.SubtotalEnabled=true;_ = saveDatasetSettings(appSettings);appApplySettings();configClose();return 0;case configIDCancel:configClose();return 0}};if msg==WM_CLOSE{configClose();return 0};return user32Def(hwnd,msg,wp,lp)}
+func configClose(){for k:=range configEdits{delete(configEdits,k)};if configHwnd!=0{user32.NewProc("DestroyWindow").Call(configHwnd);configHwnd=0};if configParent!=0{appSetEnabled(configParent,true);configParent=0}}
+func user32Def(h uintptr,m uint32,w,l uintptr)uintptr{r,_,_:=user32.NewProc("DefWindowProcW").Call(h,uintptr(m),w,l);return r}
