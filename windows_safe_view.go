@@ -21,7 +21,7 @@ const safeRenderBatchSize = 10
 type safeFilter struct { column DatasetColumn; text string }
 
 func columnViewSetDatasetSafe(ds *MemoryDataset) {
-    defer appRecover()
+    defer appRecover("columnViewSetDatasetSafe")
     if ds == nil { appLog("PANIC/ERROR: columnViewSetDatasetSafe recibió dataset nil"); return }
     appLog("DIAGNOSTICO: import_done -> destroy filters")
     columnViewDestroyFilters()
@@ -116,7 +116,7 @@ func safeFilterRecords(ds *MemoryDataset, filters []safeFilter) []DatasetRecord 
 }
 
 func columnViewRenderBatch(generation uint64) {
-    defer appRecover()
+    defer appRecover("columnViewRenderBatch")
     if viewList == 0 { return }
     safeRenderMu.Lock()
     if generation != safeRenderGeneration { safeRenderMu.Unlock(); return }
@@ -164,7 +164,7 @@ func columnViewRenderBatch(generation uint64) {
 }
 
 func appApplyVisualPolish(parent uintptr) {
-    defer appRecover()
+    defer appRecover("appApplyVisualPolish")
     if parent == 0 { return }
     theme := syscall.NewLazyDLL("uxtheme.dll")
     setTheme := theme.NewProc("SetWindowTheme")
