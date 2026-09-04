@@ -1,9 +1,7 @@
 // RECONSTRUCCION DE GestionSO V57.
-// Este archivo NO es el fuente original. Es una reimplementacion basada en
-// simbolos, strings y comportamiento observable del binario V57.
-// HECHO VERIFICADO: existen simbolos para XLSX, persistencia, vistas,
-// configuracion, opciones y simulador.
-// INFERENCIA: estructuras, formulas y conteos no recuperables son conservadores.
+// Este archivo contiene la lectura XLSX y la capa base de datos en memoria.
+// La informacion importada se mantiene separada de la presentacion y de las
+// formulas. Los nombres visibles de las columnas no son sus identificadores.
 package main
 
 import (
@@ -31,6 +29,8 @@ type MasterData struct {
 	ByKey   map[string]MasterRow
 }
 
+// Line se conserva como estructura de compatibilidad para las funciones
+// existentes. La nueva capa de trabajo es MemoryWorkbook.
 type Line struct {
 	Values    map[string]string
 	Source    string
@@ -43,9 +43,63 @@ type ColumnDef struct {
 	Hidden bool
 }
 
+// ValueType es el tipo de dato que se asigna una sola vez al incorporar una
+// celda a memoria. El valor original Raw siempre se conserva.
+type ValueType uint8
+
+const (
+	ValueEmpty ValueType = iota
+	ValueText
+	ValueNumber
+	ValueDate
+)
+
+// MemoryValue es la unidad de informacion que circula por el programa.
+// ColumnID identifica la columna; Raw conserva exactamente lo leido y los
+// campos tipados permiten calcular sin volver al XLSX.
+type MemoryValue struct {
+	ColumnID string
+	Raw      string
+	Type     ValueType
+	Number   float64
+}
+
+type MemoryColumn struct {
+	ID       string
+	Title    string
+	Index    int
+	Type     ValueType
+	Width    int
+	Visible  bool
+}
+
+type MemoryRow struct {
+	ID        string
+	Source    string
+	SourceRow int
+	Values    map[string]MemoryValue
+}
+
+type MemorySheet struct {
+	ID          string
+	Name        string
+	HeaderIndex int
+	Columns     []MemoryColumn
+	Rows        []MemoryRow
+}
+
+type MemoryWorkbook struct {
+	Sheets      []MemorySheet
+	TotalRows   int
+	TotalValues int
+}
+
 type xlsxDoc struct {
 	SharedStrings []string
-	Sheets        map[string][][]string
+	// Sheets conserva el resultado crudo del lector. Memory es la estructura
+	// normalizada que se usa para trabajar posteriormente.
+	Sheets map[string][][]string
+	Memory *MemoryWorkbook
 }
 
 type configData struct {
@@ -75,8 +129,6 @@ func logf(format string, args ...interface{}) {
 
 func initLog() { logf("initLog: GestionSO V57 reconstruccion") }
 
-// INFERENCIA: la captura de referencia muestra SO RETENIDAS como pantalla
-// inicial. Las tres opciones de modo siguen siendo las strings verificadas.
 func defaultConfig() configData { return configData{Mode: "MODO: SO RETENIDAS"} }
 
 func LoadConfig() configData {
@@ -111,16 +163,15 @@ func saveCfg(path string, c configData) error {
 	return os.WriteFile(path, []byte(fmt.Sprintf("MasterPath=%s\nEnginePath=%s\nMode=%s\n", c.MasterPath, c.EnginePath, c.Mode)), 0644)
 }
 
-// ReadXLSX es el punto unico por el que el programa incorpora un XLSX a memoria.
-// Despues de leerlo, se integra contra GestionSO_Datos.csv en memoria usando
-// SKU del XLSX <-> CLAVE del maestro. Si el maestro no esta disponible, el
-// XLSX sigue funcionando exactamente como antes.
+// ReadXLSX es el unico punto de entrada de un XLSX. Lee primero y luego crea
+// una representacion independiente en memoria. El CSV maestro NO se mezcla
+// aqui: se consultara cuando una formula lo necesite.
 func ReadXLSX(path string) (*xlsxDoc, error) {
 	d, err := readXLSXDoc(path)
 	if err != nil {
 		return nil, err
 	}
-	integrateMasterIntoWorkbook(d)
+	d.Memory = BuildMemoryWorkbook(d)
 	return d, nil
 }
 
@@ -264,16 +315,178 @@ func normalizeRows(rows [][]string) [][]string {
 	return rows
 }
 
+// BuildMemoryWorkbook transforma el resultado crudo en la base estable de
+// trabajo. Solo las filas posteriores a la fila de titulos se convierten en
+// registros. No depende del nombre que luego se mostrara en pantalla.
+func BuildMemoryWorkbook(doc *xlsxDoc) *MemoryWorkbook {
+	mw := &MemoryWorkbook{}
+	if doc == nil {
+		return mw
+	}
+	names := make([]string, 0, len(doc.Sheets))
+	for name := range doc.Sheets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for si, name := range names {
+		rows := doc.Sheets[name]
+		if len(rows) == 0 {
+			continue
+		}
+		hi := headerRowIndexStrict(rows)
+		if hi < 0 || hi >= len(rows) {
+			continue
+		}
+		headers := uniqueHeaders(rows[hi])
+		columnCount := maxColumns(rows)
+		if columnCount < len(headers) {
+			columnCount = len(headers)
+		}
+		sheet := MemorySheet{
+			ID: fmt.Sprintf("S%03d", si+1), Name: name, HeaderIndex: hi,
+			Columns: make([]MemoryColumn, 0, columnCount), Rows: make([]MemoryRow, 0, len(rows)-hi-1),
+		}
+		for ci := 0; ci < columnCount; ci++ {
+			title := fmt.Sprintf("C%d", ci+1)
+			if ci < len(headers) && strings.TrimSpace(headers[ci]) != "" {
+				title = headers[ci]
+			}
+			t := inferColumnType(rows, hi, ci, title)
+			sheet.Columns = append(sheet.Columns, MemoryColumn{
+			ID: fmt.Sprintf("%sC%03d", sheet.ID, ci+1), Title: title,
+			Index: ci, Type: t, Width: 140, Visible: true,
+			})
+		}
+		for ri := hi + 1; ri < len(rows); ri++ {
+			row := rows[ri]
+			if memoryRowEmpty(row) {
+				continue
+			}
+			mr := MemoryRow{ID: fmt.Sprintf("%sR%06d", sheet.ID, len(sheet.Rows)+1), Source: name, SourceRow: ri + 1, Values: map[string]MemoryValue{}}
+			for ci, col := range sheet.Columns {
+				raw := ""
+				if ci < len(row) {
+					raw = strings.TrimSpace(row[ci])
+				}
+				v := makeMemoryValue(col.ID, raw, col.Type)
+				if v.Type != ValueEmpty {
+					mr.Values[col.ID] = v
+				}
+			}
+			sheet.Rows = append(sheet.Rows, mr)
+		}
+		mw.TotalRows += len(sheet.Rows)
+		for _, r := range sheet.Rows {
+			mw.TotalValues += len(r.Values)
+		}
+		mw.Sheets = append(mw.Sheets, sheet)
+	}
+	return mw
+}
+
+// headerRowIndexStrict evita el problema del detector anterior, que podia
+// elegir una fila de datos solo porque contenia palabras como "SO" o "cliente".
+// Se exige una firma de encabezado fuerte y, en empate, se toma la primera.
+func headerRowIndexStrict(rows [][]string) int {
+	best, bestScore := -1, -1
+	for i, row := range rows {
+		score := 0
+		nonEmpty := 0
+		for _, v := range row {
+			h := normalizeHeaderKey(v)
+			if h != "" { nonEmpty++ }
+			switch h {
+			case "sku", "descripcion", "descripción", "factura", "fecha", "cliente", "cuit", "cantidad", "importe", "neto so", "origen: preciounifc":
+				score += 10
+			}
+		}
+		if nonEmpty > 1 && score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	if best >= 0 && bestScore > 0 {
+		return best
+	}
+	// Formato identico: si no hay nombres reconocibles, la primera fila con
+	// contenido es la fila de titulos. No se descartan registros arbitrariamente.
+	for i, row := range rows {
+		if !memoryRowEmpty(row) { return i }
+	}
+	return -1
+}
+
+func normalizeHeaderKey(v string) string {
+	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(v, "\ufeff")))
+}
+
+func inferColumnType(rows [][]string, headerIndex, col int, title string) ValueType {
+	key := normalizeHeaderKey(title)
+	if strings.Contains(key, "fecha") || strings.Contains(key, "date") {
+		return ValueDate
+	}
+	// Identificadores no deben perder sus ceros a la izquierda.
+	if key == "sku" || key == "clave" || strings.Contains(key, "cuit") || strings.Contains(key, "codigo") || strings.Contains(key, "código") {
+		return ValueText
+	}
+	numberSeen, textSeen := 0, 0
+	limit := len(rows)
+	if limit > headerIndex+101 { limit = headerIndex + 101 }
+	for i := headerIndex + 1; i < limit; i++ {
+		if col >= len(rows[i]) { continue }
+		v := strings.TrimSpace(rows[i][col])
+		if v == "" { continue }
+		if _, ok := parseNumber(v); ok { numberSeen++ } else { textSeen++ }
+	}
+	if numberSeen > 0 && textSeen == 0 { return ValueNumber }
+	return ValueText
+}
+
+func makeMemoryValue(columnID, raw string, t ValueType) MemoryValue {
+	v := MemoryValue{ColumnID: columnID, Raw: raw, Type: t}
+	if t == ValueNumber {
+		if n, ok := parseNumber(raw); ok { v.Number = n } else { v.Type = ValueText }
+	}
+	return v
+}
+
+func memoryRowEmpty(row []string) bool {
+	for _, v := range row {
+		if strings.TrimSpace(v) != "" { return false }
+	}
+	return true
+}
+
+func (t ValueType) String() string {
+	switch t {
+	case ValueText: return "TEXT"
+	case ValueNumber: return "NUMBER"
+	case ValueDate: return "DATE"
+	default: return "EMPTY"
+	}
+}
+
+func MemoryValueString(v MemoryValue) string {
+	if v.Type == ValueNumber { return strconv.FormatFloat(v.Number, 'f', -1, 64) }
+	return v.Raw
+}
+
+func memoryColumn(mw *MemoryWorkbook, sheetID, columnID string) *MemoryColumn {
+	if mw == nil { return nil }
+	for si := range mw.Sheets {
+		if mw.Sheets[si].ID != sheetID { continue }
+		for ci := range mw.Sheets[si].Columns {
+			if mw.Sheets[si].Columns[ci].ID == columnID { return &mw.Sheets[si].Columns[ci] }
+		}
+	}
+	return nil
+}
+
 func buildMergedSheet(rows [][]string) []byte {
 	var b bytes.Buffer
 	for i, r := range rows {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
+		if i > 0 { b.WriteByte('\n') }
 		for j, v := range r {
-			if j > 0 {
-				b.WriteByte(',')
-			}
+			if j > 0 { b.WriteByte(',') }
 			b.WriteString(xmlEscape(v))
 		}
 	}
@@ -281,13 +494,9 @@ func buildMergedSheet(rows [][]string) []byte {
 }
 
 func rewriteRowNumber(ref string, n int) string {
-	if n < 1 {
-		return ref
-	}
+	if n < 1 { return ref }
 	i := 0
-	for i < len(ref) && ((ref[i] >= 'A' && ref[i] <= 'Z') || (ref[i] >= 'a' && ref[i] <= 'z')) {
-		i++
-	}
+	for i < len(ref) && ((ref[i] >= 'A' && ref[i] <= 'Z') || (ref[i] >= 'a' && ref[i] <= 'z')) { i++ }
 	return ref[:i] + strconv.Itoa(n)
 }
 
@@ -297,53 +506,37 @@ func xmlEscape(s string) string {
 
 func hashRow(r []string) string {
 	h := sha256.New()
-	for _, v := range r {
-		_, _ = h.Write([]byte(v))
-		_, _ = h.Write([]byte{0})
-	}
+	for _, v := range r { _, _ = h.Write([]byte(v)); _, _ = h.Write([]byte{0}) }
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func colFromRef(ref string) int {
 	n := 0
 	for _, r := range strings.ToUpper(ref) {
-		if r < 'A' || r > 'Z' {
-			break
-		}
+		if r < 'A' || r > 'Z' { break }
 		n = n*26 + int(r-'A'+1)
 	}
 	return n
 }
 
+// Compatibilidad con el codigo anterior. Ya no se usa para construir la
+// memoria principal, pero queda disponible para filtros y pruebas existentes.
 func headerScore(row []string) int {
 	score := 0
-	keys := []string{"factura", "cliente", "fecha", "cuit", "sku", "producto", "cantidad", "importe", "so"}
 	for _, v := range row {
-		s := strings.ToLower(strings.TrimSpace(v))
-		for _, k := range keys {
-			if strings.Contains(s, k) {
-				score++
-			}
+		s := normalizeHeaderKey(v)
+		for _, k := range []string{"factura", "cliente", "fecha", "cuit", "sku", "producto", "cantidad", "importe", "so"} {
+			if s == k { score++ }
 		}
 	}
 	return score
 }
 
-func headerRowIndex(rows [][]string) int {
-	best, bestScore := 0, -1
-	for i, r := range rows {
-		if s := headerScore(r); s > bestScore {
-			best, bestScore = i, s
-		}
-	}
-	return best
-}
+func headerRowIndex(rows [][]string) int { return headerRowIndexStrict(rows) }
 
 func normalizedHeader(v string, index int) string {
 	v = strings.TrimSpace(strings.TrimPrefix(v, "\ufeff"))
-	if v == "" {
-		return fmt.Sprintf("C%d", index+1)
-	}
+	if v == "" { return fmt.Sprintf("C%d", index+1) }
 	return v
 }
 
@@ -354,13 +547,7 @@ func uniqueHeaders(row []string) []string {
 		h := normalizedHeader(v, i)
 		key := strings.ToLower(h)
 		n := seen[key]
-		if n > 0 {
-			n++
-			seen[key] = n
-			h = fmt.Sprintf("%s_%d", h, n)
-		} else {
-			seen[key] = 1
-		}
+		if n > 0 { n++; seen[key] = n; h = fmt.Sprintf("%s_%d", h, n) } else { seen[key] = 1 }
 		o[i] = h
 	}
 	return o
@@ -370,259 +557,135 @@ func mergeXLSX(paths []string) ([][]string, error) {
 	var all [][]string
 	for _, p := range paths {
 		d, err := ReadXLSX(p)
-		if err != nil {
-			return nil, err
-		}
+		if err != nil { return nil, err }
 		names := make([]string, 0, len(d.Sheets))
-		for name := range d.Sheets {
-			names = append(names, name)
-		}
+		for name := range d.Sheets { names = append(names, name) }
 		sort.Strings(names)
-		// INFERENCIA: se toma una hoja por XLSX. Elegir el primer nombre
-		// ordenado hace que el resultado sea determinista.
-		if len(names) > 0 {
-			all = append(all, d.Sheets[names[0]]...)
-		}
+		if len(names) > 0 { all = append(all, d.Sheets[names[0]]...) }
 	}
 	return all, nil
 }
 
+// --- Maestro externo GestionSO_Datos.csv ---
+
 func locateMaster() string {
 	c := LoadConfig()
-	if c.MasterPath != "" {
-		return c.MasterPath
-	}
+	if c.MasterPath != "" { return c.MasterPath }
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "GestionSO_Datos.csv")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
+		if _, err := os.Stat(candidate); err == nil { return candidate }
 	}
-	candidate := filepath.Join("acceso chatgpt", "GestionSO_Datos.csv")
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate
+	if wd, err := os.Getwd(); err == nil {
+		candidate := filepath.Join(wd, "GestionSO_Datos.csv")
+		if _, err := os.Stat(candidate); err == nil { return candidate }
 	}
-	return filepath.Join(os.TempDir(), "GestionSO_Datos.csv")
+	return ""
 }
 
 func openMasterCSV() (*os.File, error) {
-	return os.Open(locateMaster())
+	p := locateMaster()
+	if p == "" { return nil, os.ErrNotExist }
+	return os.Open(p)
 }
 
 func ensureMasterHeaders(path string, headers []string) error {
 	f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if e != nil {
-		return e
-	}
+	if e != nil { return e }
 	defer f.Close()
 	st, e := f.Stat()
-	if e != nil {
-		return e
-	}
+	if e != nil { return e }
 	if st.Size() == 0 {
-		w := csv.NewWriter(f)
-		_ = w.Write(headers)
-		w.Flush()
-		return w.Error()
+		w := csv.NewWriter(f); _ = w.Write(headers); w.Flush(); return w.Error()
 	}
 	return nil
 }
 
 func LoadMaster(path ...string) (*MasterData, error) {
 	p := locateMaster()
-	if len(path) > 0 && path[0] != "" {
-		p = path[0]
-	}
+	if len(path) > 0 && path[0] != "" { p = path[0] }
+	if p == "" { return nil, os.ErrNotExist }
 	f, e := os.Open(p)
-	if e != nil {
-		return nil, e
-	}
+	if e != nil { return nil, e }
 	defer f.Close()
 	r := csv.NewReader(f)
 	r.FieldsPerRecord = -1
 	rows, e := r.ReadAll()
-	if e != nil {
-		return nil, e
-	}
+	if e != nil { return nil, e }
 	md := &MasterData{Path: p, ByKey: map[string]MasterRow{}}
-	if len(rows) == 0 {
-		return md, nil
-	}
+	if len(rows) == 0 { return md, nil }
 	md.Headers = make([]string, len(rows[0]))
-	for i, h := range rows[0] {
-		md.Headers[i] = normalizedHeader(h, i)
-	}
+	for i, h := range rows[0] { md.Headers[i] = normalizedHeader(h, i) }
 	keyIndex := -1
 	for i, h := range md.Headers {
-		if strings.EqualFold(strings.TrimSpace(h), "CLAVE") || strings.EqualFold(strings.TrimSpace(h), "SKU") {
-			keyIndex = i
-			break
-		}
+		if strings.EqualFold(strings.TrimSpace(h), "CLAVE") || strings.EqualFold(strings.TrimSpace(h), "SKU") { keyIndex = i; break }
 	}
 	for i := 1; i < len(rows); i++ {
 		row := rows[i]
 		mr := MasterRow{}
 		for j, h := range md.Headers {
-			if j < len(row) {
-				mr[h] = strings.TrimSpace(row[j])
-			} else {
-				mr[h] = ""
-			}
+			if j < len(row) { mr[h] = strings.TrimSpace(row[j]) } else { mr[h] = "" }
 		}
 		if keyIndex >= 0 && keyIndex < len(row) {
 			key := strings.ToUpper(strings.TrimSpace(row[keyIndex]))
-			if key != "" {
-				md.ByKey[key] = mr
-			}
+			if key != "" { md.ByKey[key] = mr }
 		}
 		md.Rows = append(md.Rows, mr)
 	}
 	return md, nil
 }
 
-var masterOnce sync.Once
-var masterModel *MasterData
-
+// No se cachea el maestro de forma permanente: el archivo es externo y puede
+// cambiar mientras el programa esta abierto. Cada calculo puede solicitar la
+// version actual para que el resultado refleje el CSV vigente.
 func cachedMaster() *MasterData {
-	masterOnce.Do(func() {
-		m, err := LoadMaster()
-		if err != nil {
-			logf("master CSV no disponible: %v", err)
-			return
-		}
-		masterModel = m
-		logf("master CSV cargado en memoria; archivo=%s filas=%d", m.Path, len(m.Rows))
-	})
-	return masterModel
-}
-
-// integrateMasterIntoWorkbook conserva todas las columnas originales del XLSX
-// y agrega al final una pequeña proyeccion del maestro para cada SKU encontrado.
-// Esto deja el dato realmente integrado dentro del mismo objeto que ya guarda
-// el programa en memoria, sin introducir una base de datos ni persistencia extra.
-func integrateMasterIntoWorkbook(doc *xlsxDoc) {
-	if doc == nil {
-		return
+	m, err := LoadMaster()
+	if err != nil {
+		logf("master CSV no disponible: %v", err)
+		return nil
 	}
-	master := cachedMaster()
-	if master == nil || len(master.Rows) == 0 {
-		return
-	}
-	for sheetName, rows := range doc.Sheets {
-		if len(rows) == 0 {
-			continue
-		}
-		hi := headerRowIndex(rows)
-		if hi < 0 || hi >= len(rows) {
-			continue
-		}
-		headers := uniqueHeaders(rows[hi])
-		skuCol := -1
-		for i, h := range headers {
-			if strings.EqualFold(strings.TrimSpace(h), "SKU") {
-				skuCol = i
-				break
-			}
-		}
-		if skuCol < 0 {
-			continue
-		}
-		const (
-			masterClave = iota
-			masterEstado
-			masterUnidades
-			masterPrecio
-			masterCosto
-			masterDescripcion
-		)
-		added := []string{"MASTER_CLAVE", "MASTER_ESTADO", "MASTER_UNIDADES_X_BULTO", "MASTER_PRECIO_LISTA_UNITARIO", "MASTER_COSTO_UNITARIO", "MASTER_DESCRIPCION"}
-		for i := range rows {
-			if i == hi {
-				rows[i] = append(rows[i], added...)
-				continue
-			}
-			sku := ""
-			if skuCol < len(rows[i]) {
-				sku = strings.TrimSpace(rows[i][skuCol])
-			}
-			r := MasterBySKU(master, sku)
-			values := make([]string, len(added))
-			if r != nil {
-				values[masterClave] = r["CLAVE"]
-				values[masterEstado] = r["ESTADO"]
-				values[masterUnidades] = r["UNIDADES_X_BULTO"]
-				values[masterPrecio] = r["PRECIO_LISTA_UNITARIO"]
-				values[masterCosto] = r["COSTO_UNITARIO"]
-				values[masterDescripcion] = r["DESCRIPCION"]
-			}
-			rows[i] = append(rows[i], values...)
-		}
-		doc.Sheets[sheetName] = rows
-	}
+	return m
 }
 
 func MasterBySKU(m *MasterData, sku string) MasterRow {
-	if m == nil {
-		return nil
-	}
+	if m == nil { return nil }
 	key := strings.ToUpper(strings.TrimSpace(sku))
-	if key == "" {
-		return nil
-	}
+	if key == "" { return nil }
 	if m.ByKey != nil {
-		if r, ok := m.ByKey[key]; ok {
-			return r
-		}
+		if r, ok := m.ByKey[key]; ok { return r }
 	}
 	for _, r := range m.Rows {
-		if strings.EqualFold(strings.TrimSpace(r["CLAVE"]), sku) || strings.EqualFold(strings.TrimSpace(r["SKU"]), sku) {
-			return r
-		}
+		if strings.EqualFold(strings.TrimSpace(r["CLAVE"]), sku) || strings.EqualFold(strings.TrimSpace(r["SKU"]), sku) { return r }
 	}
 	return nil
 }
 
 func SaveWithBackup(path string, data []byte) error {
 	if b, e := os.ReadFile(path); e == nil {
-		if e := os.WriteFile(path+".bak", b, 0644); e != nil {
-			return e
-		}
+		if e := os.WriteFile(path+".bak", b, 0644); e != nil { return e }
 	}
 	return os.WriteFile(path, data, 0644)
 }
 
 func EnsureSKU(m *MasterData, sku string) MasterRow {
-	for _, r := range m.Rows {
-		if r["CLAVE"] == sku || r["SKU"] == sku {
-			return r
-		}
-	}
+	for _, r := range m.Rows { if r["CLAVE"] == sku || r["SKU"] == sku { return r } }
 	r := MasterRow{"CLAVE": sku, "SKU": sku}
 	m.Rows = append(m.Rows, r)
-	if m.ByKey == nil {
-		m.ByKey = map[string]MasterRow{}
-	}
+	if m.ByKey == nil { m.ByKey = map[string]MasterRow{} }
 	m.ByKey[strings.ToUpper(strings.TrimSpace(sku))] = r
 	return r
 }
 
 func SetSO(r MasterRow, so string) { r["SO"] = so }
-func SOState(r MasterRow) string   { return r["SO"] }
+func SOState(r MasterRow) string { return r["SO"] }
 
 func BuildLines(rows [][]string, source string) []Line {
-	if len(rows) == 0 {
-		return nil
-	}
+	if len(rows) == 0 { return nil }
 	hi := headerRowIndex(rows)
 	headers := uniqueHeaders(rows[hi])
 	out := make([]Line, 0, len(rows)-hi-1)
 	for i := hi + 1; i < len(rows); i++ {
 		values := map[string]string{}
-		for j, v := range rows[i] {
-			if j < len(headers) {
-				values[headers[j]] = v
-			}
-		}
+		for j, v := range rows[i] { if j < len(headers) { values[headers[j]] = v } }
 		out = append(out, Line{Values: values, Source: source, RowNumber: i})
 	}
 	return out
@@ -630,29 +693,17 @@ func BuildLines(rows [][]string, source string) []Line {
 
 func findFieldKey(l Line, candidates ...string) string {
 	keys := make([]string, 0, len(l.Values))
-	for k := range l.Values {
-		keys = append(keys, k)
-	}
+	for k := range l.Values { keys = append(keys, k) }
 	sort.Strings(keys)
 	for _, cand := range candidates {
 		cl := strings.ToLower(strings.TrimSpace(cand))
-		for _, k := range keys {
-			if strings.ToLower(strings.TrimSpace(k)) == cl {
-				return k
-			}
-		}
+		for _, k := range keys { if strings.ToLower(strings.TrimSpace(k)) == cl { return k } }
 	}
 	for _, cand := range candidates {
 		cl := strings.ToLower(strings.TrimSpace(cand))
-		for _, k := range keys {
-			if strings.Contains(strings.ToLower(strings.TrimSpace(k)), cl) {
-				return k
-			}
-		}
+		for _, k := range keys { if strings.Contains(strings.ToLower(strings.TrimSpace(k)), cl) { return k } }
 	}
-	if len(keys) > 0 {
-		return keys[0]
-	}
+	if len(keys) > 0 { return keys[0] }
 	return ""
 }
 
