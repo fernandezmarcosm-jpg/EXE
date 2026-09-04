@@ -322,7 +322,7 @@ func appFinishImport(hwnd uintptr) {
 
     status := fmt.Sprintf("EN MEMORIA: %d hoja(s) | %d fila(s) | %d celda(s) | %s", len(workbook.Sheets), rows, cells, filepath.Base(path))
     appSetText(appStatus, status)
-    appSetText(appView, renderWorkbookPreview(workbook))
+    appSetText(appView, renderMemoryWorkbookPreview(workbook))
     appLog("EVENTO: XLSX almacenado en memoria y visualizado; archivo=%s hojas=%d filas=%d celdas=%d", filepath.Base(path), len(workbook.Sheets), rows, cells)
 }
 
@@ -335,43 +335,38 @@ func workbookSize(doc *xlsxDoc) (rows, cells int) {
     return rows, cells
 }
 
-func renderWorkbookPreview(doc *xlsxDoc) string {
-    if doc == nil || len(doc.Sheets) == 0 { return "Excel vacío o sin hojas legibles." }
-
+func renderMemoryWorkbookPreview(doc *xlsxDoc) string {
+    if doc == nil || doc.Memory == nil || len(doc.Memory.Sheets) == 0 { return "Excel vacío o sin filas de datos debajo de los títulos." }
     const maxRows = 40
     const maxCols = 20
-    names := make([]string, 0, len(doc.Sheets))
-    for name := range doc.Sheets { names = append(names, name) }
-    first := names[0]
-    rows := doc.Sheets[first]
-
+    s := &doc.Memory.Sheets[0]
     var b strings.Builder
     b.WriteString("DATOS CARGADOS EN MEMORIA\r\n")
     b.WriteString("Hoja: ")
-    b.WriteString(first)
+    b.WriteString(s.Name)
     b.WriteString("\r\n\r\n")
-
-    rowLimit := len(rows)
-    if rowLimit > maxRows { rowLimit = maxRows }
-    colLimit := 0
-    for i := 0; i < rowLimit; i++ {
-        if len(rows[i]) > colLimit { colLimit = len(rows[i]) }
-    }
+    colLimit := len(s.Columns)
     if colLimit > maxCols { colLimit = maxCols }
-
+    for i := 0; i < colLimit; i++ {
+        if i > 0 { b.WriteByte('\t') }
+        b.WriteString(s.Columns[i].Title)
+    }
+    b.WriteString("\r\n")
+    rowLimit := len(s.Rows)
+    if rowLimit > maxRows { rowLimit = maxRows }
     for i := 0; i < rowLimit; i++ {
-        for j := 0; j < colLimit; j++ {
-            if j > 0 { b.WriteByte('\t') }
-            if j < len(rows[i]) { b.WriteString(cleanCell(rows[i][j])) }
+        r := s.Rows[i]
+        for ci := 0; ci < colLimit; ci++ {
+            if ci > 0 { b.WriteByte('\t') }
+            colID := s.Columns[ci].ID
+            if v, ok := r.Values[colID]; ok { b.WriteString(cleanCell(MemoryValueString(v))) }
         }
         b.WriteString("\r\n")
     }
-
-    totalRows, totalCells := workbookSize(doc)
-    if len(rows) > maxRows || colLimit < maxColumns(rows) {
+    if len(s.Rows) > maxRows || len(s.Columns) > maxCols {
         b.WriteString("\r\n[Vista previa limitada. El contenido completo permanece en memoria.]\r\n")
     }
-    b.WriteString(fmt.Sprintf("\r\nTOTAL EN MEMORIA: %d fila(s), %d celda(s), %d hoja(s).", totalRows, totalCells, len(doc.Sheets)))
+    b.WriteString(fmt.Sprintf("\r\nTOTAL EN MEMORIA: %d fila(s), %d valor(es), %d hoja(s).", doc.Memory.TotalRows, doc.Memory.TotalValues, len(doc.Memory.Sheets)))
     return b.String()
 }
 
