@@ -51,3 +51,53 @@ func TestHeaderFiltersAreFieldSpecific(t *testing.T) {
 		t.Fatalf("field filter matched the wrong field: %#v", got)
 	}
 }
+
+func TestBuildMemoryWorkbookUsesOnlyRowsBelowHeaders(t *testing.T) {
+	doc := &xlsxDoc{Sheets: map[string][][]string{
+		"sheet1": {
+			{"INFORME DE DESCUENTOS", "", ""},
+			{"otra linea informativa", "", ""},
+			{"SKU", "DESCRIPCION", "PRECIOUNIFC"},
+			{"001", "HARINA", "1.234,50"},
+			{"002", "AZUCAR", "800"},
+		},
+	}}
+	m := BuildMemoryWorkbook(doc)
+	if len(m.Sheets) != 1 {
+		t.Fatalf("expected one sheet, got %d", len(m.Sheets))
+	}
+	s := m.Sheets[0]
+	if s.HeaderIndex != 2 {
+		t.Fatalf("expected header row 2 (zero based), got %d", s.HeaderIndex)
+	}
+	if len(s.Columns) != 3 || len(s.Rows) != 2 {
+		t.Fatalf("unexpected memory dimensions: columns=%d rows=%d", len(s.Columns), len(s.Rows))
+	}
+	if s.Columns[0].ID != "S001C001" || s.Columns[1].ID != "S001C002" || s.Columns[2].ID != "S001C003" {
+		t.Fatalf("column IDs are not stable: %#v", s.Columns)
+	}
+	if s.Rows[0].ID != "S001R000001" || s.Rows[1].ID != "S001R000002" {
+		t.Fatalf("row IDs are not stable: %#v", s.Rows)
+	}
+	v := s.Rows[0].Values[s.Columns[2].ID]
+	if v.Type != ValueNumber || v.Number != 1234.5 || v.Raw != "1.234,50" {
+		t.Fatalf("numeric value was not normalized while preserving raw value: %#v", v)
+	}
+	if s.Rows[0].Values[s.Columns[0].ID].Type != ValueText {
+		t.Fatalf("SKU must remain text to preserve identifiers")
+	}
+}
+
+func TestMemoryWorkbookKeepsDuplicateTitlesUnique(t *testing.T) {
+	doc := &xlsxDoc{Sheets: map[string][][]string{
+		"sheet1": {
+			{"SKU", "IMPORTE", "IMPORTE"},
+			{"1", "10", "20"},
+		},
+	}}
+	m := BuildMemoryWorkbook(doc)
+	cols := m.Sheets[0].Columns
+	if len(cols) != 3 || cols[1].ID == cols[2].ID || cols[1].Title == cols[2].Title {
+		t.Fatalf("duplicate column titles were not made unique: %#v", cols)
+	}
+}
