@@ -172,8 +172,8 @@ func appApplyVisualPolish(parent uintptr) {
     gdi := syscall.NewLazyDLL("gdi32.dll")
     createFont := gdi.NewProc("CreateFontW")
     face := appU16("Segoe UI")
-    fontHeight := uintptr(uint32(int32(-14)))
-    font, _, _ := createFont.Call(fontHeight, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
+    fontHeight := int32(-14)
+    font, _, _ := createFont.Call(uintptr(fontHeight), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
     explorer := appU16("Explorer")
     buttons := []struct{ id, x, w uintptr }{{appIDOpen, 12, 125}, {appIDColumns, 145, 105}, {appIDConfig, 258, 135}}
     for _, b := range buttons {
