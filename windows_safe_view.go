@@ -60,6 +60,7 @@ func appApplyVisualPolish(parent uintptr) {
     createFont := gdi.NewProc("CreateFontW")
     face := appU16("Segoe UI")
     font, _, _ := createFont.Call(uintptr(-9), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
+    explorer := appU16("Explorer")
 
     buttons := []struct{ id, x, w uintptr }{
         {appIDOpen, 12, 125},
@@ -69,8 +70,7 @@ func appApplyVisualPolish(parent uintptr) {
     for _, b := range buttons {
         h := findChildByID(parent, "BUTTON", b.id)
         if h == 0 { continue }
-        empty := appU16("")
-        setTheme.Call(h, uintptr(unsafe.Pointer(empty)), uintptr(unsafe.Pointer(empty)))
+        setTheme.Call(h, uintptr(unsafe.Pointer(explorer)), 0)
         if font != 0 { user32.NewProc("SendMessageW").Call(h, WM_SETFONT, font, 1) }
         user32.NewProc("MoveWindow").Call(h, b.x, 7, b.w, 30, 1)
     }
