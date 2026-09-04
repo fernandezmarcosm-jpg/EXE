@@ -10,9 +10,9 @@ func TestEvaluateFormulaUsesArithmeticAndSourceQualifiedColumns(t *testing.T){
 }
 
 func TestMemoryDatasetDeduplicatesSO(t *testing.T){
-	d:=func(so,sku string)*xlsxDoc{return &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Type:ValueText},{ID:"SKU",Title:"SKU",Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:so,Type:ValueText},"SKU":{Raw:sku,Type:ValueText}}}}}}}}}
-	a:=d("100","ACE0001");b:=d("100","ACE0002")
-	m,e:=BuildMemoryDataset([]*xlsxDoc{a,b},defaultDatasetSettings());if e!=nil{t.Fatal(e)};if len(m.Records)!=1||m.DuplicateSO!=1{t.Fatalf("records=%d duplicates=%d; want 1,1",len(m.Records),m.DuplicateSO)}
+	d:=func(so,sku string)*xlsxDoc{return &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"SKU",Title:"SKU",Index:1,Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:so,Type:ValueText},"SKU":{Raw:sku,Type:ValueText}}}}}}}}}
+	a:=d("100","ACE0001");b:=d("100","ACE0002");s:=defaultDatasetSettings();s.SOColumn=1
+	m,e:=BuildMemoryDataset([]*xlsxDoc{a,b},s);if e!=nil{t.Fatal(e)};if len(m.Records)!=1||m.DuplicateSO!=1{t.Fatalf("records=%d duplicates=%d; want 1,1",len(m.Records),m.DuplicateSO)}
 }
 
 func TestEmbeddedMasterCSVIsAvailable(t *testing.T){m,_,e:=loadMasterCSV("");if e!=nil{t.Fatal(e)};if len(m.ByKey)==0{t.Fatal("embedded CSV master is empty")};if _,ok:=m.ByKey["ACE0001"];!ok{t.Fatal("expected ACE0001 in embedded master")}}
