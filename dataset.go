@@ -1,6 +1,6 @@
 package main
 import("bytes";_ "embed";"encoding/csv";"encoding/json";"fmt";"math";"os";"path/filepath";"strconv";"strings")
-//go:embed acceso chatgpt/GestionSO_Datos.csv
+//go:embed "acceso chatgpt/GestionSO_Datos.csv"
 var embeddedMasterCSV []byte
 type DatasetSettings struct{Decimals int `json:"decimals"`;FontSize int `json:"font_size"`;JoinExcelColumn string `json:"join_excel_column"`;FormulaTitle string `json:"formula_title"`;Formula string `json:"formula"`;SubtotalColumn string `json:"subtotal_column"`;SubtotalEnabled bool `json:"subtotal_enabled"`}
 func defaultDatasetSettings()DatasetSettings{return DatasetSettings{Decimals:2,FontSize:10,JoinExcelColumn:"SKU",FormulaTitle:"CALCULADA",SubtotalEnabled:false}}
