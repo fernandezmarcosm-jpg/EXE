@@ -28,8 +28,8 @@ const (
     WS_VISIBLE          = 0x10000000
     WS_CHILD            = 0x40000000
     WS_TABSTOP          = 0x00010000
-    WS_BORDER           = 0x00800000
-    WS_VSCROLL          = 0x00200000
+    WS_BORDER            = 0x00800000
+    WS_VSCROLL           = 0x00200000
     WS_HSCROLL           = 0x00100000
 
     BS_PUSHBUTTON = 0
@@ -174,6 +174,12 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
             appOpenXLSX(hwnd)
             return 0
         }
+        // Los controles de columnas trabajan sobre appImportedWorkbook, que
+        // es la misma estructura MemoryWorkbook construida al importar.
+        if columnViewHandlesCommand(wp) {
+            columnViewRefresh()
+            return 0
+        }
         return 0
 
     case WM_APP_IMPORT_DONE:
@@ -197,9 +203,11 @@ func appWndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 func appBuildControls(hwnd uintptr) {
     appMake(hwnd, "BUTTON", "ABRIR EXCEL", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 10, 10, 130, 32, appIDOpen)
     appStatus = appMake(hwnd, "STATIC", "Seleccione un archivo XLSX.", WS_CHILD|WS_VISIBLE, 155, 15, 1000, 24, appIDStatus)
-    appView = appMake(hwnd, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, 55, 1160, 630, appIDView)
-    // Sin fuentes personalizadas ni llamadas GDI. La interfaz utiliza la
-    // fuente estándar de Windows para mantener WM_CREATE lo más simple posible.
+    appView = appMake(hwnd, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, 73, 1160, 612, appIDView)
+
+    // Los selectores de columnas se crean una sola vez. No contienen datos:
+    // solamente controlan la presentacion de la informacion que ya esta en memoria.
+    columnViewCreate(hwnd)
 }
 
 func appLayout(hwnd uintptr) {
@@ -210,7 +218,7 @@ func appLayout(hwnd uintptr) {
     if w < 500 { w = 500 }
     if h < 250 { h = 250 }
     user32.NewProc("MoveWindow").Call(appStatus, 155, 15, uintptr(maxInt(250, w-170)), 24, 1)
-    user32.NewProc("MoveWindow").Call(appView, 10, 55, uintptr(w-20), uintptr(h-65), 1)
+    columnViewLayout(hwnd)
 }
 
 func maxInt(a, b int) int {
