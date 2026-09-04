@@ -17,7 +17,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type MasterRow map[string]string
@@ -317,7 +316,7 @@ func normalizeRows(rows [][]string) [][]string {
 
 // BuildMemoryWorkbook transforma el resultado crudo en la base estable de
 // trabajo. Solo las filas posteriores a la fila de titulos se convierten en
-// registros. No depende del nombre que luego se mostrara en pantalla.
+// registros. La identidad de una columna es su ID, no su titulo visible.
 func BuildMemoryWorkbook(doc *xlsxDoc) *MemoryWorkbook {
 	mw := &MemoryWorkbook{}
 	if doc == nil {
@@ -351,7 +350,7 @@ func BuildMemoryWorkbook(doc *xlsxDoc) *MemoryWorkbook {
 			if ci < len(headers) && strings.TrimSpace(headers[ci]) != "" {
 				title = headers[ci]
 			}
-			t := inferColumnType(rows, hi, ci, title)
+			t := inferColumnType(rows, hi, ci)
 			sheet.Columns = append(sheet.Columns, MemoryColumn{
 			ID: fmt.Sprintf("%sC%03d", sheet.ID, ci+1), Title: title,
 			Index: ci, Type: t, Width: 140, Visible: true,
@@ -384,98 +383,136 @@ func BuildMemoryWorkbook(doc *xlsxDoc) *MemoryWorkbook {
 	return mw
 }
 
-// headerRowIndexStrict evita el problema del detector anterior, que podia
-// elegir una fila de datos solo porque contenia palabras como "SO" o "cliente".
-// Se exige una firma de encabezado fuerte y, en empate, se toma la primera.
+// headerRowIndexStrict identifica la fila de titulos por su estructura, no
+// por nombres concretos. Como el formato de entrada es estable, buscamos la
+// primera fila no vacia con varias celdas textuales y con registros debajo.
 func headerRowIndexStrict(rows [][]string) int {
-	best, bestScore := -1, -1
-	for i, row := range rows {
-		score := 0
-		nonEmpty := 0
+	for i := 0; i < len(rows); i++ {
+		row := rows[i]
+		if memoryRowEmpty(row) || nonEmptyCount(row) < 2 {
+			continue
+		}
+		textLike, numeric := 0, 0
 		for _, v := range row {
-			h := normalizeHeaderKey(v)
-			if h != "" { nonEmpty++ }
-			switch h {
-			case "sku", "descripcion", "descripción", "factura", "fecha", "cliente", "cuit", "cantidad", "importe", "neto so", "origen: preciounifc":
-				score += 10
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			if _, ok := parseNumber(v); ok {
+				numeric++
+			} else {
+				textLike++
 			}
 		}
-		if nonEmpty > 1 && score > bestScore {
-			best, bestScore = i, score
+		if textLike >= 2 && textLike >= numeric {
+			if hasDataBelow(rows, i) {
+				return i
+			}
 		}
 	}
-	if best >= 0 && bestScore > 0 {
-		return best
-	}
-	// Formato identico: si no hay nombres reconocibles, la primera fila con
-	// contenido es la fila de titulos. No se descartan registros arbitrariamente.
-	for i, row := range rows {
-		if !memoryRowEmpty(row) { return i }
-	}
 	return -1
+}
+
+func nonEmptyCount(row []string) int {
+	n := 0
+	for _, v := range row {
+		if strings.TrimSpace(v) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+func hasDataBelow(rows [][]string, headerIndex int) bool {
+	seen := 0
+	for i := headerIndex + 1; i < len(rows) && seen < 3; i++ {
+		if !memoryRowEmpty(rows[i]) {
+			seen++
+		}
+	}
+	return seen > 0
 }
 
 func normalizeHeaderKey(v string) string {
 	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(v, "\ufeff")))
 }
 
-func inferColumnType(rows [][]string, headerIndex, col int, title string) ValueType {
-	key := normalizeHeaderKey(title)
-	if strings.Contains(key, "fecha") || strings.Contains(key, "date") {
-		return ValueDate
-	}
-	// Identificadores no deben perder sus ceros a la izquierda.
-	if key == "sku" || key == "clave" || strings.Contains(key, "cuit") || strings.Contains(key, "codigo") || strings.Contains(key, "código") {
-		return ValueText
-	}
+// inferColumnType se basa exclusivamente en los valores debajo del titulo.
+// El nombre de la columna nunca decide el tipo.
+func inferColumnType(rows [][]string, headerIndex, col int) ValueType {
 	numberSeen, textSeen := 0, 0
 	limit := len(rows)
-	if limit > headerIndex+101 { limit = headerIndex + 101 }
-	for i := headerIndex + 1; i < limit; i++ {
-		if col >= len(rows[i]) { continue }
-		v := strings.TrimSpace(rows[i][col])
-		if v == "" { continue }
-		if _, ok := parseNumber(v); ok { numberSeen++ } else { textSeen++ }
+	if limit > headerIndex+101 {
+		limit = headerIndex + 101
 	}
-	if numberSeen > 0 && textSeen == 0 { return ValueNumber }
+	for i := headerIndex + 1; i < limit; i++ {
+		if col >= len(rows[i]) {
+			continue
+		}
+		v := strings.TrimSpace(rows[i][col])
+		if v == "" {
+			continue
+		}
+		if _, ok := parseNumber(v); ok {
+			numberSeen++
+		} else {
+			textSeen++
+		}
+	}
+	if numberSeen > 0 && textSeen == 0 {
+		return ValueNumber
+	}
 	return ValueText
 }
 
 func makeMemoryValue(columnID, raw string, t ValueType) MemoryValue {
 	v := MemoryValue{ColumnID: columnID, Raw: raw, Type: t}
 	if t == ValueNumber {
-		if n, ok := parseNumber(raw); ok { v.Number = n } else { v.Type = ValueText }
+		if n, ok := parseNumber(raw); ok {
+			v.Number = n
+		} else {
+			v.Type = ValueText
+		}
 	}
 	return v
 }
 
 func memoryRowEmpty(row []string) bool {
-	for _, v := range row {
-		if strings.TrimSpace(v) != "" { return false }
-	}
-	return true
+	return nonEmptyCount(row) == 0
 }
 
 func (t ValueType) String() string {
 	switch t {
-	case ValueText: return "TEXT"
-	case ValueNumber: return "NUMBER"
-	case ValueDate: return "DATE"
-	default: return "EMPTY"
+	case ValueText:
+		return "TEXT"
+	case ValueNumber:
+		return "NUMBER"
+	case ValueDate:
+		return "DATE"
+	default:
+		return "EMPTY"
 	}
 }
 
 func MemoryValueString(v MemoryValue) string {
-	if v.Type == ValueNumber { return strconv.FormatFloat(v.Number, 'f', -1, 64) }
+	if v.Type == ValueNumber {
+		return strconv.FormatFloat(v.Number, 'f', -1, 64)
+	}
 	return v.Raw
 }
 
 func memoryColumn(mw *MemoryWorkbook, sheetID, columnID string) *MemoryColumn {
-	if mw == nil { return nil }
+	if mw == nil {
+		return nil
+	}
 	for si := range mw.Sheets {
-		if mw.Sheets[si].ID != sheetID { continue }
+		if mw.Sheets[si].ID != sheetID {
+			continue
+		}
 		for ci := range mw.Sheets[si].Columns {
-			if mw.Sheets[si].Columns[ci].ID == columnID { return &mw.Sheets[si].Columns[ci] }
+			if mw.Sheets[si].Columns[ci].ID == columnID {
+				return &mw.Sheets[si].Columns[ci]
+			}
 		}
 	}
 	return nil
@@ -484,9 +521,13 @@ func memoryColumn(mw *MemoryWorkbook, sheetID, columnID string) *MemoryColumn {
 func buildMergedSheet(rows [][]string) []byte {
 	var b bytes.Buffer
 	for i, r := range rows {
-		if i > 0 { b.WriteByte('\n') }
+		if i > 0 {
+			b.WriteByte('\n')
+		}
 		for j, v := range r {
-			if j > 0 { b.WriteByte(',') }
+			if j > 0 {
+				b.WriteByte(',')
+			}
 			b.WriteString(xmlEscape(v))
 		}
 	}
@@ -494,9 +535,13 @@ func buildMergedSheet(rows [][]string) []byte {
 }
 
 func rewriteRowNumber(ref string, n int) string {
-	if n < 1 { return ref }
+	if n < 1 {
+		return ref
+	}
 	i := 0
-	for i < len(ref) && ((ref[i] >= 'A' && ref[i] <= 'Z') || (ref[i] >= 'a' && ref[i] <= 'z')) { i++ }
+	for i < len(ref) && ((ref[i] >= 'A' && ref[i] <= 'Z') || (ref[i] >= 'a' && ref[i] <= 'z')) {
+		i++
+	}
 	return ref[:i] + strconv.Itoa(n)
 }
 
@@ -506,14 +551,19 @@ func xmlEscape(s string) string {
 
 func hashRow(r []string) string {
 	h := sha256.New()
-	for _, v := range r { _, _ = h.Write([]byte(v)); _, _ = h.Write([]byte{0}) }
+	for _, v := range r {
+		_, _ = h.Write([]byte(v))
+		_, _ = h.Write([]byte{0})
+	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func colFromRef(ref string) int {
 	n := 0
 	for _, r := range strings.ToUpper(ref) {
-		if r < 'A' || r > 'Z' { break }
+		if r < 'A' || r > 'Z' {
+			break
+		}
 		n = n*26 + int(r-'A'+1)
 	}
 	return n
@@ -526,7 +576,9 @@ func headerScore(row []string) int {
 	for _, v := range row {
 		s := normalizeHeaderKey(v)
 		for _, k := range []string{"factura", "cliente", "fecha", "cuit", "sku", "producto", "cantidad", "importe", "so"} {
-			if s == k { score++ }
+			if s == k {
+				score++
+			}
 		}
 	}
 	return score
@@ -536,7 +588,9 @@ func headerRowIndex(rows [][]string) int { return headerRowIndexStrict(rows) }
 
 func normalizedHeader(v string, index int) string {
 	v = strings.TrimSpace(strings.TrimPrefix(v, "\ufeff"))
-	if v == "" { return fmt.Sprintf("C%d", index+1) }
+	if v == "" {
+		return fmt.Sprintf("C%d", index+1)
+	}
 	return v
 }
 
@@ -547,7 +601,13 @@ func uniqueHeaders(row []string) []string {
 		h := normalizedHeader(v, i)
 		key := strings.ToLower(h)
 		n := seen[key]
-		if n > 0 { n++; seen[key] = n; h = fmt.Sprintf("%s_%d", h, n) } else { seen[key] = 1 }
+		if n > 0 {
+			n++
+			seen[key] = n
+			h = fmt.Sprintf("%s_%d", h, n)
+		} else {
+			seen[key] = 1
+		}
 		o[i] = h
 	}
 	return o
@@ -557,11 +617,17 @@ func mergeXLSX(paths []string) ([][]string, error) {
 	var all [][]string
 	for _, p := range paths {
 		d, err := ReadXLSX(p)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		names := make([]string, 0, len(d.Sheets))
-		for name := range d.Sheets { names = append(names, name) }
+		for name := range d.Sheets {
+			names = append(names, name)
+		}
 		sort.Strings(names)
-		if len(names) > 0 { all = append(all, d.Sheets[names[0]]...) }
+		if len(names) > 0 {
+			all = append(all, d.Sheets[names[0]]...)
+		}
 	}
 	return all, nil
 }
@@ -570,64 +636,100 @@ func mergeXLSX(paths []string) ([][]string, error) {
 
 func locateMaster() string {
 	c := LoadConfig()
-	if c.MasterPath != "" { return c.MasterPath }
+	if c.MasterPath != "" {
+		return c.MasterPath
+	}
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "GestionSO_Datos.csv")
-		if _, err := os.Stat(candidate); err == nil { return candidate }
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
 	}
 	if wd, err := os.Getwd(); err == nil {
 		candidate := filepath.Join(wd, "GestionSO_Datos.csv")
-		if _, err := os.Stat(candidate); err == nil { return candidate }
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
 	}
 	return ""
 }
 
 func openMasterCSV() (*os.File, error) {
 	p := locateMaster()
-	if p == "" { return nil, os.ErrNotExist }
+	if p == "" {
+		return nil, os.ErrNotExist
+	}
 	return os.Open(p)
 }
 
 func ensureMasterHeaders(path string, headers []string) error {
 	f, e := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if e != nil { return e }
+	if e != nil {
+		return e
+	}
 	defer f.Close()
 	st, e := f.Stat()
-	if e != nil { return e }
+	if e != nil {
+		return e
+	}
 	if st.Size() == 0 {
-		w := csv.NewWriter(f); _ = w.Write(headers); w.Flush(); return w.Error()
+		w := csv.NewWriter(f)
+		_ = w.Write(headers)
+		w.Flush()
+		return w.Error()
 	}
 	return nil
 }
 
 func LoadMaster(path ...string) (*MasterData, error) {
 	p := locateMaster()
-	if len(path) > 0 && path[0] != "" { p = path[0] }
-	if p == "" { return nil, os.ErrNotExist }
+	if len(path) > 0 && path[0] != "" {
+		p = path[0]
+	}
+	if p == "" {
+		return nil, os.ErrNotExist
+	}
 	f, e := os.Open(p)
-	if e != nil { return nil, e }
+	if e != nil {
+		return nil, e
+	}
 	defer f.Close()
 	r := csv.NewReader(f)
 	r.FieldsPerRecord = -1
 	rows, e := r.ReadAll()
-	if e != nil { return nil, e }
+	if e != nil {
+		return nil, e
+	}
 	md := &MasterData{Path: p, ByKey: map[string]MasterRow{}}
-	if len(rows) == 0 { return md, nil }
+	if len(rows) == 0 {
+		return md, nil
+	}
 	md.Headers = make([]string, len(rows[0]))
-	for i, h := range rows[0] { md.Headers[i] = normalizedHeader(h, i) }
+	for i, h := range rows[0] {
+		md.Headers[i] = normalizedHeader(h, i)
+	}
 	keyIndex := -1
 	for i, h := range md.Headers {
-		if strings.EqualFold(strings.TrimSpace(h), "CLAVE") || strings.EqualFold(strings.TrimSpace(h), "SKU") { keyIndex = i; break }
+		if strings.EqualFold(strings.TrimSpace(h), "CLAVE") || strings.EqualFold(strings.TrimSpace(h), "SKU") {
+			keyIndex = i
+			break
+		}
 	}
 	for i := 1; i < len(rows); i++ {
 		row := rows[i]
 		mr := MasterRow{}
 		for j, h := range md.Headers {
-			if j < len(row) { mr[h] = strings.TrimSpace(row[j]) } else { mr[h] = "" }
+			if j < len(row) {
+				mr[h] = strings.TrimSpace(row[j])
+			} else {
+				mr[h] = ""
+			}
 		}
 		if keyIndex >= 0 && keyIndex < len(row) {
 			key := strings.ToUpper(strings.TrimSpace(row[keyIndex]))
-			if key != "" { md.ByKey[key] = mr }
+			if key != "" {
+				md.ByKey[key] = mr
+			}
 		}
 		md.Rows = append(md.Rows, mr)
 	}
@@ -647,30 +749,46 @@ func cachedMaster() *MasterData {
 }
 
 func MasterBySKU(m *MasterData, sku string) MasterRow {
-	if m == nil { return nil }
+	if m == nil {
+		return nil
+	}
 	key := strings.ToUpper(strings.TrimSpace(sku))
-	if key == "" { return nil }
+	if key == "" {
+		return nil
+	}
 	if m.ByKey != nil {
-		if r, ok := m.ByKey[key]; ok { return r }
+		if r, ok := m.ByKey[key]; ok {
+			return r
+		}
 	}
 	for _, r := range m.Rows {
-		if strings.EqualFold(strings.TrimSpace(r["CLAVE"]), sku) || strings.EqualFold(strings.TrimSpace(r["SKU"]), sku) { return r }
+		if strings.EqualFold(strings.TrimSpace(r["CLAVE"]), sku) || strings.EqualFold(strings.TrimSpace(r["SKU"]), sku) {
+			return r
+		}
 	}
 	return nil
 }
 
 func SaveWithBackup(path string, data []byte) error {
 	if b, e := os.ReadFile(path); e == nil {
-		if e := os.WriteFile(path+".bak", b, 0644); e != nil { return e }
+		if e := os.WriteFile(path+".bak", b, 0644); e != nil {
+			return e
+		}
 	}
 	return os.WriteFile(path, data, 0644)
 }
 
 func EnsureSKU(m *MasterData, sku string) MasterRow {
-	for _, r := range m.Rows { if r["CLAVE"] == sku || r["SKU"] == sku { return r } }
+	for _, r := range m.Rows {
+		if r["CLAVE"] == sku || r["SKU"] == sku {
+			return r
+		}
+	}
 	r := MasterRow{"CLAVE": sku, "SKU": sku}
 	m.Rows = append(m.Rows, r)
-	if m.ByKey == nil { m.ByKey = map[string]MasterRow{} }
+	if m.ByKey == nil {
+		m.ByKey = map[string]MasterRow{}
+	}
 	m.ByKey[strings.ToUpper(strings.TrimSpace(sku))] = r
 	return r
 }
@@ -679,13 +797,22 @@ func SetSO(r MasterRow, so string) { r["SO"] = so }
 func SOState(r MasterRow) string { return r["SO"] }
 
 func BuildLines(rows [][]string, source string) []Line {
-	if len(rows) == 0 { return nil }
+	if len(rows) == 0 {
+		return nil
+	}
 	hi := headerRowIndex(rows)
+	if hi < 0 || hi >= len(rows) {
+		return nil
+	}
 	headers := uniqueHeaders(rows[hi])
 	out := make([]Line, 0, len(rows)-hi-1)
 	for i := hi + 1; i < len(rows); i++ {
 		values := map[string]string{}
-		for j, v := range rows[i] { if j < len(headers) { values[headers[j]] = v } }
+		for j, v := range rows[i] {
+			if j < len(headers) {
+				values[headers[j]] = v
+			}
+		}
 		out = append(out, Line{Values: values, Source: source, RowNumber: i})
 	}
 	return out
@@ -693,17 +820,29 @@ func BuildLines(rows [][]string, source string) []Line {
 
 func findFieldKey(l Line, candidates ...string) string {
 	keys := make([]string, 0, len(l.Values))
-	for k := range l.Values { keys = append(keys, k) }
+	for k := range l.Values {
+		keys = append(keys, k)
+	}
 	sort.Strings(keys)
 	for _, cand := range candidates {
 		cl := strings.ToLower(strings.TrimSpace(cand))
-		for _, k := range keys { if strings.ToLower(strings.TrimSpace(k)) == cl { return k } }
+		for _, k := range keys {
+			if strings.ToLower(strings.TrimSpace(k)) == cl {
+				return k
+			}
+		}
 	}
 	for _, cand := range candidates {
 		cl := strings.ToLower(strings.TrimSpace(cand))
-		for _, k := range keys { if strings.Contains(strings.ToLower(strings.TrimSpace(k)), cl) { return k } }
+		for _, k := range keys {
+			if strings.Contains(strings.ToLower(strings.TrimSpace(k)), cl) {
+				return k
+			}
+		}
 	}
-	if len(keys) > 0 { return keys[0] }
+	if len(keys) > 0 {
+		return keys[0]
+	}
 	return ""
 }
 
