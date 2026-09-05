@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main, reconstruccion-grilla-edicion]
+  pull_request:
+    branches: [main]
 
 jobs:
   validar:
