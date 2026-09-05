@@ -3,7 +3,7 @@ name: Validar GestionSO V57 Minimal
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, reconstrucion-grilla-edicion]
 
 jobs:
   validar:
@@ -27,6 +27,10 @@ jobs:
       - name: Vet
         shell: pwsh
         run: go vet ./...
+
+      - name: Build all packages
+        shell: pwsh
+        run: go build ./...
 
       - name: Build smoke test
         shell: pwsh
