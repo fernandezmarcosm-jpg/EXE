@@ -1,0 +1,52 @@
+name: Fix vet unsafe notify
+on:
+  push:
+    branches: [reconstruccion-grilla-edicion]
+permissions:
+  contents: write
+jobs:
+  fix-and-validate:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: 0
+      GOOS: windows
+      GOARCH: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch unsafe notify conversions
+        shell: pwsh
+        run: |
+          $p = 'column_view_windows.go'
+          $s = Get-Content $p -Raw
+          $s = $s.Replace('h:=(*nmhdr)(unsafe.Pointer(l))','hv:=columnViewReadNMHeader(l);h:=&hv')
+          $s = $s.Replace('n:=(*nmItemActivate)(unsafe.Pointer(l))','nv:=columnViewReadNMItemActivate(l);n:=&nv')
+          $s = $s.Replace('n:=(*nmheader)(unsafe.Pointer(l))','nv:=columnViewReadNMHeaderNotify(l);n:=&nv')
+          Set-Content $p $s -NoNewline
+          $helper = @'
+//go:build windows
+package main
+import("reflect";"syscall";"unsafe")
+func columnViewCopyNotify(dst interface{},src uintptr,size uintptr){k:=syscall.NewLazyDLL("kernel32.dll");k.NewProc("RtlMoveMemory").Call(reflect.ValueOf(dst).Pointer(),src,size)}
+func columnViewReadNMHeader(src uintptr)nmhdr{var v nmhdr;columnViewCopyNotify(&v,src,unsafe.Sizeof(v));return v}
+func columnViewReadNMItemActivate(src uintptr)nmItemActivate{var v nmItemActivate;columnViewCopyNotify(&v,src,unsafe.Sizeof(v));return v}
+func columnViewReadNMHeaderNotify(src uintptr)nmheader{var v nmheader;columnViewCopyNotify(&v,src,unsafe.Sizeof(v));return v}
+'@
+          Set-Content column_view_notify_windows.go $helper -NoNewline
+      - name: Test
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build all packages
+        run: go build ./...
+      - name: Commit only after green
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add column_view_windows.go column_view_notify_windows.go
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { throw 'No vet fix staged' }
+          git rm .github/workflows/fix-vet.yml
+          git add column_view_windows.go column_view_notify_windows.go
+          git commit -m 'Fix vet unsafe notification pointer conversions'
+          git push origin HEAD:reconstruccion-grilla-edicion
