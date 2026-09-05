@@ -3,7 +3,7 @@ name: Validar GestionSO V57 Minimal
 on:
   workflow_dispatch:
   push:
-    branches: [main, reconstrucion-grilla-edicion]
+    branches: [main, reconstruccion-grilla-edicion]
 
 jobs:
   validar:
