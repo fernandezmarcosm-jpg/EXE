@@ -1,11 +1,6 @@
 //go:build windows
 package main
 
-import (
- "reflect"
- "unsafe"
-)
-
 func columnViewLogNotify(l uintptr) {
  if l==0 { return }
  h:=columnViewReadNMHeader(l)
@@ -13,6 +8,3 @@ func columnViewLogNotify(l uintptr) {
  if h.Code==nmDblClk { n:=columnViewReadNMItemActivate(l); appLog("DIAGNOSTICO: nmDblClk item=%d subItem=%d",n.Item,n.SubItem) }
  if h.Code==hdnItemDblClickW || h.Code==hdnEndDrag { n:=columnViewReadNMHeaderNotify(l); appLog("DIAGNOSTICO: header notify code=%d item=%d",n.Hdr.Code,n.Item) }
 }
-
-var _ = reflect.ValueOf
-var _ = unsafe.Sizeof
