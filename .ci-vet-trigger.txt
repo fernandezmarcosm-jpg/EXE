@@ -1,1 +1,1 @@
-trigger virtual ListView correction
+final validation trigger for virtual ListView
