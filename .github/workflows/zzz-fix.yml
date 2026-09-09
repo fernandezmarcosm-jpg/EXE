@@ -25,14 +25,20 @@ func columnViewHandleNotify(l uintptr)bool{if l==0{return false};hv:=columnViewR
 '@
           $s=[regex]::Replace($s,'func columnViewHandleNotify\(l uintptr\)bool\{.*?\}func columnEditTypeIndex',($handler+'func columnEditTypeIndex'),[Text.RegularExpressions.RegexOptions]::Singleline)
           Set-Content $p $s -NoNewline
-
           $p='windows_safe_view.go';$s=Get-Content $p -Raw
           $old='if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""{columnViewAddSubtotal(visible,records)};columnViewAutoFit(visible);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth());columnViewApplyFont();appLog("DIAGNOSTICO: render síncrono completo; registros=%d",len(records))}'
           $new='send:=user32.NewProc("SendMessageW");count,_,_:=send.Call(viewList,lvmGetItemCount,0,0);appLog("DIAGNOSTICO: item count en listview=%d",int(count));if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""{columnViewAddSubtotal(visible,records)};columnViewAutoFit(visible);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth());columnViewApplyFont();user32.NewProc("InvalidateRect").Call(viewList,0,0,1);user32.NewProc("UpdateWindow").Call(viewList);appLog("DIAGNOSTICO: render síncrono completo; registros=%d",len(records))}'
           if($s.Contains($old)){$s=$s.Replace($old,$new)}
           Set-Content $p $s -NoNewline
-
           $p='notify_diagnostics_windows.go'
+          $diag=@'
+//go:build windows
+package main
+
+func columnViewLogNotify(l uintptr) uintptr { return 0 }
+'@
+          Set-Content $p $diag -NoNewline
+          # restore the intended diagnostic implementation in a second step below
           $diag=@'
 //go:build windows
 package main
@@ -64,3 +70,4 @@ func columnViewLogNotify(l uintptr) {
           git rm .github/workflows/zzz-fix.yml
           git commit -m 'Handle LVN_GETDISPINFOW and stop notify log flood'
           git push origin HEAD:main
+# trigger correction workflow from an existing workflow definition
