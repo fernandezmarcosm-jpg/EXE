@@ -23,7 +23,57 @@ func columnViewAddSubtotal(visible []DatasetColumn,records []DatasetRecord){targ
 func columnViewApplyFont(){if viewList==0{return};if viewFont!=0{user32.NewProc("DeleteObject").Call(viewFont)};gdi:=syscall.NewLazyDLL("gdi32.dll");size:=appSettings.FontSize;if size<8||size>32{size=10};viewFont,_,_=gdi.NewProc("CreateFontW").Call(uintptr(int32(-size)),0,0,0,400,0,0,0,1,0,0,0,0,reflect.ValueOf(appU16("Segoe UI")).Pointer());if viewFont!=0{user32.NewProc("SendMessageW").Call(viewList,WM_SETFONT,viewFont,1)}}
 func columnViewShowMenu(hwnd uintptr){if viewDataset==nil{return};m,_,_:=user32.NewProc("CreatePopupMenu").Call();viewMenuIDs=map[uintptr]int{};a:=user32.NewProc("AppendMenuW");a.Call(m,mfString,menuIDClearFilters,reflect.ValueOf(appU16("LIMPIAR FILTROS")).Pointer());a.Call(m,mfString,menuIDSelectAll,reflect.ValueOf(appU16("MARCAR TODAS")).Pointer());a.Call(m,mfString,menuIDDeselectAll,reflect.ValueOf(appU16("DESMARCAR TODAS")).Pointer());for i,c:=range viewDataset.Columns{id:=uintptr(40000+i);f:=uint32(mfString);if c.Visible{f|=mfChecked};a.Call(m,uintptr(f),id,reflect.ValueOf(appU16(datasetColumnDisplayTitle(c))).Pointer());viewMenuIDs[id]=i};var pt struct{X,Y int32};user32.NewProc("GetCursorPos").Call(uintptr(unsafe.Pointer(&pt)));sel,_,_:=user32.NewProc("TrackPopupMenu").Call(m,tpmRetCmd,uintptr(pt.X),uintptr(pt.Y),0,hwnd,0);changed:=false;switch sel{case menuIDClearFilters:for _,h:=range viewFilters{appSetEdit(h,"")};case menuIDSelectAll:limit:=appSettings.MaxColumns;if limit<1{limit=20};for i:=range viewDataset.Columns{viewDataset.Columns[i].Visible=i<limit};changed=true;case menuIDDeselectAll:for i:=range viewDataset.Columns{viewDataset.Columns[i].Visible=false};changed=true;default:if i,ok:=viewMenuIDs[sel];ok{if !viewDataset.Columns[i].Visible&&len(columnViewVisibleColumns())>=appSettings.MaxColumns{break};viewDataset.Columns[i].Visible=!viewDataset.Columns[i].Visible;changed=true}};if changed{_ = saveDatasetSettings(appSettings)};columnViewBuildFilters();columnViewRefresh();user32.NewProc("DestroyMenu").Call(m)}
 func columnViewSaveOrder(){if viewList==0||viewDataset==nil{return};visible:=columnViewVisibleColumns();n:=len(visible);if n==0{return};arr:=make([]int32,n);r,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetColumnOrderArray,uintptr(n),uintptr(unsafe.Pointer(&arr[0])));if r==0{return};order:=make([]string,0,n);for _,idx:=range arr{if int(idx)>=0&&int(idx)<len(visible){order=append(order,datasetColumnKey(visible[int(idx)]))}};appSettings.ColumnOrder=order;_ = saveDatasetSettings(appSettings);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth())}
-func columnViewHandleNotify(l uintptr)bool{if l==0{return false};hv:=columnViewReadNMHeader(l);h:=&hv;if h.HwndFrom==viewList&&h.Code==nmDblClk{nv:=columnViewReadNMItemActivate(l);n:=&nv;visible:=columnViewVisibleColumns();if n.Item>=0&&n.SubItem>=0&&int(n.SubItem)<len(visible){columnViewBeginCellEdit(int(n.Item),visible[int(n.SubItem)]);return true}};header,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetHeader,0,0);if h.HwndFrom==header{if h.Code==hdnItemDblClickW{nv:=columnViewReadNMHeaderNotify(l);n:=&nv;visible:=columnViewVisibleColumns();if n.Item>=0&&int(n.Item)<len(visible){columnViewBeginColumnEdit(visible[int(n.Item)]);return true}};if h.Code==hdnEndDrag{columnViewSaveOrder()}};return false}
+func columnViewHandleNotify(l uintptr) bool {
+	if l==0 { return false }
+	hv:=columnViewReadNMHeader(l)
+	h:=&hv
+	if h.HwndFrom==viewList && h.Code==lvnGetDispInfoW {
+		nv:=columnViewReadNMLVDispInfo(l)
+		item:=nv.Item
+		if item.Mask&lvifText!=0 && item.Text!=nil && item.Item>=0 && item.SubItem>=0 {
+			records:=safeFilterRecords(viewDataset,safeSnapshotFilters())
+			visible:=columnViewVisibleColumns()
+			ri,ci:=int(item.Item),int(item.SubItem)
+			if ri<len(records) && ci<len(visible) {
+				txt:=datasetCellText(records[ri],visible[ci])
+				max:=int(item.TextMax)
+				if max>0 && max<65536 {
+					buf:=unsafe.Slice(item.Text,max)
+					runes:=[]rune(txt)
+					if len(runes)>max-1 { runes=runes[:max-1] }
+					u16:=utf16.Encode(runes)
+					n:=copy(buf,u16)
+					if n<max { buf[n]=0 } else { buf[max-1]=0 }
+				}
+				return true
+			}
+		}
+		return false
+	}
+	if h.HwndFrom==viewList && h.Code==nmDblClk {
+		nv:=columnViewReadNMItemActivate(l)
+		n:=&nv
+		visible:=columnViewVisibleColumns()
+		if n.Item>=0 && n.SubItem>=0 && int(n.SubItem)<len(visible) {
+			columnViewBeginCellEdit(int(n.Item),visible[int(n.SubItem)])
+			return true
+		}
+	}
+	header,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetHeader,0,0)
+	if h.HwndFrom==header {
+		if h.Code==hdnItemDblClickW {
+			nv:=columnViewReadNMHeaderNotify(l)
+			n:=&nv
+			visible:=columnViewVisibleColumns()
+			if n.Item>=0 && int(n.Item)<len(visible) {
+				columnViewBeginColumnEdit(visible[int(n.Item)])
+				return true
+			}
+		}
+		if h.Code==hdnEndDrag { columnViewSaveOrder() }
+	}
+	return false
+}
 func columnEditTypeIndex(c DatasetColumn)int{t:=strings.ToLower(appSettings.ColumnTypes[datasetColumnKey(c)]);if t=="fecha"{return 2};if t=="porcentaje"{return 3};if c.Type==ValueNumber{return 1};return 0}
 func columnEditTypeName(i int)string{switch i{case 1:return "decimal";case 2:return "fecha";case 3:return "porcentaje"};return "entero"}
 func columnViewBeginColumnEdit(c DatasetColumn){if columnEditHwnd!=0{return};columnEditColumn=c;columnEditControls=map[int]uintptr{};cls:=appU16("GestionSOColumnEdit");wc:=appWndClass{CbSize:uint32(unsafe.Sizeof(appWndClass{})),LpfnWndProc:syscall.NewCallback(columnEditWndProc),HInstance:appHInstance,HCursor:loadArrowCursor(),HbrBackground:5,LpszClassName:cls};user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)));columnEditHwnd,_,_=user32.NewProc("CreateWindowExW").Call(0,reflect.ValueOf(cls).Pointer(),reflect.ValueOf(appU16("Editar columna")).Pointer(),WS_OVERLAPPEDWINDOW|WS_VISIBLE,350,180,500,300,columnViewParent(),0,appHInstance,0);appMake(columnEditHwnd,"STATIC","Nombre visible",WS_CHILD|WS_VISIBLE,20,20,150,22,0);columnEditControls[idColName]=appMake(columnEditHwnd,"EDIT",datasetColumnDisplayTitle(c),WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|esAutoHScroll,180,18,270,24,idColName);appMake(columnEditHwnd,"STATIC","Tipo",WS_CHILD|WS_VISIBLE,20,60,150,22,0);cb:=appMake(columnEditHwnd,"COMBOBOX","",WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER,180,58,270,120,idColType);columnEditControls[idColType]=cb;for _,x:=range []string{"entero","decimal","fecha","porcentaje"}{user32.NewProc("SendMessageW").Call(cb,cbAddString,0,reflect.ValueOf(appU16(x)).Pointer())};user32.NewProc("SendMessageW").Call(cb,cbSetCurSel,uintptr(columnEditTypeIndex(c)),0);appMake(columnEditHwnd,"STATIC","Decimales",WS_CHILD|WS_VISIBLE,20,100,150,22,0);columnEditControls[idColDecimals]=appMake(columnEditHwnd,"EDIT",fmt.Sprint(datasetColumnDecimals(c)),WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP,180,98,100,24,idColDecimals);columnEditControls[idColPercent]=appMake(columnEditHwnd,"BUTTON","Marcar como porcentaje",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,140,200,26,idColPercent);columnEditControls[idColNegative]=appMake(columnEditHwnd,"BUTTON","Resaltar negativos",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,230,140,200,26,idColNegative);if datasetColumnIsPercent(c){user32.NewProc("SendMessageW").Call(columnEditControls[idColPercent],bmSetCheck,bstChecked,0)};if datasetColumnHighlightNegative(c){user32.NewProc("SendMessageW").Call(columnEditControls[idColNegative],bmSetCheck,bstChecked,0)};appMake(columnEditHwnd,"BUTTON","GUARDAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,260,205,90,30,idColOK);appMake(columnEditHwnd,"BUTTON","CANCELAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,360,205,90,30,idColCancel);appSetEnabled(columnViewParent(),false)}
