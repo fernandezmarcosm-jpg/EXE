@@ -5,9 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: windows-latest
@@ -54,7 +51,7 @@ jobs:
           git add column_view_windows.go column_view_notify_windows.go windows_safe_view.go notify_diagnostics_windows.go
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 0) { Write-Host 'No source changes to commit'; exit 0 }
-          git rm .github/scripts/fix-lvn.ps1
+          if (Test-Path .github/scripts/fix-lvn.ps1) { git rm .github/scripts/fix-lvn.ps1 }
           if (Test-Path .github/workflows/zzz-fix.yml) { git rm .github/workflows/zzz-fix.yml }
           if (Test-Path .github/workflows/fix-vet.yml) { git rm .github/workflows/fix-vet.yml }
           git commit -m 'Handle LVN_GETDISPINFOW and stop notify log flood'
