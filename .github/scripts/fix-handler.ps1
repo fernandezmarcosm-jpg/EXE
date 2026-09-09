@@ -1,6 +1,7 @@
 $ErrorActionPreference='Stop'
 $p='column_view_windows.go'
 $s=Get-Content $p -Raw
+$old='func columnViewHandleNotify(l uintptr)bool{if l==0{return false};hv:=columnViewReadNMHeader(l);h:=&hv;if h.HwndFrom==viewList&&h.Code==nmDblClk{nv:=columnViewReadNMItemActivate(l);n:=&nv;visible:=columnViewVisibleColumns();if n.Item>=0&&n.SubItem>=0&&int(n.SubItem)<len(visible){columnViewBeginCellEdit(int(n.Item),visible[int(n.SubItem)]);return true}};header,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetHeader,0,0);if h.HwndFrom==header{if h.Code==hdnItemDblClickW{nv:=columnViewReadNMHeaderNotify(l);n:=&nv;visible:=columnViewVisibleColumns();if n.Item>=0&&int(n.Item)<len(visible){columnViewBeginColumnEdit(visible[int(n.Item)]);return true}};if h.Code==hdnEndDrag{columnViewSaveOrder()}};return false}'
 $handler=@'
 func columnViewHandleNotify(l uintptr) bool {
 	if l==0 { return false }
@@ -54,5 +55,6 @@ func columnViewHandleNotify(l uintptr) bool {
 	return false
 }
 '@
-$s=[regex]::Replace($s,'func columnViewHandleNotify\(l uintptr\)bool\{.*?\}\s*func columnEditTypeIndex',($handler+'func columnEditTypeIndex'),[Text.RegularExpressions.RegexOptions]::Singleline)
+if(-not $s.Contains($old)){throw 'Original columnViewHandleNotify not found'}
+$s=$s.Replace($old,$handler)
 Set-Content $p $s -NoNewline
