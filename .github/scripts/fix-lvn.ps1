@@ -1,0 +1,38 @@
+$ErrorActionPreference = 'Stop'
+
+$p = 'column_view_windows.go'
+$s = Get-Content $p -Raw
+if ($s -notmatch 'lvnGetDispInfoW=-177') {
+  $s = $s.Replace('hdnEndDrag=-311;', 'hdnEndDrag=-311;lvnGetDispInfoW=-177;lvmGetItemCount=0x1004;')
+}
+if ($s -notmatch 'type nmlvDispInfo struct') {
+  $s = $s.Replace('type nmItemActivate struct{Hdr nmhdr;Item,SubItem int32;NewState,OldState,Changed uint32;X,Y int32;LParam uintptr;KeyFlags uint32}', 'type nmItemActivate struct{Hdr nmhdr;Item,SubItem int32;NewState,OldState,Changed uint32;X,Y int32;LParam uintptr;KeyFlags uint32};type nmlvDispInfo struct{Hdr nmhdr;Item lvItem}')
+}
+$handler = @'
+func columnViewHandleNotify(l uintptr)bool{if l==0{return false};hv:=columnViewReadNMHeader(l);h:=&hv;if h.HwndFrom==viewList&&h.Code==lvnGetDispInfoW{nv:=columnViewReadNMLVDispInfo(l);item:=nv.Item;if item.Mask&lvifText!=0&&item.Text!=nil&&item.Item>=0&&item.SubItem>=0{records:=safeFilterRecords(viewDataset,safeSnapshotFilters());visible:=columnViewVisibleColumns();ri,ci:=int(item.Item),int(item.SubItem);if ri<len(records)&&ci<len(visible){txt:=datasetCellText(records[ri],visible[ci]);max:=int(item.TextMax);if max>0&&max<65536{buf:=unsafe.Slice(item.Text,max);runes:=[]rune(txt);if len(runes)>max-1{runes=runes[:max-1]};u16:=utf16.Encode(runes);n:=copy(buf,u16);if n<max{buf[n]=0}else{buf[max-1]=0}};return true}};return false};if h.HwndFrom==viewList&&h.Code==nmDblClk{nv:=columnViewReadNMItemActivate(l);n:=&nv;visible:=columnViewVisibleColumns();if n.Item>=0&&n.SubItem>=0&&int(n.SubItem)<len(visible){columnViewBeginCellEdit(int(n.Item),visible[int(n.SubItem)]);return true}};header,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetHeader,0,0);if h.HwndFrom==header{if h.Code==hdnItemDblClickW{nv:=columnViewReadNMHeaderNotify(l);n:=&nv;visible:=columnViewVisibleColumns();if n.Item>=0&&int(n.Item)<len(visible){columnViewBeginColumnEdit(visible[int(n.Item)]);return true}};if h.Code==hdnEndDrag{columnViewSaveOrder()}};return false}
+'@
+$s = [regex]::Replace($s, 'func columnViewHandleNotify\(l uintptr\)bool\{.*?\}func columnEditTypeIndex', ($handler + 'func columnEditTypeIndex'), [Text.RegularExpressions.RegexOptions]::Singleline)
+Set-Content $p $s -NoNewline
+
+$p = 'windows_safe_view.go'
+$s = Get-Content $p -Raw
+$old = 'if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""{columnViewAddSubtotal(visible,records)};columnViewAutoFit(visible);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth());columnViewApplyFont();appLog("DIAGNOSTICO: render síncrono completo; registros=%d",len(records))}'
+$new = 'send:=user32.NewProc("SendMessageW");count,_,_:=send.Call(viewList,lvmGetItemCount,0,0);appLog("DIAGNOSTICO: item count en listview=%d",int(count));if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""{columnViewAddSubtotal(visible,records)};columnViewAutoFit(visible);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth());columnViewApplyFont();user32.NewProc("InvalidateRect").Call(viewList,0,0,1);user32.NewProc("UpdateWindow").Call(viewList);appLog("DIAGNOSTICO: render síncrono completo; registros=%d",len(records))}'
+if ($s.Contains($old)) { $s = $s.Replace($old, $new) }
+Set-Content $p $s -NoNewline
+
+$diag = @'
+//go:build windows
+package main
+
+func columnViewLogNotify(l uintptr) {
+ if l==0 { return }
+ h:=columnViewReadNMHeader(l)
+ if h.Code==-12 || h.Code==lvnGetDispInfoW || h.Code==-320 || h.Code==-321 { return }
+ if h.Code!=nmDblClk && h.Code!=hdnItemDblClickW && h.Code!=hdnEndDrag { return }
+ appLog("DIAGNOSTICO: WM_NOTIFY hWndFrom=0x%X idFrom=0x%X h.Code=%d",h.HwndFrom,h.IDFrom,h.Code)
+ if h.Code==nmDblClk { n:=columnViewReadNMItemActivate(l); appLog("DIAGNOSTICO: nmDblClk item=%d subItem=%d",n.Item,n.SubItem) }
+ if h.Code==hdnItemDblClickW || h.Code==hdnEndDrag { n:=columnViewReadNMHeaderNotify(l); appLog("DIAGNOSTICO: header notify code=%d item=%d",n.Hdr.Code,n.Item) }
+}
+'@
+Set-Content notify_diagnostics_windows.go $diag -NoNewline
