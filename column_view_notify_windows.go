@@ -4,7 +4,7 @@ package main
 import ("reflect"; "syscall"; "unsafe")
 
 // LVN_GETDISPINFOW is handled in column_view_windows.go.
-// Trigger automatic correction commit with write permission.
+// Trigger final handler correction.
 func columnViewCopyNotify(dst interface{}, src uintptr, size uintptr) {
 	k := syscall.NewLazyDLL("kernel32.dll")
 	k.NewProc("RtlMoveMemory").Call(reflect.ValueOf(dst).Pointer(), src, size)
