@@ -17,7 +17,7 @@ func columnViewFilteredRecords()[]DatasetRecord{if viewDataset==nil{return nil};
 func columnViewHandleFilterChange(id uintptr){if id<filterBaseID{return};columnViewRefresh()}
 func columnViewDeleteColumns(){if viewList==0{return};send:=user32.NewProc("SendMessageW");header,_,_:=send.Call(viewList,lvmGetHeader,0,0);if header==0{return};count,_,_:=send.Call(header,hdmGetItemCount,0,0);detected:=int(count);if detected<0{detected=0};if detected>512{detected=512};for i:=0;i<detected;i++{r,_,_:=send.Call(viewList,lvmDeleteColumn,0,0);if r==0{break}}}
 func columnViewAutoFit(visible []DatasetColumn){if viewList==0||viewDataset==nil{return};send:=user32.NewProc("SendMessageW");for i:=range visible{send.Call(viewList,lvmSetColumnWidth,uintptr(i),uintptr(lvscwAutosize));width,_,_:=send.Call(viewList,lvmGetColumnWidth,uintptr(i),0);w:=int(width);if w<120{w=120};if w>500{w=500};send.Call(viewList,lvmSetColumnWidth,uintptr(i),uintptr(w));for j:=range viewDataset.Columns{if viewDataset.Columns[j].ID==visible[i].ID{viewDataset.Columns[j].Width=w;break}}}}
-func columnViewRefresh(){if viewList==0{return};columnViewDeleteColumns();user32.NewProc("SendMessageW").Call(viewList,lvmDeleteAll,0,0);if viewDataset==nil{return};visible:=columnViewVisibleColumns();for i,c:=range visible{p:=appU16(datasetColumnDisplayTitle(c));fmtCol:=lvcfmtLeft;if c.Type==ValueNumber{fmtCol=lvcfmtRight};lc:=lvColumn{Mask:lvcfText,Fmt:int32(fmtCol),Cx:int32(maxInt(120,c.Width)),Text:p,SubItem:int32(i)};user32.NewProc("SendMessageW").Call(viewList,lvmInsertColumnW,uintptr(i),uintptr(unsafe.Pointer(&lc)))};records:=columnViewFilteredRecords();for ri,r:=range records{for ci,c:=range visible{txt:=datasetCellText(r,c);p:=appU16(txt);it:=lvItem{Mask:lvifText,Item:int32(ri),SubItem:int32(ci),Text:p,TextMax:int32(len([]rune(txt))+1)};if ci==0{user32.NewProc("SendMessageW").Call(viewList,lvmInsertItemW,0,uintptr(unsafe.Pointer(&it)))}else{user32.NewProc("SendMessageW").Call(viewList,lvmSetItemTextW,uintptr(ri),uintptr(unsafe.Pointer(&it)))}}};if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""{columnViewAddSubtotal(visible,records)};columnViewAutoFit(visible);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth());columnViewApplyFont()}
+func columnViewRefresh(){columnViewRefreshSafe()}
 func datasetCellText(r DatasetRecord,c DatasetColumn)string{if v,ok:=r.Values[c.ID];ok{if v.Type==ValueNumber{n:=v.Number;if datasetColumnIsPercent(c){n*=100;return formatDatasetNumber(n,datasetColumnDecimals(c))+"%"};return formatDatasetNumber(n,datasetColumnDecimals(c))};return cleanCell(v.Raw)};return ""}
 func columnViewAddSubtotal(visible []DatasetColumn,records []DatasetRecord){targets:=map[string]bool{};if len(appSettings.SubtotalColumns)>0{for _,t:=range appSettings.SubtotalColumns{targets[strings.ToLower(strings.TrimSpace(t))]=true}}else if appSettings.SubtotalColumn!=""{targets[strings.ToLower(strings.TrimSpace(appSettings.SubtotalColumn))]=true};sums:=map[string]float64{};for _,c:=range visible{if targets[strings.ToLower(strings.TrimSpace(c.Title))]||targets[strings.ToLower(strings.TrimSpace(datasetColumnDisplayTitle(c)))]{for _,r:=range records{if v,ok:=r.Values[c.ID];ok&&v.Type==ValueNumber{sums[c.ID]+=v.Number}}}};idx:=len(records);for ci,c:=range visible{txt:="";if ci==0{txt="SUBTOTAL"};if sum,ok:=sums[c.ID];ok{if datasetColumnIsPercent(c){sum*=100;txt=formatDatasetNumber(sum,datasetColumnDecimals(c))+"%"}else{txt=formatDatasetNumber(sum,datasetColumnDecimals(c))}};p:=appU16(txt);it:=lvItem{Mask:lvifText,Item:int32(idx),SubItem:int32(ci),Text:p,TextMax:int32(len([]rune(txt))+1)};if ci==0{user32.NewProc("SendMessageW").Call(viewList,lvmInsertItemW,0,uintptr(unsafe.Pointer(&it)))}else{user32.NewProc("SendMessageW").Call(viewList,lvmSetItemTextW,uintptr(idx),uintptr(unsafe.Pointer(&it)))}}}
 func columnViewApplyFont(){if viewList==0{return};if viewFont!=0{gdi:=syscall.NewLazyDLL("gdi32.dll");gdi.NewProc("DeleteObject").Call(viewFont)};gdi:=syscall.NewLazyDLL("gdi32.dll");size:=appSettings.FontSize;if size<8||size>32{size=10};viewFont,_,_=gdi.NewProc("CreateFontW").Call(uintptr(int32(-size)),0,0,0,400,0,0,0,1,0,0,0,0,reflect.ValueOf(appU16("Segoe UI")).Pointer());if viewFont!=0{user32.NewProc("SendMessageW").Call(viewList,WM_SETFONT,viewFont,1)}}
@@ -34,10 +34,14 @@ func columnViewHandleNotify(l uintptr) bool {
 			records:=safeFilterRecords(viewDataset,safeSnapshotFilters())
 			visible:=columnViewVisibleColumns()
 			ri,ci:=int(item.Item),int(item.SubItem)
-			if ri<len(records) && ci<len(visible) {
-				txt:=datasetCellText(records[ri],visible[ci])
-				if appSettings.SubtotalEnabled && appSettings.SubtotalColumn!="" && ri==len(records) {
+			if ci<len(visible) && ri>=0 && ri<=len(records) {
+				txt:=""
+				if ri<len(records) {
+					txt=datasetCellText(records[ri],visible[ci])
+				} else if appSettings.SubtotalEnabled && appSettings.SubtotalColumn!="" {
 					txt=safeSubtotalCellText(visible,records,ci)
+				} else {
+					return false
 				}
 				if appSettings.SubtotalEnabled && appSettings.SubtotalColumn!="" && ri==len(records) {
 					txt=safeSubtotalCellText(visible,records,ci)
