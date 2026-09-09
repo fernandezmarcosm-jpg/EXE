@@ -3,7 +3,7 @@ name: Validar GestionSO V57 Minimal
 on:
   workflow_dispatch:
   push:
-    branches: [main, reconstruccion-grilla-edicion]
+    branches: [main, reconstruccion-grilla-edicion, fix/listview-repaint-deleteobject-v2]
   pull_request:
     branches: [main]
 
