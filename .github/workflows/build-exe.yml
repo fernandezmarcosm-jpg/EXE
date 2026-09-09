@@ -5,9 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: windows-latest
@@ -18,27 +15,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Apply handler fix
-        shell: pwsh
-        run: pwsh -NoProfile -File .github/scripts/fix-handler.ps1
+
       - name: Go version
         shell: pwsh
         run: go version
+
       - name: Test
         shell: pwsh
         run: go test ./...
+
       - name: Vet
         shell: pwsh
         run: go vet ./...
+
       - name: Build EXE
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
           if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'No se genero GestionSO-V57.exe' }
+
       - name: Package EXE
         shell: pwsh
         run: Compress-Archive -Path dist/GestionSO-V57.exe -DestinationPath dist/GestionSO-V57.zip -Force
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -46,15 +46,3 @@ jobs:
           path: dist/GestionSO-V57.zip
           if-no-files-found: error
           retention-days: 30
-      - name: Commit fix after green
-        shell: pwsh
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add column_view_windows.go
-          git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) { throw 'LVN handler was not changed' }
-          git rm .github/scripts/fix-handler.ps1
-          if (Test-Path .github/workflows/fix-handler.yml) { git rm .github/workflows/fix-handler.yml }
-          git commit -m 'Handle LVN_GETDISPINFOW callback text'
-          git push origin HEAD:main
