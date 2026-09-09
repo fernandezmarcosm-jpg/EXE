@@ -1,0 +1,30 @@
+name: Apply render batch compatibility fix
+on:
+  push:
+    branches: [fix/listview-repaint-deleteobject]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[render-batch-fix-generated]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove obsolete batch renderer call
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('functional_app_windows.go')
+          s=p.read_text()
+          old='case WM_APP_RENDER_BATCH:columnViewRenderBatch(uint64(w));return 0;'
+          new='case WM_APP_RENDER_BATCH:return 0;'
+          if old not in s: raise SystemExit('obsolete render batch call not found')
+          p.write_text(s.replace(old,new,1))
+      - name: Commit generated fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add functional_app_windows.go
+          git commit -m "Remove obsolete render batch call [render-batch-fix-generated]"
+          git push
