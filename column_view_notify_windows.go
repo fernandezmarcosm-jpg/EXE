@@ -25,3 +25,9 @@ func columnViewReadNMHeaderNotify(src uintptr) nmheader {
 	columnViewCopyNotify(&v, src, unsafe.Sizeof(v))
 	return v
 }
+
+func columnViewReadNMLVDispInfo(src uintptr) nmlvDispInfo {
+	var v nmlvDispInfo
+	columnViewCopyNotify(&v, src, unsafe.Sizeof(v))
+	return v
+}
