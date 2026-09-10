@@ -8,12 +8,12 @@ const swpNoActivate uintptr = 0x0010
 const swpShowWindow uintptr = 0x0040
 const wmSetFont uintptr = 0x0030
 const wmSetText uintptr = 0x000C
-const esMultiline = 0x0004
-const esAutoVScroll = 0x0040
-const esAutoHScroll = 0x0080
-const esReadOnly = 0x0800
-const WS_VSCROLL = 0x00200000
-const WS_HSCROLL = 0x00100000
+const esMultiline uint32 = 0x0004
+const esAutoVScroll uint32 = 0x0040
+const esAutoHScroll uint32 = 0x0080
+const esReadOnly uint32 = 0x0800
+const WS_VSCROLL uint32 = 0x00200000
+const WS_HSCROLL uint32 = 0x00100000
 
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn; text string}
