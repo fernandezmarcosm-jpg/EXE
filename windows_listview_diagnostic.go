@@ -12,6 +12,8 @@ const (
     diagGWChild         = 5
     diagGWHWndNext      = 2
     diagGWHWndPrev      = 3
+    diagGWLStyle        = -16
+    diagGWLExStyle      = -20
     diagLVMGetItemTextW = 0x1073
     diagLVIFText        = 0x0001
 )
@@ -26,7 +28,7 @@ type diagLVItem struct {
     Image, Param int32
 }
 
-func diagCall(proc *syscall.LazyProc, args ...uintptr) (uintptr, uintptr, error) { return proc.Call(args...) }
+func diagCall(proc *syscall.LazyProc, args ...uintptr) (uintptr, uintptr, syscall.Errno) { return proc.Call(args...) }
 
 func diagClass(hwnd uintptr) string {
     if hwnd == 0 { return "<0>" }
@@ -51,8 +53,8 @@ func diagRectOf(hwnd uintptr) (diagRect, bool) {
 }
 
 func diagStyle(hwnd uintptr) (uintptr, uintptr) {
-    styleIndex := uintptr(uint64(int64(-16)))
-    exStyleIndex := uintptr(uint64(int64(-20)))
+    styleIndex := uintptr(int64(diagGWLStyle))
+    exStyleIndex := uintptr(int64(diagGWLExStyle))
     s, _, _ := diagCall(user32.NewProc("GetWindowLongPtrW"), hwnd, styleIndex)
     e, _, _ := diagCall(user32.NewProc("GetWindowLongPtrW"), hwnd, exStyleIndex)
     return s, e
