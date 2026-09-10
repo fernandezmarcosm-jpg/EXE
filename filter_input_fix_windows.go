@@ -7,7 +7,7 @@ import (
 )
 
 const (
-    filterFixSetWindowLongPtr = -4
+    filterFixSetWindowLongPtr = ^uintptr(3)
     filterFixEnChange         = 0x0300
     filterFixEnSetFocus       = 0x0100
     filterFixEnKillFocus      = 0x0200
@@ -60,5 +60,6 @@ func filterFixWndProc(hwnd uintptr, msg uint32, w, l uintptr) uintptr {
 func filterFixCallOld(hwnd uintptr, msg uint32, w, l uintptr) uintptr {
     if filterFixOldWndProc == 0 { return 0 }
     p := syscall.NewLazyDLL("user32.dll")
-    return p.NewProc("CallWindowProcW").Call(filterFixOldWndProc, hwnd, uintptr(msg), w, l)
+    r, _, _ := p.NewProc("CallWindowProcW").Call(filterFixOldWndProc, hwnd, uintptr(msg), w, l)
+    return r
 }
