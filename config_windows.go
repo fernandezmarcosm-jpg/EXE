@@ -1,7 +1,10 @@
 //go:build windows
 package main
 
-import "strings"
+import (
+	"strings"
+	"unsafe"
+)
 
 const configWM_TIMER uint32 = 0x0113
 const configLayoutTimer uintptr = 7311
