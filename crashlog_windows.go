@@ -13,6 +13,7 @@ import (
 
 var appLogMu sync.Mutex
 var appLogFile *os.File
+var appLogEnabled = os.Getenv("GESTIONSO_DEBUG") == "1"
 
 func appLogPath() string {
     if exe, err := os.Executable(); err == nil {
@@ -22,6 +23,7 @@ func appLogPath() string {
 }
 
 func appLogInit() {
+    if !appLogEnabled { return }
     path := appLogPath()
     f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
     if err != nil {
@@ -35,6 +37,7 @@ func appLogInit() {
 }
 
 func appLog(format string, args ...interface{}) {
+    if !appLogEnabled { return }
     appLogMu.Lock()
     defer appLogMu.Unlock()
     if appLogFile == nil { return }
