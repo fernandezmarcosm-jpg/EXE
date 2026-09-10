@@ -54,6 +54,9 @@ func columnViewForceDisplay() {
 
 func safeDisplayColumns(ds *MemoryDataset) []DatasetColumn {
 	if ds == nil { return nil }
+	allHidden := len(ds.Columns) > 0
+	for _, c := range ds.Columns { if c.Visible { allHidden = false; break } }
+	if allHidden { return []DatasetColumn{} }
 	current := columnViewVisibleColumns()
 	hasData := func(c DatasetColumn) bool {
 		for _, r := range ds.Records {
@@ -89,7 +92,6 @@ func columnViewRefreshSafe() {
 	safeRenderMu.Lock()
 	defer safeRenderMu.Unlock()
 	visible := safeDisplayColumns(viewDataset)
-	if len(visible) == 0 { visible = viewDataset.Columns }
 	records := safeFilterRecords(viewDataset, safeSnapshotFilters())
 	send := user32.NewProc("SendMessageW")
 	columnViewDeleteColumns()
@@ -99,19 +101,19 @@ func columnViewRefreshSafe() {
 		if width < 80 { width = 120 }
 		if width > 500 { width = 500 }
 		col := lvColumn{Mask:uint32(lvcfText), Fmt:int32(lvcfmtLeft), Cx:int32(width), Text:title, TextMax:int32(len([]rune(datasetColumnDisplayTitle(c)))+1), SubItem:int32(i), Order:int32(i)}
-		send.Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&col)))
+		send.Call(viewList,lvmInsertColumnW,uintptr(i),uintptr(unsafe.Pointer(&col)))
 	}
 	count := len(records)
-	if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" { count++ }
-	send.Call(viewList, lvmSetItemCountEx, uintptr(count), 0)
+	if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" && len(visible)>0 { count++ }
+	send.Call(viewList,lvmSetItemCountEx,uintptr(count),0)
 	columnViewAutoFit(visible)
 	columnViewLayoutFilters(currentClientWidth())
 	columnViewApplyFont()
-	send.Call(viewList, lvmSetExtended, 0, lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop)
-	user32.NewProc("InvalidateRect").Call(viewList, 0, 1)
+	send.Call(viewList,lvmSetExtended,0,lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop)
+	user32.NewProc("InvalidateRect").Call(viewList,0,1)
 	user32.NewProc("UpdateWindow").Call(viewList)
-	appLog("DATOS: tabla actualizada; filas=%d columnas=%d", len(records), len(visible))
-	for ri, r := range records { for ci, c := range visible { appLog("DATOS: fila=%d columna=%d titulo=%q valor=%q", ri, ci, datasetColumnDisplayTitle(c), datasetCellText(r, c)) } }
+	appLog("DATOS: tabla actualizada; filas=%d columnas=%d",len(records),len(visible))
+	for ri,r:=range records{for ci,c:=range visible{appLog("DATOS: fila=%d columna=%d titulo=%q valor=%q",ri,ci,datasetColumnDisplayTitle(c),datasetCellText(r,c))}}
 }
 
 func safeSubtotalCellText(visible []DatasetColumn, records []DatasetRecord, ci int) string {
