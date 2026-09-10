@@ -7,30 +7,37 @@ const wmSetRedraw uint32 = 0x000B
 const swShow = 5
 const swpNoActivate uintptr = 0x0010
 const swpShowWindow uintptr = 0x0040
+const wmSetFont uint32 = 0x0030
+const wmSetText uint32 = 0x000C
 
+// IMPORTANTE: esta vista deja de depender de SysListView32.
+// El unico objetivo de esta version es mostrar literalmente en pantalla los
+// valores que ya quedaron guardados en MemoryDataset. Un EDIT multilinea
+// readonly es deliberadamente simple y robusto para aislar cualquier problema
+// del control ListView/virtualizacion/renderizado.
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn; text string}
 
-// The dataset ListView is concrete from creation/recreation. LVS_OWNERDATA is
-// never toggled dynamically because that mode has a different notification model.
 func columnViewSetDatasetSafe(ds *MemoryDataset) {
 	defer appRecover("columnViewSetDatasetSafe")
 	if ds == nil { return }
 	columnViewDestroyFilters()
 	if viewList != 0 { user32.NewProc("DestroyWindow").Call(viewList); viewList = 0 }
-	viewList = appMake(appHwnd, "SysListView32", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|lvsReport, 0, 0, 100, 100, appIDView)
-	if viewList == 0 { appLog("DIAGNOSTICO: ERROR CreateWindowExW SysListView32") ; return }
-	user32.NewProc("SendMessageW").Call(viewList, lvmSetExtended, 0, lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop)
+
+	// EDIT multilinea de solo lectura: no hay owner-data, LVITEM, headers ni
+	// notificaciones. Recibe directamente el texto final construido desde ds.
+	style := WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL | 0x0004 /* ES_MULTILINE */ | 0x00200000 /* ES_AUTOVSCROLL */ | 0x00400000 /* ES_AUTOHSCROLL */ | 0x0800 /* ES_READONLY */
+	viewList = appMake(appHwnd, "EDIT", "", style, 0, 0, 100, 100, appIDView)
+	if viewList == 0 {
+		appLog("DIAGNOSTICO: ERROR CreateWindowExW EDIT para datos")
+		return
+	}
 	viewDataset = ds
-	columnViewBuildFilters()
 	columnViewRefreshSafe()
-	columnViewLayout(appHwnd, currentClientWidth(), 760)
-	appApplyVisualPolish(appHwnd)
 	columnViewForceDisplay()
+	appLog("DATOS: vista directa creada; filas=%d columnas=%d", len(ds.Records), len(ds.Columns))
 }
 
-// One final synchronous paint is safe here because the control is concrete:
-// it does not request LVN_GETDISPINFO for every visible cell.
 func columnViewForceDisplay() {
 	defer appRecover("columnViewForceDisplay")
 	if viewList == 0 { return }
@@ -43,87 +50,99 @@ func columnViewForceDisplay() {
 	user32.NewProc("GetClientRect").Call(appHwnd, uintptr(unsafe.Pointer(&r)))
 	w := maxInt(300, int(r.Right-r.Left)-20)
 	h := maxInt(150, int(r.Bottom-r.Top)-94)
-	// The filter EDIT controls are created after the ListView and therefore may
-	// become later siblings. Put the ListView explicitly at the top of the
-	// child Z-order so a sibling cannot silently paint over the table.
 	move.Call(viewList, 0, 10, 84, uintptr(w), uintptr(h), swpNoActivate|swpShowWindow)
 	invalidate.Call(viewList, 0, 1)
 	update.Call(viewList)
-	appLog("DIAGNOSTICO: visualizacion finalizada; hwndList=0x%X rect=%dx%d zorder=TOP", viewList, w, h)
+	appLog("DIAGNOSTICO: visualizacion directa finalizada; hwndView=0x%X rect=%dx%d", viewList, w, h)
 }
 
 func columnViewRefreshSafe() {
 	defer appRecover("columnViewRefreshSafe")
-	if viewList == 0 { return }
+	if viewList == 0 || viewDataset == nil { return }
 	safeRenderMu.Lock()
 	defer safeRenderMu.Unlock()
-	send := user32.NewProc("SendMessageW")
-	send.Call(viewList, uintptr(wmSetRedraw), 0, 0)
-	defer func() { send.Call(viewList, uintptr(wmSetRedraw), 1, 0); user32.NewProc("InvalidateRect").Call(viewList, 0, 1) }()
-	columnViewDeleteColumns()
-	if viewDataset == nil { return }
-	visible := columnViewVisibleColumns()
-	for i, c := range visible {
-		p := appU16(datasetColumnDisplayTitle(c))
-		fmtCol := lvcfmtLeft
-		if c.Type == ValueNumber { fmtCol = lvcfmtRight }
-		width := c.Width
-		if width < 120 { width = 120 }
-		if width > 420 { width = 420 }
-		lc := lvColumn{Mask:lvcfText, Fmt:int32(fmtCol), Cx:int32(width), Text:p, TextMax:int32(len([]rune(datasetColumnDisplayTitle(c)))+1), SubItem:int32(i)}
-		r, _, _ := send.Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&lc)))
-		if int64(r) < 0 { appLog("DIAGNOSTICO: error insertando columna=%d titulo=%s", i, datasetColumnDisplayTitle(c)) }
-	}
-	records := safeFilterRecords(viewDataset, safeSnapshotFilters())
-	inserted, failed := 0, 0
-	for ri, r := range records {
-		rowOK := true
-		for ci, c := range visible {
-			txt := datasetCellText(r, c)
-			p := appU16(txt)
-			it := lvItem{Mask:lvifText, Item:int32(ri), SubItem:int32(ci), Text:p, TextMax:int32(len([]rune(txt))+1)}
-			var ret uintptr
-			if ci == 0 { ret, _, _ = send.Call(viewList, lvmInsertItemW, 0, uintptr(unsafe.Pointer(&it))) } else { ret, _, _ = send.Call(viewList, lvmSetItemTextW, uintptr(ri), uintptr(unsafe.Pointer(&it))) }
-			if ci == 0 {
-				if int64(ret) < 0 { failed++; rowOK = false; appLog("DIAGNOSTICO: LVM_INSERTITEM fallo fila=%d texto=%q", ri, txt); break }
-			} else if ret == 0 { failed++ }
-		}
-		if rowOK { inserted++ }
-	}
-	if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" && len(records) > 0 { columnViewAddSubtotal(visible, records) }
-	columnViewLayoutFilters(currentClientWidth())
-	columnViewApplyFont()
-	actual, _, _ := send.Call(viewList, lvmGetItemCount, 0, 0)
-	header, _, _ := send.Call(viewList, lvmGetHeader, 0, 0)
-	columnCount, _, _ := send.Call(header, hdmGetItemCount, 0, 0)
-	appLog("DIAGNOSTICO: ListView concreto; filas=%d insertadas=%d fallidas=%d actualCount=%d columnas=%d headerColumns=%d", len(records), inserted, failed, actual, len(visible), columnCount)
-}
 
-func safeSubtotalCellText(visible []DatasetColumn, records []DatasetRecord, ci int) string {
-	if ci < 0 || ci >= len(visible) { return "" }
-	c := visible[ci]; targets := map[string]bool{}
-	if len(appSettings.SubtotalColumns) > 0 { for _, t := range appSettings.SubtotalColumns { targets[strings.ToLower(strings.TrimSpace(t))] = true } } else if appSettings.SubtotalColumn != "" { targets[strings.ToLower(strings.TrimSpace(appSettings.SubtotalColumn))] = true }
-	if ci == 0 && !targets[strings.ToLower(strings.TrimSpace(c.Title))] && !targets[strings.ToLower(strings.TrimSpace(datasetColumnDisplayTitle(c)))] { return "SUBTOTAL" }
-	if !targets[strings.ToLower(strings.TrimSpace(c.Title))] && !targets[strings.ToLower(strings.TrimSpace(datasetColumnDisplayTitle(c)))] { return "" }
-	sum := 0.0; for _, r := range records { if v, ok := r.Values[c.ID]; ok && v.Type == ValueNumber { sum += v.Number } }
-	if datasetColumnIsPercent(c) { sum *= 100; return formatDatasetNumber(sum, datasetColumnDecimals(c)) + "%" }
-	return formatDatasetNumber(sum, datasetColumnDecimals(c))
+	// Construimos un texto completo a partir de los mismos DatasetRecords que
+	// ya estan en memoria. Asi podemos verificar el dato sin ninguna capa
+	// intermedia de ListView.
+	visible := columnViewVisibleColumns()
+	if len(visible) == 0 { visible = viewDataset.Columns }
+	records := safeFilterRecords(viewDataset, safeSnapshotFilters())
+	var b strings.Builder
+	for i, c := range visible {
+		if i > 0 { b.WriteString("\t") }
+		b.WriteString(datasetColumnDisplayTitle(c))
+	}
+	b.WriteString("\r\n")
+	for ri, r := range records {
+		for ci, c := range visible {
+			if ci > 0 { b.WriteString("\t") }
+			txt := datasetCellText(r, c)
+			b.WriteString(txt)
+		}
+		if ri+1 < len(records) { b.WriteString("\r\n") }
+	}
+	text := b.String()
+	p := appU16(text)
+	user32.NewProc("SendMessageW").Call(viewList, uintptr(wmSetText), 0, uintptr(unsafe.Pointer(p)))
+
+	// Fuente legible y consistente. El contenido sigue siendo texto plano.
+	gdi := syscall.NewLazyDLL("gdi32.dll")
+	createFont := gdi.NewProc("CreateFontW")
+	size := appSettings.FontSize
+	if size < 8 || size > 32 { size = 10 }
+	face := appU16("Segoe UI")
+	font, _, _ := createFont.Call(uintptr(int32(-size)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
+	if font != 0 { user32.NewProc("SendMessageW").Call(viewList, uintptr(wmSetFont), font, 1) }
+
+	appLog("DATOS: texto enviado a vista directa; filas=%d columnas=%d caracteres=%d", len(records), len(visible), len([]rune(text)))
+	for ri, r := range records {
+		for ci, c := range visible {
+			appLog("DATOS: fila=%d columna=%d titulo=%q valor=%q", ri, ci, datasetColumnDisplayTitle(c), datasetCellText(r, c))
+		}
+	}
 }
 
 func safeSnapshotFilters() []safeFilter {
 	if viewDataset == nil { return nil }
-	filters := make([]safeFilter, 0, len(viewFilters)); for id, h := range viewFilters { text := strings.ToLower(strings.TrimSpace(appGetEdit(h))); if text == "" { continue }; for _, c := range viewDataset.Columns { if c.ID == id { filters = append(filters, safeFilter{column:c, text:text}); break } } }; return filters
+	filters := make([]safeFilter, 0, len(viewFilters))
+	for id, h := range viewFilters {
+		text := strings.ToLower(strings.TrimSpace(appGetEdit(h)))
+		if text == "" { continue }
+		for _, c := range viewDataset.Columns { if c.ID == id { filters = append(filters, safeFilter{column:c, text:text}); break } }
+	}
+	return filters
 }
+
 func safeFilterRecords(ds *MemoryDataset, filters []safeFilter) []DatasetRecord {
-	if ds == nil { return nil }; if len(filters) == 0 { return append([]DatasetRecord(nil), ds.Records...) }
-	out := make([]DatasetRecord, 0, len(ds.Records)); for _, r := range ds.Records { ok := true; for _, f := range filters { if !strings.Contains(strings.ToLower(datasetCellText(r, f.column)), f.text) { ok = false; break } }; if ok { out = append(out, r) } }; return out
+	if ds == nil { return nil }
+	if len(filters) == 0 { return append([]DatasetRecord(nil), ds.Records...) }
+	out := make([]DatasetRecord, 0, len(ds.Records))
+	for _, r := range ds.Records {
+		ok := true
+		for _, f := range filters {
+			if !strings.Contains(strings.ToLower(datasetCellText(r, f.column)), f.text) { ok = false; break }
+		}
+		if ok { out = append(out, r) }
+	}
+	return out
 }
 
 func appApplyVisualPolish(parent uintptr) {
-	defer appRecover("appApplyVisualPolish"); if parent == 0 { return }
-	theme := syscall.NewLazyDLL("uxtheme.dll"); setTheme := theme.NewProc("SetWindowTheme"); gdi := syscall.NewLazyDLL("gdi32.dll"); createFont := gdi.NewProc("CreateFontW"); face := appU16("Segoe UI"); size := appSettings.FontSize; if size < 8 || size > 32 { size = 10 }
-	font, _, _ := createFont.Call(uintptr(int32(-size)), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face))); explorer := appU16("Explorer")
+	defer appRecover("appApplyVisualPolish")
+	if parent == 0 { return }
+	theme := syscall.NewLazyDLL("uxtheme.dll")
+	setTheme := theme.NewProc("SetWindowTheme")
+	gdi := syscall.NewLazyDLL("gdi32.dll")
+	createFont := gdi.NewProc("CreateFontW")
+	face := appU16("Segoe UI")
+	size := appSettings.FontSize
+	if size < 8 || size > 32 { size = 10 }
+	font, _, _ := createFont.Call(uintptr(int32(-size)), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
+	explorer := appU16("Explorer")
 	buttons := []struct{id,x,w uintptr}{{appIDOpen,12,125},{appIDColumns,145,105},{appIDConfig,258,135}}
-	for _, b := range buttons { h:=uintptr(0); switch b.id { case appIDOpen:h=appOpenButton; case appIDColumns:h=appColumnsButton; case appIDConfig:h=appConfigButton }; if h==0 { h=findChildByID(parent,"BUTTON",b.id) }; if h==0 { continue }; setTheme.Call(h,uintptr(unsafe.Pointer(explorer)),0); if font!=0 { user32.NewProc("SendMessageW").Call(h,WM_SETFONT,font,1) }; user32.NewProc("MoveWindow").Call(h,b.x,7,b.w,30,1) }
-	status:=appStatus; if status==0 { status=findChildByID(parent,"STATIC",appIDStatus) }; if status!=0 { if font!=0 { user32.NewProc("SendMessageW").Call(status,WM_SETFONT,font,1) }; user32.NewProc("MoveWindow").Call(status,410,11,uintptr(maxInt(240,currentClientWidth()-430)),22,1) }
+	for _, b := range buttons { h:=uintptr(0); switch b.id { case appIDOpen:h=appOpenButton; case appIDColumns:h=appColumnsButton; case appIDConfig:h=appConfigButton }; if h==0 { h=findChildByID(parent,"BUTTON",b.id) }; if h==0 { continue }; setTheme.Call(h,uintptr(unsafe.Pointer(explorer)),0); if font!=0 { user32.NewProc("SendMessageW").Call(h,wmSetFont,font,1) }; user32.NewProc("MoveWindow").Call(h,b.x,7,b.w,30,1) }
+	status:=appStatus
+	if status==0 { status=findChildByID(parent,"STATIC",appIDStatus) }
+	if status!=0 { if font!=0 { user32.NewProc("SendMessageW").Call(status,wmSetFont,font,1) }; user32.NewProc("MoveWindow").Call(status,410,11,uintptr(maxInt(240,currentClientWidth()-430)),22,1) }
 }
