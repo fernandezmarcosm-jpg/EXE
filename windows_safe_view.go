@@ -23,13 +23,15 @@ func columnViewSetDatasetSafe(ds *MemoryDataset) {
 	if ds == nil { return }
 	columnViewDestroyFilters()
 	if viewList != 0 { user32.NewProc("DestroyWindow").Call(viewList); viewList = 0 }
-	style := WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL | esMultiline | esAutoVScroll | esAutoHScroll | esReadOnly
-	viewList = appMake(appHwnd, "EDIT", "", style, 0, 0, 100, 100, appIDView)
-	if viewList == 0 { appLog("DIAGNOSTICO: ERROR CreateWindowExW EDIT para datos"); return }
+	style := WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | lvsReport | lvsOwnerData
+	viewList = appMake(appHwnd, "SysListView32", "", style, 0, 0, 100, 100, appIDView)
+	if viewList == 0 { appLog("DIAGNOSTICO: ERROR CreateWindowExW SysListView32 para datos"); return }
 	viewDataset = ds
+	user32.NewProc("SendMessageW").Call(viewList, lvmSetExtended, 0, lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop)
+	columnViewBuildFilters()
 	columnViewRefreshSafe()
 	columnViewForceDisplay()
-	appLog("DATOS: vista directa creada; filas=%d columnas=%d", len(ds.Records), len(ds.Columns))
+	appLog("DATOS: vista tabular creada; filas=%d columnas=%d", len(ds.Records), len(ds.Columns))
 }
 
 func columnViewForceDisplay() {
@@ -47,7 +49,7 @@ func columnViewForceDisplay() {
 	move.Call(viewList, 0, 10, 84, uintptr(w), uintptr(h), swpNoActivate|swpShowWindow)
 	invalidate.Call(viewList, 0, 1)
 	update.Call(viewList)
-	appLog("DIAGNOSTICO: visualizacion directa finalizada; hwndView=0x%X rect=%dx%d", viewList, w, h)
+	appLog("DIAGNOSTICO: visualizacion tabular finalizada; hwndView=0x%X rect=%dx%d", viewList, w, h)
 }
 
 func safeDisplayColumns(ds *MemoryDataset) []DatasetColumn {
@@ -71,8 +73,6 @@ func safeDisplayColumns(ds *MemoryDataset) []DatasetColumn {
 		for _, x := range out { if x.ID == c.ID { return } }
 		out = append(out, c)
 	}
-	// Cuando la configuracion persistida deja visibles solamente columnas del
-	// CSV maestro sin valores, priorizar las columnas reales del XLSX importado.
 	for _, c := range ds.Columns { if c.Source == "XLSX" { appendData(c) } }
 	for _, c := range ds.Columns { if c.Source != "XLSX" { appendData(c) } }
 	if len(out) > 0 { return out }
@@ -91,24 +91,26 @@ func columnViewRefreshSafe() {
 	visible := safeDisplayColumns(viewDataset)
 	if len(visible) == 0 { visible = viewDataset.Columns }
 	records := safeFilterRecords(viewDataset, safeSnapshotFilters())
-	var b strings.Builder
-	for i, c := range visible { if i > 0 { b.WriteString("\t") }; b.WriteString(datasetColumnDisplayTitle(c)) }
-	b.WriteString("\r\n")
-	for ri, r := range records {
-		for ci, c := range visible { if ci > 0 { b.WriteString("\t") }; b.WriteString(datasetCellText(r, c)) }
-		if ri+1 < len(records) { b.WriteString("\r\n") }
+	send := user32.NewProc("SendMessageW")
+	columnViewDeleteColumns()
+	for i, c := range visible {
+		title := appU16(datasetColumnDisplayTitle(c))
+		width := c.Width
+		if width < 80 { width = 120 }
+		if width > 500 { width = 500 }
+		col := lvColumn{Mask:uint32(lvcfText), Fmt:int32(lvcfmtLeft), Cx:int32(width), Text:title, TextMax:int32(len([]rune(datasetColumnDisplayTitle(c)))+1), SubItem:int32(i), Order:int32(i)}
+		send.Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&col)))
 	}
-	text := b.String()
-	p := appU16(text)
-	user32.NewProc("SendMessageW").Call(viewList, wmSetText, 0, uintptr(unsafe.Pointer(p)))
-	gdi := syscall.NewLazyDLL("gdi32.dll")
-	createFont := gdi.NewProc("CreateFontW")
-	size := appSettings.FontSize
-	if size < 8 || size > 32 { size = 10 }
-	face := appU16("Segoe UI")
-	font, _, _ := createFont.Call(uintptr(int32(-size)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
-	if font != 0 { user32.NewProc("SendMessageW").Call(viewList, wmSetFont, font, 1) }
-	appLog("DATOS: texto enviado a vista directa; filas=%d columnas=%d caracteres=%d", len(records), len(visible), len([]rune(text)))
+	count := len(records)
+	if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" { count++ }
+	send.Call(viewList, lvmSetItemCountEx, uintptr(count), 0)
+	columnViewAutoFit(visible)
+	columnViewLayoutFilters(currentClientWidth())
+	columnViewApplyFont()
+	send.Call(viewList, lvmSetExtended, 0, lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop)
+	user32.NewProc("InvalidateRect").Call(viewList, 0, 1)
+	user32.NewProc("UpdateWindow").Call(viewList)
+	appLog("DATOS: tabla actualizada; filas=%d columnas=%d", len(records), len(visible))
 	for ri, r := range records { for ci, c := range visible { appLog("DATOS: fila=%d columna=%d titulo=%q valor=%q", ri, ci, datasetColumnDisplayTitle(c), datasetCellText(r, c)) } }
 }
 
