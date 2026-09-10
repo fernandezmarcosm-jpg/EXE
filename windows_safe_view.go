@@ -6,14 +6,13 @@ const wmSetRedraw uint32 = 0x000B
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn;text string}
 
-// columnViewSetDatasetSafe keeps the ListView as a normal (non-owner-data)
-// control for its entire lifetime. Windows does not support dynamically
-// switching LVS_OWNERDATA on/off, so the control is created concrete and is
-// repopulated on each dataset/filter change.
-func columnViewSetDatasetSafe(ds *MemoryDataset){defer appRecover("columnViewSetDatasetSafe");if ds==nil{return};columnViewDestroyFilters();viewDataset=ds;columnViewBuildFilters();columnViewRefreshSafe();appApplyVisualPolish(appHwnd)}
+// columnViewSetDatasetSafe replaces the initial virtual ListView with a normal
+// ListView instead of changing LVS_OWNERDATA dynamically. Windows documents
+// that switching LVS_OWNERDATA on/off after creation is unsupported.
+func columnViewSetDatasetSafe(ds *MemoryDataset){defer appRecover("columnViewSetDatasetSafe");if ds==nil{return};columnViewDestroyFilters();if viewList!=0{user32.NewProc("DestroyWindow").Call(viewList);viewList=0};viewList=appMake(appHwnd,"SysListView32","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|lvsReport,0,0,100,100,appIDView);user32.NewProc("SendMessageW").Call(viewList,lvmSetExtended,0,lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop);viewDataset=ds;columnViewBuildFilters();columnViewRefreshSafe();columnViewLayout(appHwnd,currentClientWidth(),760);appApplyVisualPolish(appHwnd)}
 
-// columnViewRefreshSafe rebuilds the concrete ListView without forcing a
-// synchronous repaint while the window procedure is handling a command.
+// columnViewRefreshSafe rebuilds the concrete ListView with redraw disabled
+// during the operation. No timer or background goroutine touches Win32.
 func columnViewRefreshSafe(){defer appRecover("columnViewRefreshSafe");if viewList==0{return};safeRenderMu.Lock();defer safeRenderMu.Unlock();send:=user32.NewProc("SendMessageW");send.Call(viewList,wmSetRedraw,0,0);defer func(){send.Call(viewList,wmSetRedraw,1,0);user32.NewProc("InvalidateRect").Call(viewList,0,1)}();columnViewDeleteColumns();if viewDataset==nil{return};visible:=columnViewVisibleColumns();for i,c:=range visible{p:=appU16(datasetColumnDisplayTitle(c));fmtCol:=lvcfmtLeft;if c.Type==ValueNumber{fmtCol=lvcfmtRight};width:=c.Width;if width<120{width=120};if width>420{width=420};lc:=lvColumn{Mask:lvcfText,Fmt:int32(fmtCol),Cx:int32(width),Text:p,SubItem:int32(i)};r,_,_:=send.Call(viewList,lvmInsertColumnW,uintptr(i),uintptr(unsafe.Pointer(&lc)));if int64(r)<0{appLog("DIAGNOSTICO: error insertando columna=%d titulo=%s",i,datasetColumnDisplayTitle(c))}}
 records:=safeFilterRecords(viewDataset,safeSnapshotFilters());for ri,r:=range records{for ci,c:=range visible{txt:=datasetCellText(r,c);p:=appU16(txt);it:=lvItem{Mask:lvifText,Item:int32(ri),SubItem:int32(ci),Text:p,TextMax:int32(len([]rune(txt))+1)};var ret uintptr;if ci==0{ret,_,_=send.Call(viewList,lvmInsertItemW,0,uintptr(unsafe.Pointer(&it)))}else{ret,_,_=send.Call(viewList,lvmSetItemTextW,uintptr(ri),uintptr(unsafe.Pointer(&it)))};if ci==0&&int64(ret)<0{appLog("DIAGNOSTICO: LVM_INSERTITEM fallo fila=%d",ri);break}}};if appSettings.SubtotalEnabled&&appSettings.SubtotalColumn!=""&&len(records)>0{columnViewAddSubtotal(visible,records)};columnViewLayoutFilters(currentClientWidth());columnViewApplyFont();appLog("DIAGNOSTICO: ListView concreto; filas=%d columnas=%d",len(records),len(visible))}
 
