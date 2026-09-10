@@ -6,4 +6,5 @@ const (
 	menuIDSelectAll = 39998
 	menuIDDeselectAll = 39999
 	filterBaseID = 50000
+	namesClass = "GestionSONames"
 )
