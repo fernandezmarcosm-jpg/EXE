@@ -5,6 +5,9 @@ import ("strings"; "sync"; "syscall"; "unsafe")
 
 const wmSetRedraw uint32 = 0x000B
 const swShow = 5
+const swpNoZOrder uintptr = 0x0004
+const swpNoActivate uintptr = 0x0010
+const swpShowWindow uintptr = 0x0040
 
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn; text string}
@@ -26,18 +29,25 @@ func columnViewSetDatasetSafe(ds *MemoryDataset) {
 	columnViewForceDisplay()
 }
 
-// columnViewForceDisplay makes the concrete ListView visible and performs one
-// synchronous paint. It intentionally has no timer, retry loop or goroutine.
+// columnViewForceDisplay makes the concrete ListView visible without entering
+// a synchronous paint cycle. The previous UpdateWindow call could block inside
+// the Win32 paint path, leaving the application apparently frozen. Showing,
+// positioning and invalidating the control is enough; Windows paints it from
+// the normal message queue. There is deliberately no timer/retry loop/goroutine.
 func columnViewForceDisplay() {
 	defer appRecover("columnViewForceDisplay")
 	if viewList == 0 { return }
 	show := user32.NewProc("ShowWindow")
+	move := user32.NewProc("SetWindowPos")
 	invalidate := user32.NewProc("InvalidateRect")
-	update := user32.NewProc("UpdateWindow")
 	show.Call(viewList, swShow)
+	var r appRect
+	user32.NewProc("GetClientRect").Call(appHwnd, uintptr(unsafe.Pointer(&r)))
+	w := maxInt(300, int(r.Right-r.Left)-20)
+	h := maxInt(150, int(r.Bottom-r.Top)-94)
+	move.Call(viewList, 0, 10, 84, uintptr(w), uintptr(h), swpNoZOrder|swpNoActivate|swpShowWindow)
 	invalidate.Call(viewList, 0, 1)
-	update.Call(viewList)
-	appLog("DIAGNOSTICO: visualizacion forzada; hwndList=0x%X", viewList)
+	appLog("DIAGNOSTICO: visualizacion forzada no-bloqueante; hwndList=0x%X rect=%dx%d", viewList, w, h)
 }
 
 // columnViewRefreshSafe rebuilds the concrete ListView with redraw disabled
