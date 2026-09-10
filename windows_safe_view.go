@@ -50,12 +50,45 @@ func columnViewForceDisplay() {
 	appLog("DIAGNOSTICO: visualizacion directa finalizada; hwndView=0x%X rect=%dx%d", viewList, w, h)
 }
 
+func safeDisplayColumns(ds *MemoryDataset) []DatasetColumn {
+	if ds == nil { return nil }
+	current := columnViewVisibleColumns()
+	hasData := func(c DatasetColumn) bool {
+		for _, r := range ds.Records {
+			if strings.TrimSpace(datasetCellText(r, c)) != "" { return true }
+		}
+		return false
+	}
+	out := make([]DatasetColumn, 0)
+	for _, c := range current {
+		if hasData(c) { out = append(out, c) }
+	}
+	if len(out) > 0 { return out }
+	limit := appSettings.MaxColumns
+	if limit < 1 { limit = 20 }
+	appendData := func(c DatasetColumn) {
+		if len(out) >= limit || !hasData(c) { return }
+		for _, x := range out { if x.ID == c.ID { return } }
+		out = append(out, c)
+	}
+	// Cuando la configuracion persistida deja visibles solamente columnas del
+	// CSV maestro sin valores, priorizar las columnas reales del XLSX importado.
+	for _, c := range ds.Columns { if c.Source == "XLSX" { appendData(c) } }
+	for _, c := range ds.Columns { if c.Source != "XLSX" { appendData(c) } }
+	if len(out) > 0 { return out }
+	for _, c := range ds.Columns {
+		if len(out) >= limit { break }
+		out = append(out, c)
+	}
+	return out
+}
+
 func columnViewRefreshSafe() {
 	defer appRecover("columnViewRefreshSafe")
 	if viewList == 0 || viewDataset == nil { return }
 	safeRenderMu.Lock()
 	defer safeRenderMu.Unlock()
-	visible := columnViewVisibleColumns()
+	visible := safeDisplayColumns(viewDataset)
 	if len(visible) == 0 { visible = viewDataset.Columns }
 	records := safeFilterRecords(viewDataset, safeSnapshotFilters())
 	var b strings.Builder
