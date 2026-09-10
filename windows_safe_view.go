@@ -12,6 +12,8 @@ const esMultiline uintptr = 0x0004
 const esAutoVScroll uintptr = 0x0040
 const esAutoHScroll uintptr = 0x0080
 const esReadOnly uintptr = 0x0800
+const WS_VSCROLL uint32 = 0x00200000
+const WS_HSCROLL uint32 = 0x00100000
 
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn; text string}
