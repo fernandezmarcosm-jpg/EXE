@@ -5,13 +5,14 @@ const(lvmGetItemRect=0x100E;lvmSetExtended=0x1036;lvmDeleteAll=0x1009;lvmDeleteC
 type lvColumn struct{Mask uint32;Fmt,Cx int32;Text *uint16;TextMax,SubItem,Image,Order int32};type lvItem struct{Mask uint32;Item,SubItem int32;State,StateMask uint32;Text *uint16;TextMax,Image int32;Param uintptr};type nmhdr struct{HwndFrom,IDFrom uintptr;Code int32};type nmheader struct{Hdr nmhdr;Item int32;Button int32;PItem uintptr};type nmItemActivate struct{Hdr nmhdr;Item,SubItem int32;NewState,OldState,Changed uint32;X,Y int32;LParam uintptr;KeyFlags uint32};type nmlvDispInfo struct{Hdr nmhdr;Item lvItem}
 var(viewList uintptr;viewFont uintptr;viewDataset *MemoryDataset;viewMenuIDs=map[uintptr]int{};viewFilters=map[string]uintptr{};configHwnd uintptr;configEdits=map[int]uintptr{};configParent uintptr;configFormulaSelector uintptr;namesHwnd uintptr;namesEdits=map[string]uintptr{};namesParent uintptr;columnEditHwnd uintptr;columnEditColumn DatasetColumn;columnEditControls=map[int]uintptr{};cellEditHwnd uintptr;cellEditRow int;cellEditColumn DatasetColumn;cellEditControl uintptr)
 func columnViewCreate(hwnd uintptr)uintptr{viewList=appMake(hwnd,"SysListView32","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|lvsReport|lvsOwnerData,0,0,100,100,appIDView);user32.NewProc("SendMessageW").Call(viewList,lvmSetExtended,0,lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop);return viewList}
-func columnViewLayout(hwnd uintptr,w,h int){if viewList==0{return};user32.NewProc("MoveWindow").Call(viewList,10,84,uintptr(maxInt(300,w-20)),uintptr(maxInt(150,h-94)),1);columnViewLayoutFilters(w)}
+func columnViewLayout(hwnd uintptr,w,h int){if viewList==0{return};user32.NewProc("MoveWindow").Call(viewList,10,84,uintptr(maxInt(300,w-20)),uintptr(maxInt(150,h-94)),1);columnViewLayoutFilters(w);appKeepTopControls()}
 func columnViewDestroy(){columnViewDestroyFilters();if viewFont!=0{gdi:=syscall.NewLazyDLL("gdi32.dll");gdi.NewProc("DeleteObject").Call(viewFont);viewFont=0};viewList=0}
 func columnViewSetDataset(ds *MemoryDataset){viewDataset=ds;columnViewBuildFilters();columnViewRefresh()}
 func columnViewDestroyFilters(){for _,h:=range viewFilters{if h!=0{user32.NewProc("DestroyWindow").Call(h)}};viewFilters=map[string]uintptr{}}
-func columnViewBuildFilters(){columnViewDestroyFilters();if viewDataset==nil||appHwnd==0{return};visible:=columnViewVisibleColumns();for i,c:=range visible{h:=appMake(appHwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|esAutoHScroll,10,55,120,24,uintptr(filterBaseID+i));viewFilters[c.ID]=h};columnViewLayoutFilters(currentClientWidth())}
+func columnViewDisplayColumns()[]DatasetColumn{if viewDataset==nil{return nil};visible:=safeDisplayColumns(viewDataset);if len(visible)>0{return visible};return columnViewVisibleColumns()}
+func columnViewBuildFilters(){columnViewDestroyFilters();if viewDataset==nil||appHwnd==0{return};visible:=columnViewDisplayColumns();for i,c:=range visible{h:=appMake(appHwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|esAutoHScroll,10,55,120,24,uintptr(filterBaseID+i));viewFilters[c.ID]=h};columnViewLayoutFilters(currentClientWidth())}
 func currentClientWidth()int{if appHwnd==0{return 1000};var r appRect;user32.NewProc("GetClientRect").Call(appHwnd,uintptr(unsafe.Pointer(&r)));return int(r.Right-r.Left)}
-func columnViewLayoutFilters(w int){if viewDataset==nil{return};x:=10;send:=user32.NewProc("SendMessageW");for i,c:=range columnViewVisibleColumns(){h:=viewFilters[c.ID];width,_,_:=send.Call(viewList,lvmGetColumnWidth,uintptr(i),0);cw:=int(width);if cw<1{cw=c.Width};if cw<40{cw=40};if h!=0{user32.NewProc("MoveWindow").Call(h,uintptr(x),55,uintptr(cw),24,1)};x+=cw};_ = w}
+func columnViewLayoutFilters(w int){if viewDataset==nil{return};x:=10;send:=user32.NewProc("SendMessageW");visible:=columnViewDisplayColumns();for i,c:=range visible{h:=viewFilters[c.ID];width,_,_:=send.Call(viewList,lvmGetColumnWidth,uintptr(i),0);cw:=int(width);if cw<1{cw=c.Width};if cw<40{cw=40};if h!=0{user32.NewProc("MoveWindow").Call(h,uintptr(x),55,uintptr(cw),24,1)};x+=cw};_ = w}
 func columnViewVisibleColumns()[]DatasetColumn{if viewDataset==nil{return nil};out:=[]DatasetColumn{};used:=map[string]bool{};limit:=appSettings.MaxColumns;if limit<1{limit=20};appendColumn:=func(c DatasetColumn){k:=datasetColumnKey(c);if len(out)>=limit||used[k]||!c.Visible{return};out=append(out,c);used[k]=true};for _,key:=range appSettings.ColumnOrder{for _,c:=range viewDataset.Columns{if datasetColumnKey(c)==key{appendColumn(c);break}}};for _,c:=range viewDataset.Columns{appendColumn(c)};return out}
 func columnViewFilteredRecords()[]DatasetRecord{if viewDataset==nil{return nil};out:=[]DatasetRecord{};for _,r:=range viewDataset.Records{ok:=true;for id,h:=range viewFilters{f:=strings.ToLower(strings.TrimSpace(appGetEdit(h)));if f!=""{var c DatasetColumn;found:=false;for _,x:=range viewDataset.Columns{if x.ID==id{c=x;found=true;break}};if !found||!strings.Contains(strings.ToLower(datasetCellText(r,c)),f){ok=false;break}}};if ok{out=append(out,r)}};return out}
 func columnViewHandleFilterChange(id uintptr){if id<filterBaseID{return};columnViewRefresh()}
@@ -22,7 +23,7 @@ func datasetCellText(r DatasetRecord,c DatasetColumn)string{if v,ok:=r.Values[c.
 func columnViewAddSubtotal(visible []DatasetColumn,records []DatasetRecord){targets:=map[string]bool{};if len(appSettings.SubtotalColumns)>0{for _,t:=range appSettings.SubtotalColumns{targets[strings.ToLower(strings.TrimSpace(t))]=true}}else if appSettings.SubtotalColumn!=""{targets[strings.ToLower(strings.TrimSpace(appSettings.SubtotalColumn))]=true};sums:=map[string]float64{};for _,c:=range visible{if targets[strings.ToLower(strings.TrimSpace(c.Title))]||targets[strings.ToLower(strings.TrimSpace(datasetColumnDisplayTitle(c)))]{for _,r:=range records{if v,ok:=r.Values[c.ID];ok&&v.Type==ValueNumber{sums[c.ID]+=v.Number}}}};idx:=len(records);for ci,c:=range visible{txt:="";if ci==0{txt="SUBTOTAL"};if sum,ok:=sums[c.ID];ok{if datasetColumnIsPercent(c){sum*=100;txt=formatDatasetNumber(sum,datasetColumnDecimals(c))+"%"}else{txt=formatDatasetNumber(sum,datasetColumnDecimals(c))}};p:=appU16(txt);it:=lvItem{Mask:lvifText,Item:int32(idx),SubItem:int32(ci),Text:p,TextMax:int32(len([]rune(txt))+1)};if ci==0{user32.NewProc("SendMessageW").Call(viewList,lvmInsertItemW,0,uintptr(unsafe.Pointer(&it)))}else{user32.NewProc("SendMessageW").Call(viewList,lvmSetItemTextW,uintptr(idx),uintptr(unsafe.Pointer(&it)))}}}
 func columnViewApplyFont(){if viewList==0{return};if viewFont!=0{gdi:=syscall.NewLazyDLL("gdi32.dll");gdi.NewProc("DeleteObject").Call(viewFont)};gdi:=syscall.NewLazyDLL("gdi32.dll");size:=appSettings.FontSize;if size<8||size>32{size=10};viewFont,_,_=gdi.NewProc("CreateFontW").Call(uintptr(int32(-size)),0,0,0,400,0,0,0,1,0,0,0,0,reflect.ValueOf(appU16("Segoe UI")).Pointer());if viewFont!=0{user32.NewProc("SendMessageW").Call(viewList,WM_SETFONT,viewFont,1)}}
 func columnViewShowMenu(hwnd uintptr){if viewDataset==nil{return};m,_,_:=user32.NewProc("CreatePopupMenu").Call();viewMenuIDs=map[uintptr]int{};a:=user32.NewProc("AppendMenuW");a.Call(m,mfString,menuIDClearFilters,reflect.ValueOf(appU16("LIMPIAR FILTROS")).Pointer());a.Call(m,mfString,menuIDSelectAll,reflect.ValueOf(appU16("MARCAR TODAS")).Pointer());a.Call(m,mfString,menuIDDeselectAll,reflect.ValueOf(appU16("DESMARCAR TODAS")).Pointer());for i,c:=range viewDataset.Columns{id:=uintptr(40000+i);f:=uint32(mfString);if c.Visible{f|=mfChecked};a.Call(m,uintptr(f),id,reflect.ValueOf(appU16(datasetColumnDisplayTitle(c))).Pointer());viewMenuIDs[id]=i};var pt struct{X,Y int32};user32.NewProc("GetCursorPos").Call(uintptr(unsafe.Pointer(&pt)));sel,_,_:=user32.NewProc("TrackPopupMenu").Call(m,tpmRetCmd,uintptr(pt.X),uintptr(pt.Y),0,hwnd,0);changed:=false;switch sel{case menuIDClearFilters:for _,h:=range viewFilters{appSetEdit(h,"")};case menuIDSelectAll:limit:=appSettings.MaxColumns;if limit<1{limit=20};for i:=range viewDataset.Columns{viewDataset.Columns[i].Visible=i<limit};changed=true;case menuIDDeselectAll:for i:=range viewDataset.Columns{viewDataset.Columns[i].Visible=false};changed=true;default:if i,ok:=viewMenuIDs[sel];ok{if !viewDataset.Columns[i].Visible&&len(columnViewVisibleColumns())>=appSettings.MaxColumns{break};viewDataset.Columns[i].Visible=!viewDataset.Columns[i].Visible;changed=true}};if changed{_ = saveDatasetSettings(appSettings)};columnViewBuildFilters();columnViewRefresh();user32.NewProc("DestroyMenu").Call(m)}
-func columnViewSaveOrder(){if viewList==0||viewDataset==nil{return};visible:=columnViewVisibleColumns();n:=len(visible);if n==0{return};arr:=make([]int32,n);r,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetColumnOrderArray,uintptr(n),uintptr(unsafe.Pointer(&arr[0])));if r==0{return};order:=make([]string,0,n);for _,idx:=range arr{if int(idx)>=0&&int(idx)<len(visible){order=append(order,datasetColumnKey(visible[int(idx)]))}};appSettings.ColumnOrder=order;_ = saveDatasetSettings(appSettings);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth())}
+func columnViewSaveOrder(){if viewList==0||viewDataset==nil{return};visible:=columnViewDisplayColumns();n:=len(visible);if n==0{return};arr:=make([]int32,n);r,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetColumnOrderArray,uintptr(n),uintptr(unsafe.Pointer(&arr[0])));if r==0{return};order:=make([]string,0,n);for _,idx:=range arr{if int(idx)>=0&&int(idx)<len(visible){order=append(order,datasetColumnKey(visible[int(idx)]))}};appSettings.ColumnOrder=order;_ = saveDatasetSettings(appSettings);columnViewBuildFilters();columnViewLayoutFilters(currentClientWidth())}
 func columnViewHandleNotify(l uintptr) bool {
 	if l==0 { return false }
 	hv:=columnViewReadNMHeader(l)
@@ -32,7 +33,7 @@ func columnViewHandleNotify(l uintptr) bool {
 		item:=nv.Item
 		if item.Mask&lvifText!=0 && item.Text!=nil && item.Item>=0 && item.SubItem>=0 {
 			records:=safeFilterRecords(viewDataset,safeSnapshotFilters())
-			visible:=columnViewVisibleColumns()
+			visible:=columnViewDisplayColumns()
 			ri,ci:=int(item.Item),int(item.SubItem)
 			if ci<len(visible) && ri>=0 && ri<=len(records) {
 				txt:=""
@@ -43,9 +44,7 @@ func columnViewHandleNotify(l uintptr) bool {
 				} else {
 					return false
 				}
-				if appSettings.SubtotalEnabled && appSettings.SubtotalColumn!="" && ri==len(records) {
-					txt=safeSubtotalCellText(visible,records,ci)
-				}
+				if appSettings.SubtotalEnabled && appSettings.SubtotalColumn!="" && ri==len(records) { txt=safeSubtotalCellText(visible,records,ci) }
 				max:=int(item.TextMax)
 				if max>0 && max<65536 {
 					buf:=unsafe.Slice(item.Text,max)
@@ -63,22 +62,16 @@ func columnViewHandleNotify(l uintptr) bool {
 	if h.HwndFrom==viewList && h.Code==nmDblClk {
 		nv:=columnViewReadNMItemActivate(l)
 		n:=&nv
-		visible:=columnViewVisibleColumns()
-		if n.Item>=0 && n.SubItem>=0 && int(n.SubItem)<len(visible) {
-			columnViewBeginCellEdit(int(n.Item),visible[int(n.SubItem)])
-			return true
-		}
+		visible:=columnViewDisplayColumns()
+		if n.Item>=0 && n.SubItem>=0 && int(n.SubItem)<len(visible) { columnViewBeginCellEdit(int(n.Item),visible[int(n.SubItem)]); return true }
 	}
 	header,_,_:=user32.NewProc("SendMessageW").Call(viewList,lvmGetHeader,0,0)
 	if h.HwndFrom==header {
 		if h.Code==hdnItemDblClickW {
 			nv:=columnViewReadNMHeaderNotify(l)
 			n:=&nv
-			visible:=columnViewVisibleColumns()
-			if n.Item>=0 && int(n.Item)<len(visible) {
-				columnViewBeginColumnEdit(visible[int(n.Item)])
-				return true
-			}
+			visible:=columnViewDisplayColumns()
+			if n.Item>=0 && int(n.Item)<len(visible) { columnViewBeginColumnEdit(visible[int(n.Item)]); return true }
 		}
 		if h.Code==hdnEndDrag { columnViewSaveOrder() }
 	}
