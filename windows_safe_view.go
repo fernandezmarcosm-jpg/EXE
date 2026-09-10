@@ -5,7 +5,6 @@ import ("strings"; "sync"; "syscall"; "unsafe")
 
 const wmSetRedraw uint32 = 0x000B
 const swShow = 5
-const swpNoZOrder uintptr = 0x0004
 const swpNoActivate uintptr = 0x0010
 const swpShowWindow uintptr = 0x0040
 
@@ -44,10 +43,13 @@ func columnViewForceDisplay() {
 	user32.NewProc("GetClientRect").Call(appHwnd, uintptr(unsafe.Pointer(&r)))
 	w := maxInt(300, int(r.Right-r.Left)-20)
 	h := maxInt(150, int(r.Bottom-r.Top)-94)
-	move.Call(viewList, 0, 10, 84, uintptr(w), uintptr(h), swpNoZOrder|swpNoActivate|swpShowWindow)
+	// The filter EDIT controls are created after the ListView and therefore may
+	// become later siblings. Put the ListView explicitly at the top of the
+	// child Z-order so a sibling cannot silently paint over the table.
+	move.Call(viewList, 0, 10, 84, uintptr(w), uintptr(h), swpNoActivate|swpShowWindow)
 	invalidate.Call(viewList, 0, 1)
 	update.Call(viewList)
-	appLog("DIAGNOSTICO: visualizacion finalizada; hwndList=0x%X rect=%dx%d", viewList, w, h)
+	appLog("DIAGNOSTICO: visualizacion finalizada; hwndList=0x%X rect=%dx%d zorder=TOP", viewList, w, h)
 }
 
 func columnViewRefreshSafe() {
@@ -68,7 +70,7 @@ func columnViewRefreshSafe() {
 		width := c.Width
 		if width < 120 { width = 120 }
 		if width > 420 { width = 420 }
-		lc := lvColumn{Mask:lvcfText, Fmt:int32(fmtCol), Cx:int32(width), Text:p, SubItem:int32(i)}
+		lc := lvColumn{Mask:lvcfText, Fmt:int32(fmtCol), Cx:int32(width), Text:p, TextMax:int32(len([]rune(datasetColumnDisplayTitle(c)))+1), SubItem:int32(i)}
 		r, _, _ := send.Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&lc)))
 		if int64(r) < 0 { appLog("DIAGNOSTICO: error insertando columna=%d titulo=%s", i, datasetColumnDisplayTitle(c)) }
 	}
