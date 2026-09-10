@@ -3,18 +3,16 @@ package main
 
 import ("strings"; "sync"; "syscall"; "unsafe")
 
-const wmSetRedraw uint32 = 0x000B
 const swShow = 5
 const swpNoActivate uintptr = 0x0010
 const swpShowWindow uintptr = 0x0040
-const wmSetFont uint32 = 0x0030
-const wmSetText uint32 = 0x000C
+const wmSetFont uintptr = 0x0030
+const wmSetText uintptr = 0x000C
+const esMultiline uintptr = 0x0004
+const esAutoVScroll uintptr = 0x0040
+const esAutoHScroll uintptr = 0x0080
+const esReadOnly uintptr = 0x0800
 
-// IMPORTANTE: esta vista deja de depender de SysListView32.
-// El unico objetivo de esta version es mostrar literalmente en pantalla los
-// valores que ya quedaron guardados en MemoryDataset. Un EDIT multilinea
-// readonly es deliberadamente simple y robusto para aislar cualquier problema
-// del control ListView/virtualizacion/renderizado.
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn; text string}
 
@@ -23,15 +21,9 @@ func columnViewSetDatasetSafe(ds *MemoryDataset) {
 	if ds == nil { return }
 	columnViewDestroyFilters()
 	if viewList != 0 { user32.NewProc("DestroyWindow").Call(viewList); viewList = 0 }
-
-	// EDIT multilinea de solo lectura: no hay owner-data, LVITEM, headers ni
-	// notificaciones. Recibe directamente el texto final construido desde ds.
-	style := WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL | 0x0004 /* ES_MULTILINE */ | 0x00200000 /* ES_AUTOVSCROLL */ | 0x00400000 /* ES_AUTOHSCROLL */ | 0x0800 /* ES_READONLY */
+	style := WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL | esMultiline | esAutoVScroll | esAutoHScroll | esReadOnly
 	viewList = appMake(appHwnd, "EDIT", "", style, 0, 0, 100, 100, appIDView)
-	if viewList == 0 {
-		appLog("DIAGNOSTICO: ERROR CreateWindowExW EDIT para datos")
-		return
-	}
+	if viewList == 0 { appLog("DIAGNOSTICO: ERROR CreateWindowExW EDIT para datos"); return }
 	viewDataset = ds
 	columnViewRefreshSafe()
 	columnViewForceDisplay()
@@ -61,56 +53,45 @@ func columnViewRefreshSafe() {
 	if viewList == 0 || viewDataset == nil { return }
 	safeRenderMu.Lock()
 	defer safeRenderMu.Unlock()
-
-	// Construimos un texto completo a partir de los mismos DatasetRecords que
-	// ya estan en memoria. Asi podemos verificar el dato sin ninguna capa
-	// intermedia de ListView.
 	visible := columnViewVisibleColumns()
 	if len(visible) == 0 { visible = viewDataset.Columns }
 	records := safeFilterRecords(viewDataset, safeSnapshotFilters())
 	var b strings.Builder
-	for i, c := range visible {
-		if i > 0 { b.WriteString("\t") }
-		b.WriteString(datasetColumnDisplayTitle(c))
-	}
+	for i, c := range visible { if i > 0 { b.WriteString("\t") }; b.WriteString(datasetColumnDisplayTitle(c)) }
 	b.WriteString("\r\n")
 	for ri, r := range records {
-		for ci, c := range visible {
-			if ci > 0 { b.WriteString("\t") }
-			txt := datasetCellText(r, c)
-			b.WriteString(txt)
-		}
+		for ci, c := range visible { if ci > 0 { b.WriteString("\t") }; b.WriteString(datasetCellText(r, c)) }
 		if ri+1 < len(records) { b.WriteString("\r\n") }
 	}
 	text := b.String()
 	p := appU16(text)
-	user32.NewProc("SendMessageW").Call(viewList, uintptr(wmSetText), 0, uintptr(unsafe.Pointer(p)))
-
-	// Fuente legible y consistente. El contenido sigue siendo texto plano.
+	user32.NewProc("SendMessageW").Call(viewList, wmSetText, 0, uintptr(unsafe.Pointer(p)))
 	gdi := syscall.NewLazyDLL("gdi32.dll")
 	createFont := gdi.NewProc("CreateFontW")
 	size := appSettings.FontSize
 	if size < 8 || size > 32 { size = 10 }
 	face := appU16("Segoe UI")
 	font, _, _ := createFont.Call(uintptr(int32(-size)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
-	if font != 0 { user32.NewProc("SendMessageW").Call(viewList, uintptr(wmSetFont), font, 1) }
-
+	if font != 0 { user32.NewProc("SendMessageW").Call(viewList, wmSetFont, font, 1) }
 	appLog("DATOS: texto enviado a vista directa; filas=%d columnas=%d caracteres=%d", len(records), len(visible), len([]rune(text)))
-	for ri, r := range records {
-		for ci, c := range visible {
-			appLog("DATOS: fila=%d columna=%d titulo=%q valor=%q", ri, ci, datasetColumnDisplayTitle(c), datasetCellText(r, c))
-		}
-	}
+	for ri, r := range records { for ci, c := range visible { appLog("DATOS: fila=%d columna=%d titulo=%q valor=%q", ri, ci, datasetColumnDisplayTitle(c), datasetCellText(r, c)) } }
+}
+
+func safeSubtotalCellText(visible []DatasetColumn, records []DatasetRecord, ci int) string {
+	if ci < 0 || ci >= len(visible) { return "" }
+	c := visible[ci]
+	var sum float64
+	found := false
+	for _, r := range records { if v, ok := r.Values[c.ID]; ok && v.Type == ValueNumber { sum += v.Number; found = true } }
+	if !found { return "" }
+	if datasetColumnIsPercent(c) { return formatDatasetNumber(sum*100, datasetColumnDecimals(c)) + "%" }
+	return formatDatasetNumber(sum, datasetColumnDecimals(c))
 }
 
 func safeSnapshotFilters() []safeFilter {
 	if viewDataset == nil { return nil }
 	filters := make([]safeFilter, 0, len(viewFilters))
-	for id, h := range viewFilters {
-		text := strings.ToLower(strings.TrimSpace(appGetEdit(h)))
-		if text == "" { continue }
-		for _, c := range viewDataset.Columns { if c.ID == id { filters = append(filters, safeFilter{column:c, text:text}); break } }
-	}
+	for id, h := range viewFilters { text := strings.ToLower(strings.TrimSpace(appGetEdit(h))); if text == "" { continue }; for _, c := range viewDataset.Columns { if c.ID == id { filters = append(filters, safeFilter{column:c, text:text}); break } } }
 	return filters
 }
 
@@ -118,13 +99,7 @@ func safeFilterRecords(ds *MemoryDataset, filters []safeFilter) []DatasetRecord 
 	if ds == nil { return nil }
 	if len(filters) == 0 { return append([]DatasetRecord(nil), ds.Records...) }
 	out := make([]DatasetRecord, 0, len(ds.Records))
-	for _, r := range ds.Records {
-		ok := true
-		for _, f := range filters {
-			if !strings.Contains(strings.ToLower(datasetCellText(r, f.column)), f.text) { ok = false; break }
-		}
-		if ok { out = append(out, r) }
-	}
+	for _, r := range ds.Records { ok := true; for _, f := range filters { if !strings.Contains(strings.ToLower(datasetCellText(r, f.column)), f.text) { ok = false; break } }; if ok { out = append(out, r) } }
 	return out
 }
 
