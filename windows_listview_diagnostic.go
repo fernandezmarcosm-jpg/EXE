@@ -12,8 +12,6 @@ const (
     diagGWChild         = 5
     diagGWHWndNext      = 2
     diagGWHWndPrev      = 3
-    diagGWLStyle        = -16
-    diagGWLExStyle      = -20
     diagLVMGetItemTextW = 0x1073
     diagLVIFText        = 0x0001
 )
@@ -28,7 +26,7 @@ type diagLVItem struct {
     Image, Param int32
 }
 
-func diagCall(proc *syscall.LazyProc, args ...uintptr) (uintptr, uintptr, syscall.Errno) { return proc.Call(args...) }
+func diagCall(proc *syscall.LazyProc, args ...uintptr) (uintptr, uintptr, error) { return proc.Call(args...) }
 
 func diagClass(hwnd uintptr) string {
     if hwnd == 0 { return "<0>" }
@@ -53,8 +51,10 @@ func diagRectOf(hwnd uintptr) (diagRect, bool) {
 }
 
 func diagStyle(hwnd uintptr) (uintptr, uintptr) {
-    s, _, _ := diagCall(user32.NewProc("GetWindowLongPtrW"), hwnd, uintptr(diagGWLStyle))
-    e, _, _ := diagCall(user32.NewProc("GetWindowLongPtrW"), hwnd, uintptr(diagGWLExStyle))
+    styleIndex := uintptr(uint64(int64(-16)))
+    exStyleIndex := uintptr(uint64(int64(-20)))
+    s, _, _ := diagCall(user32.NewProc("GetWindowLongPtrW"), hwnd, styleIndex)
+    e, _, _ := diagCall(user32.NewProc("GetWindowLongPtrW"), hwnd, exStyleIndex)
     return s, e
 }
 
@@ -93,9 +93,9 @@ func diagLogChildren(parent uintptr, target uintptr) {
     appLog("LISTVIEW CHILDREN_END")
 }
 
-func windowID(hwnd uintptr) uintptr { v, _, _ := diagCall(user32.NewProc("GetDlgCtrlID"), hwnd); return v }
-func prevWindow(hwnd uintptr) uintptr { v, _, _ := diagCall(user32.NewProc("GetWindow"), hwnd, diagGWHWndPrev); return v }
-func nextWindow(hwnd uintptr) uintptr { v, _, _ := diagCall(user32.NewProc("GetWindow"), hwnd, diagGWHWndNext); return v }
+func windowID(hwnd uintptr) uintptr { v,_,_:=diagCall(user32.NewProc("GetDlgCtrlID"),hwnd); return v }
+func prevWindow(hwnd uintptr) uintptr { v,_,_:=diagCall(user32.NewProc("GetWindow"),hwnd,diagGWHWndPrev); return v }
+func nextWindow(hwnd uintptr) uintptr { v,_,_:=diagCall(user32.NewProc("GetWindow"),hwnd,diagGWHWndNext); return v }
 
 func diagReadCell(row, col int) string {
     if viewList == 0 || row < 0 || col < 0 { return "" }
