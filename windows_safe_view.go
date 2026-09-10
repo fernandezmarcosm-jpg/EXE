@@ -23,7 +23,7 @@ func columnViewSetDatasetSafe(ds *MemoryDataset) {
 	if ds == nil { return }
 	columnViewDestroyFilters()
 	if viewList != 0 { user32.NewProc("DestroyWindow").Call(viewList); viewList = 0 }
-	style := WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | lvsReport | lvsOwnerData
+	style := uint32(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | lvsReport | lvsOwnerData)
 	viewList = appMake(appHwnd, "SysListView32", "", style, 0, 0, 100, 100, appIDView)
 	if viewList == 0 { appLog("DIAGNOSTICO: ERROR CreateWindowExW SysListView32 para datos"); return }
 	viewDataset = ds
@@ -153,8 +153,8 @@ func appApplyVisualPolish(parent uintptr) {
 	font, _, _ := createFont.Call(uintptr(int32(-size)), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(face)))
 	explorer := appU16("Explorer")
 	buttons := []struct{id,x,w uintptr}{{appIDOpen,12,125},{appIDColumns,145,105},{appIDConfig,258,135}}
-	for _, b := range buttons { h:=uintptr(0); switch b.id { case appIDOpen:h=appOpenButton; case appIDColumns:h=appColumnsButton; case appIDConfig:h=appConfigButton }; if h==0 { h=findChildByID(parent,"BUTTON",b.id) }; if h==0 { continue }; setTheme.Call(h,uintptr(unsafe.Pointer(explorer)),0); if font!=0 { user32.NewProc("SendMessageW").Call(h,wmSetFont,font,1) }; user32.NewProc("MoveWindow").Call(h,b.x,7,b.w,30,1) }
+	for _, b := range buttons { h:=uintptr(0); switch b.id { case appIDOpen:h=appOpenButton; case appIDColumns:h=appColumnsButton; case appIDConfig:h=appConfigButton }; if h==0 { h=findChildByID(parent,"BUTTON",b.id) }; if h==0 { continue }; setTheme.Call(h,uintptr(unsafe.Pointer(explorer)),0); if font!=0 { user32.NewProc("SendMessageW").Call(h,wmSetFont,font,1) }; user32.NewProc("MoveWindow").Call(h,b.x,7,b.w,30,1); user32.NewProc("SetWindowPos").Call(h,0,b.x,7,b.w,30,swpNoActivate|swpShowWindow) }
 	status:=appStatus
 	if status==0 { status=findChildByID(parent,"STATIC",appIDStatus) }
-	if status!=0 { if font!=0 { user32.NewProc("SendMessageW").Call(status,wmSetFont,font,1) }; user32.NewProc("MoveWindow").Call(status,410,11,uintptr(maxInt(240,currentClientWidth()-430)),22,1) }
+	if status!=0 { if font!=0 { user32.NewProc("SendMessageW").Call(status,wmSetFont,font,1) }; user32.NewProc("MoveWindow").Call(status,410,11,uintptr(maxInt(240,currentClientWidth()-430)),22,1); user32.NewProc("SetWindowPos").Call(status,0,410,11,uintptr(maxInt(240,currentClientWidth()-430)),22,swpNoActivate|swpShowWindow) }
 }
