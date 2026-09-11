@@ -57,3 +57,8 @@ func appRecover(where string) {
         appLogPanic(where, v)
     }
 }
+
+// appLogf is kept separate from core.go's existing logf during diagnostics.
+func appLogf(format string, args ...interface{}) {
+    appLog(format, args...)
+}
