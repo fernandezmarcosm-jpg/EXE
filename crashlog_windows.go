@@ -13,21 +13,20 @@ import (
 
 var appLogMu sync.Mutex
 var appLogFile *os.File
-var appLogEnabled = os.Getenv("GESTIONSO_DEBUG") == "1"
+var appLogEnabled = true
 
 func appLogPath() string {
     if exe, err := os.Executable(); err == nil {
-        return filepath.Join(filepath.Dir(exe), "GestionSO-V57-crash.log")
+        return filepath.Join(filepath.Dir(exe), "gestionso_debug.log")
     }
-    return filepath.Join(os.TempDir(), "GestionSO-V57-crash.log")
+    return filepath.Join(os.TempDir(), "gestionso_debug.log")
 }
 
 func appLogInit() {
-    if !appLogEnabled { return }
     path := appLogPath()
     f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
     if err != nil {
-        fallback := filepath.Join(os.TempDir(), "GestionSO-V57-crash.log")
+        fallback := filepath.Join(os.TempDir(), "gestionso_debug.log")
         f, err = os.OpenFile(fallback, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
         if err != nil { return }
         path = fallback
