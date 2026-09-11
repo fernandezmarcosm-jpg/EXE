@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   validar:
     runs-on: windows-latest
@@ -17,10 +20,52 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Go version
+      - name: Apply requested config dialog layout
         shell: pwsh
-        run: go version
+        run: |
+          $p = 'column_view_windows.go'
+          $s = Get-Content -Raw -Encoding UTF8 $p
+          $old = @'
+          	configHwnd, _, _ = user32.NewProc("CreateWindowExW").Call(0, reflect.ValueOf(cls).Pointer(), reflect.ValueOf(appU16("Configuración de presentación y cálculo")).Pointer(), WS_OVERLAPPEDWINDOW|WS_VISIBLE, 300, 120, 760, 570, parent, 0, appHInstance, 0)
+          	fields := []struct{id int; label string; y int}{{configIDDecimals,"Decimales predeterminados",20},{configIDFont,"Tamaño de fuente",55},{configIDSOColumn,"Columna N° donde está el ID de SO",90},{configIDJoin,"Columna Excel para cruzar con CSV",125},{configIDFormulaTitle,"Nombre columna calculada",160},{configIDFormula,"Fórmula",195},{configIDSubtotal,"Columna(s) para subtotal, separadas por ;",230},{configIDMaxColumns,"Máximo de columnas visibles",265}}
+          	for _, f := range fields { appMake(configHwnd,"STATIC",f.label,WS_CHILD|WS_VISIBLE,20,f.y,300,22,0); configEdits[f.id]=appMake(configHwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|esAutoHScroll,325,f.y,360,24,uintptr(f.id)) }
+          	appMake(configHwnd,"STATIC","Insertar columna en fórmula",WS_CHILD|WS_VISIBLE,20,310,300,22,0)
+          	configFormulaSelector=appMake(configHwnd,"COMBOBOX","",WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER,325,308,360,180,configIDFormulaColumns)
+          	if viewDataset!=nil { for _,c:=range viewDataset.Columns { user32.NewProc("SendMessageW").Call(configFormulaSelector,cbAddString,0,reflect.ValueOf(appU16(formulaTokenName(c))).Pointer()) } }
+          	check:=appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,350,200,26,configIDSubtotalCheck)
+          '@
+          $new = @'
+          	configHwnd, _, _ = user32.NewProc("CreateWindowExW").Call(0, reflect.ValueOf(cls).Pointer(), reflect.ValueOf(appU16("Configuración de presentación y cálculo")).Pointer(), WS_OVERLAPPEDWINDOW|WS_VISIBLE, 300, 120, 760, 510, parent, 0, appHInstance, 0)
+          	fields := []struct{id int; label string; y int}{{configIDDecimals,"Decimales predeterminados",20},{configIDFont,"Tamaño de fuente",55},{configIDSOColumn,"Columna N° donde está el ID de SO",90},{configIDJoin,"Columna Excel para cruzar con CSV",125},{configIDFormulaTitle,"Nombre columna calculada",160},{configIDFormula,"Fórmula",195},{configIDSubtotal,"Columna(s) para subtotal, separadas por ;",230},{configIDMaxColumns,"Máximo de columnas visibles",265}}
+          	for _, f := range fields { appMake(configHwnd,"STATIC",f.label,WS_CHILD|WS_VISIBLE,20,f.y,300,22,0); configEdits[f.id]=appMake(configHwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|esAutoHScroll,325,f.y,360,24,uintptr(f.id)) }
+          	appMake(configHwnd,"STATIC","Insertar columna en fórmula",WS_CHILD|WS_VISIBLE,20,308,300,22,0)
+          	configFormulaSelector=appMake(configHwnd,"LISTBOX","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|0x0001|0x0100,325,306,360,110,configIDFormulaColumns)
+          	if viewDataset!=nil { for _,c:=range viewDataset.Columns { user32.NewProc("SendMessageW").Call(configFormulaSelector,0x0180,0,reflect.ValueOf(appU16(formulaTokenName(c))).Pointer()) } }
+          	check:=appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,425,200,26,configIDSubtotalCheck)
+          '@
+          if (-not $s.Contains($old)) { throw 'Expected datasetShowConfig layout block not found' }
+          $s = $s.Replace($old, $new)
+          $oldButtons = "`tappMake(configHwnd,\"BUTTON\",\"EDITAR NOMBRES\",WS_CHILD|WS_VISIBLE|WS_TABSTOP,280,405,115,30,configIDNames); appMake(configHwnd,\"BUTTON\",\"GUARDAR\",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,405,100,30,configIDOK); appMake(configHwnd,\"BUTTON\",\"CANCELAR\",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,405,100,30,configIDCancel)`n"
+          $newButtons = "`tappMake(configHwnd,\"BUTTON\",\"EDITAR NOMBRES\",WS_CHILD|WS_VISIBLE|WS_TABSTOP,280,445,115,30,configIDNames); appMake(configHwnd,\"BUTTON\",\"GUARDAR\",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,445,100,30,configIDOK); appMake(configHwnd,\"BUTTON\",\"CANCELAR\",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,445,100,30,configIDCancel)`n"
+          if (-not $s.Contains($oldButtons)) { throw 'Expected config buttons block not found' }
+          $s = $s.Replace($oldButtons, $newButtons)
+          Set-Content -Path $p -Value $s -Encoding UTF8
+
+      - name: Verify layout patch
+        shell: pwsh
+        run: |
+          $s = Get-Content -Raw -Encoding UTF8 column_view_windows.go
+          if ($s -notmatch 'configFormulaSelector=appMake\(configHwnd,"LISTBOX"') { throw 'LISTBOX not applied' }
+          if ($s -notmatch '20,425,200,26,configIDSubtotalCheck') { throw 'Subtotal position not applied' }
+          if ($s -notmatch '280,445,115,30,configIDNames') { throw 'Buttons position not applied' }
+          if ($s -match 'configFormulaSelector=appMake\(configHwnd,"COMBOBOX"') { throw 'Old COMBOBOX still present in config selector' }
+
+      - name: Go format
+        shell: pwsh
+        run: gofmt -w column_view_windows.go
 
       - name: Test
         shell: pwsh
@@ -40,3 +85,15 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
           if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'No se genero GestionSO-V57.exe' }
+
+      - name: Commit requested source change
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && github.event.head_commit.message != 'Fix: layout del diálogo de configuración sin superposición'
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add column_view_windows.go
+          if (-not (git diff --cached --quiet)) {
+            git commit -m 'Fix: layout del diálogo de configuración sin superposición'
+            git push origin HEAD:main
+          }
