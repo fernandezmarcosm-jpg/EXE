@@ -23,8 +23,8 @@ const WS_HSCROLL uint32 = 0x00100000
 var safeRenderMu sync.Mutex
 type safeFilter struct{column DatasetColumn; text string}
 
-// Caché estable para que LVN_GETDISPINFO nunca vuelva a consultar controles
-// Win32 ni recalcule registros/columnas mientras Windows está pintando.
+// Caché estable: durante el pintado de SysListView32 no se vuelven a leer
+// controles Win32 ni se recalcula el dataset.
 var (
     viewCacheRecords []DatasetRecord
     viewCacheColumns []DatasetColumn
@@ -57,16 +57,14 @@ func columnViewForceDisplay() {
     if viewList == 0 { return }
     show := user32.NewProc("ShowWindow")
     move := user32.NewProc("SetWindowPos")
-    invalidate := user32.NewProc("InvalidateRect")
-    update := user32.NewProc("UpdateWindow")
     show.Call(viewList, swShow)
     var r appRect
     user32.NewProc("GetClientRect").Call(appHwnd, uintptr(unsafe.Pointer(&r)))
     w := maxInt(300, int(r.Right-r.Left)-20)
     h := maxInt(150, int(r.Bottom-r.Top)-94)
     move.Call(viewList, 0, 10, 84, uintptr(w), uintptr(h), swpNoActivate|swpShowWindow)
-    invalidate.Call(viewList, 0, 1)
-    update.Call(viewList)
+    // No UpdateWindow: forzar un pintado síncrono aquí duplicaba el trabajo
+    // inmediatamente después de LVM_SETITEMCOUNTEX.
     appLog("DIAGNOSTICO: visualizacion tabular finalizada; hwndView=0x%X rect=%dx%d", viewList, w, h)
 }
 
@@ -77,9 +75,7 @@ func safeDisplayColumns(ds *MemoryDataset) []DatasetColumn {
         if c.Visible { allHidden = false; break }
     }
     if allHidden { return []DatasetColumn{} }
-    if !safeRefreshActive && viewCacheColumns != nil {
-        return viewCacheColumns
-    }
+    if !safeRefreshActive && viewCacheColumns != nil { return viewCacheColumns }
     return columnViewVisibleColumns()
 }
 
@@ -92,16 +88,11 @@ func columnViewRefreshSafe() {
     safeRefreshActive = true
     defer func(){ safeRefreshActive = false }()
 
-    // 1. Leer filtros UNA sola vez; nunca desde LVN_GETDISPINFO.
+    // Un único snapshot por refresh explícito.
     viewCacheFilters = safeSnapshotFilters()
-
-    // 2. Filtrar UNA sola vez.
     viewCacheRecords = safeFilterRecords(viewDataset, viewCacheFilters)
-
-    // 3. Columnas visibles UNA sola vez.
     viewCacheColumns = safeDisplayColumns(viewDataset)
 
-    // 4. Reconstruir columnas del ListView.
     send := user32.NewProc("SendMessageW")
     columnViewDeleteColumns()
     for i, c := range viewCacheColumns {
@@ -119,20 +110,19 @@ func columnViewRefreshSafe() {
         send.Call(viewList, lvmInsertColumnW, uintptr(i), uintptr(unsafe.Pointer(&col)))
     }
 
-    // 5. Conteo owner-data.
     count := len(viewCacheRecords)
-    if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" && len(viewCacheColumns) > 0 {
-        count++
-    }
+    if appSettings.SubtotalEnabled && appSettings.SubtotalColumn != "" && len(viewCacheColumns) > 0 { count++ }
     send.Call(viewList, lvmSetItemCountEx, uintptr(count), 0)
-    columnViewAutoFit(viewCacheColumns)
+
+    // Evitar LVSCW_AUTOSIZE en cada importación/refresco: con LVS_OWNERDATA
+    // puede provocar consultas de muchas celdas y volver el primer render muy lento.
+    // Conservamos los anchos ya definidos por DatasetColumn.
     columnViewLayoutFilters(currentClientWidth())
     columnViewApplyFont()
     send.Call(viewList, lvmSetExtended, 0, lvsExGridlines|lvsExFullRowSelect|lvsExDoubleBuffer|lvsExHeaderDragDrop)
+    // Un solo invalidado asíncrono; Windows pintará cuando corresponda.
     user32.NewProc("InvalidateRect").Call(viewList, 0, 1)
-    user32.NewProc("UpdateWindow").Call(viewList)
 
-    // 6. Un solo resumen; jamás registrar cada celda.
     appLog("DATOS: tabla actualizada; filas=%d columnas=%d", len(viewCacheRecords), len(viewCacheColumns))
 }
 
@@ -149,9 +139,7 @@ func safeSubtotalCellText(visible []DatasetColumn, records []DatasetRecord, ci i
 
 func safeSnapshotFilters() []safeFilter {
     if viewDataset == nil { return nil }
-    if !safeRefreshActive && viewCacheFilters != nil {
-        return viewCacheFilters
-    }
+    if !safeRefreshActive && viewCacheFilters != nil { return viewCacheFilters }
     filters := make([]safeFilter, 0, len(viewFilters))
     for id, h := range viewFilters {
         text := strings.ToLower(strings.TrimSpace(appGetEdit(h)))
@@ -165,9 +153,7 @@ func safeSnapshotFilters() []safeFilter {
 
 func safeFilterRecords(ds *MemoryDataset, filters []safeFilter) []DatasetRecord {
     if ds == nil { return nil }
-    if !safeRefreshActive && viewCacheRecords != nil {
-        return viewCacheRecords
-    }
+    if !safeRefreshActive && viewCacheRecords != nil { return viewCacheRecords }
     if len(filters) == 0 { return append([]DatasetRecord(nil), ds.Records...) }
     out := make([]DatasetRecord, 0, len(ds.Records))
     for _, r := range ds.Records {
