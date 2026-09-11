@@ -1,4 +1,4 @@
-name: Validar GestionSO V57 Minimal
+name: Validar GestionSO V57 Minimal - one-shot layout
 
 on:
   workflow_dispatch:
@@ -35,6 +35,8 @@ jobs:
           $s = $s.Replace('if viewDataset!=nil { for _,c:=range viewDataset.Columns { user32.NewProc("SendMessageW").Call(configFormulaSelector,cbAddString,0,reflect.ValueOf(appU16(formulaTokenName(c))).Pointer()) } }', 'if viewDataset!=nil { for _,c:=range viewDataset.Columns { user32.NewProc("SendMessageW").Call(configFormulaSelector,0x0180,0,reflect.ValueOf(appU16(formulaTokenName(c))).Pointer()) } }')
           $s = $s.Replace('check:=appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,350,200,26,configIDSubtotalCheck)', 'check:=appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,425,200,26,configIDSubtotalCheck)')
           $s = $s.Replace('280,405,115,30,configIDNames); appMake(configHwnd,"BUTTON","GUARDAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,405,100,30,configIDOK); appMake(configHwnd,"BUTTON","CANCELAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,405,100,30,configIDCancel)', '280,445,115,30,configIDNames); appMake(configHwnd,"BUTTON","GUARDAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,445,100,30,configIDOK); appMake(configHwnd,"BUTTON","CANCELAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,445,100,30,configIDCancel)')
+          $s = $s -replace '(?m)^\s*cbAddString = 0x143\r?\n',''
+          if ($s -match 'configFormulaSelector=appMake\(configHwnd,"COMBOBOX"') { throw 'Old COMBOBOX still present' }
           [IO.File]::WriteAllText($p, $s, (New-Object System.Text.UTF8Encoding($false)))
 
       - name: Verify and format
@@ -45,7 +47,9 @@ jobs:
           if ($s -notmatch 'configFormulaSelector=appMake\(configHwnd,"LISTBOX"') { throw 'LISTBOX not applied' }
           if ($s -notmatch '20,425,200,26,configIDSubtotalCheck') { throw 'Subtotal position not applied' }
           if ($s -notmatch '280,445,115,30,configIDNames') { throw 'Buttons position not applied' }
+          if ($s -notmatch '300, 120, 760, 510, parent') { throw 'Dialog height not applied' }
           if ($s -match 'configFormulaSelector=appMake\(configHwnd,"COMBOBOX"') { throw 'Old COMBOBOX still present' }
+          if ($s -match 'cbAddString = 0x143') { throw 'Obsolete cbAddString constant remains' }
           gofmt -w column_view_windows.go
 
       - name: Test
@@ -72,12 +76,11 @@ jobs:
         shell: pwsh
         run: |
           $workflow = @'
-          name: Validar GestionSO V57 Minimal
+          name: Validar GestionSO V57
 
           on:
-            workflow_dispatch:
             push:
-              branches: [main, reconstruccion-grilla-edicion]
+              branches: [main]
             pull_request:
               branches: [main]
 
@@ -88,32 +91,21 @@ jobs:
                 CGO_ENABLED: "0"
                 GOOS: windows
                 GOARCH: amd64
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@v4
 
-                - name: Go version
-                  shell: pwsh
-                  run: go version
+              steps:
+                - uses: actions/checkout@v4
 
                 - name: Test
-                  shell: pwsh
                   run: go test ./...
 
                 - name: Vet
-                  shell: pwsh
                   run: go vet ./...
 
                 - name: Build all packages
-                  shell: pwsh
                   run: go build ./...
 
                 - name: Build smoke test
-                  shell: pwsh
-                  run: |
-                    New-Item -ItemType Directory -Force dist | Out-Null
-                    go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
-                    if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'No se genero GestionSO-V57.exe' }
+                  run: go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
           '@
           [IO.File]::WriteAllText('.github/workflows/validar-go.yml', $workflow.TrimStart(), (New-Object System.Text.UTF8Encoding($false)))
           git config user.name 'github-actions[bot]'
