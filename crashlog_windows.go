@@ -44,6 +44,10 @@ func appLog(format string, args ...interface{}) {
     _ = appLogFile.Sync()
 }
 
+func logf(format string, args ...interface{}) {
+    appLog(format, args...)
+}
+
 func appLogPanic(where string, v interface{}) {
     appLog("PANIC en %s: %v\n%s", where, v, debug.Stack())
 }
