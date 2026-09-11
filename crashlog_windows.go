@@ -15,6 +15,10 @@ var appLogMu sync.Mutex
 var appLogFile *os.File
 var appLogEnabled = true
 
+func init() {
+    appLogInit()
+}
+
 func appLogPath() string {
     if exe, err := os.Executable(); err == nil {
         return filepath.Join(filepath.Dir(exe), "gestionso_debug.log")
@@ -42,10 +46,6 @@ func appLog(format string, args ...interface{}) {
     if appLogFile == nil { return }
     fmt.Fprintf(appLogFile, "%s | %s\r\n", time.Now().Format("2006-01-02 15:04:05.000"), fmt.Sprintf(format, args...))
     _ = appLogFile.Sync()
-}
-
-func logf(format string, args ...interface{}) {
-    appLog(format, args...)
 }
 
 func appLogPanic(where string, v interface{}) {
