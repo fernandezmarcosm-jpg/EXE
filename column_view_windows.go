@@ -600,18 +600,18 @@ func datasetShowConfig(parent uintptr) {
 	cls := appU16(configClass)
 	wc := appWndClass{CbSize: uint32(unsafe.Sizeof(appWndClass{})), LpfnWndProc: syscall.NewCallback(configWndProc), HInstance: appHInstance, HCursor: loadArrowCursor(), HbrBackground: 5, LpszClassName: cls}
 	user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
-	configHwnd, _, _ = user32.NewProc("CreateWindowExW").Call(0, reflect.ValueOf(cls).Pointer(), reflect.ValueOf(appU16("Configuración de presentación y cálculo")).Pointer(), WS_OVERLAPPEDWINDOW|WS_VISIBLE, 300, 120, 760, 570, parent, 0, appHInstance, 0)
+	configHwnd, _, _ = user32.NewProc("CreateWindowExW").Call(0, reflect.ValueOf(cls).Pointer(), reflect.ValueOf(appU16("Configuración de presentación y cálculo")).Pointer(), WS_OVERLAPPEDWINDOW|WS_VISIBLE, 300, 120, 760, 510, parent, 0, appHInstance, 0)
 	fields := []struct{id int; label string; y int}{{configIDDecimals,"Decimales predeterminados",20},{configIDFont,"Tamaño de fuente",55},{configIDSOColumn,"Columna N° donde está el ID de SO",90},{configIDJoin,"Columna Excel para cruzar con CSV",125},{configIDFormulaTitle,"Nombre columna calculada",160},{configIDFormula,"Fórmula",195},{configIDSubtotal,"Columna(s) para subtotal, separadas por ;",230},{configIDMaxColumns,"Máximo de columnas visibles",265}}
 	for _, f := range fields { appMake(configHwnd,"STATIC",f.label,WS_CHILD|WS_VISIBLE,20,f.y,300,22,0); configEdits[f.id]=appMake(configHwnd,"EDIT","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|esAutoHScroll,325,f.y,360,24,uintptr(f.id)) }
-	appMake(configHwnd,"STATIC","Insertar columna en fórmula",WS_CHILD|WS_VISIBLE,20,310,300,22,0)
-	configFormulaSelector=appMake(configHwnd,"COMBOBOX","",WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER,325,308,360,180,configIDFormulaColumns)
-	if viewDataset!=nil { for _,c:=range viewDataset.Columns { user32.NewProc("SendMessageW").Call(configFormulaSelector,cbAddString,0,reflect.ValueOf(appU16(formulaTokenName(c))).Pointer()) } }
-	check:=appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,350,200,26,configIDSubtotalCheck)
+	appMake(configHwnd,"STATIC","Insertar columna en fórmula",WS_CHILD|WS_VISIBLE,20,308,300,22,0)
+	configFormulaSelector=appMake(configHwnd,"LISTBOX","",WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|0x0001|0x0100,325,306,360,110,configIDFormulaColumns)
+	if viewDataset!=nil { for _,c:=range viewDataset.Columns { user32.NewProc("SendMessageW").Call(configFormulaSelector,0x0180,0,reflect.ValueOf(appU16(formulaTokenName(c))).Pointer()) } }
+	check:=appMake(configHwnd,"BUTTON","Subtotal habilitado",WS_CHILD|WS_VISIBLE|WS_TABSTOP|0x3,20,425,200,26,configIDSubtotalCheck)
 	if appSettings.SubtotalEnabled { user32.NewProc("SendMessageW").Call(check,bmSetCheck,bstChecked,0) }
 	appSetEdit(configEdits[configIDDecimals],fmt.Sprint(appSettings.Decimals)); appSetEdit(configEdits[configIDFont],fmt.Sprint(appSettings.FontSize)); appSetEdit(configEdits[configIDSOColumn],fmt.Sprint(appSettings.SOColumn)); appSetEdit(configEdits[configIDJoin],appSettings.JoinExcelColumn); appSetEdit(configEdits[configIDFormulaTitle],appSettings.FormulaTitle); appSetEdit(configEdits[configIDFormula],appSettings.Formula)
 	if len(appSettings.SubtotalColumns)>0 { appSetEdit(configEdits[configIDSubtotal],strings.Join(appSettings.SubtotalColumns,";")) } else { appSetEdit(configEdits[configIDSubtotal],appSettings.SubtotalColumn) }
 	appSetEdit(configEdits[configIDMaxColumns],fmt.Sprint(appSettings.MaxColumns))
-	appMake(configHwnd,"BUTTON","EDITAR NOMBRES",WS_CHILD|WS_VISIBLE|WS_TABSTOP,280,405,115,30,configIDNames); appMake(configHwnd,"BUTTON","GUARDAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,405,100,30,configIDOK); appMake(configHwnd,"BUTTON","CANCELAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,405,100,30,configIDCancel)
+	appMake(configHwnd,"BUTTON","EDITAR NOMBRES",WS_CHILD|WS_VISIBLE|WS_TABSTOP,280,445,115,30,configIDNames); appMake(configHwnd,"BUTTON","GUARDAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,400,445,100,30,configIDOK); appMake(configHwnd,"BUTTON","CANCELAR",WS_CHILD|WS_VISIBLE|WS_TABSTOP,510,445,100,30,configIDCancel)
 	appSetEnabled(parent,false)
 }
 
