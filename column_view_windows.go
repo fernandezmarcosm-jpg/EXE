@@ -174,7 +174,12 @@ func columnViewDestroyFilters() {
 
 func columnViewDisplayColumns() []DatasetColumn {
 	if viewDataset == nil { return nil }
-	return columnViewVisibleColumns()
+	out := columnViewVisibleColumns()
+	names := make([]string, 0, len(out))
+	for _, c := range out { names = append(names, datasetColumnKey(c)) }
+	logf("[DEBUG] columnViewDisplayColumns - columnas a insertar: %d", len(out))
+	logf("[DEBUG] columnViewDisplayColumns - nombres: %v", names)
+	return out
 }
 
 func columnViewBuildFilters() {
@@ -258,6 +263,16 @@ func columnViewHandleFilterChange(id uintptr) {
 	columnViewRefresh()
 }
 
+func columnViewGetColumnCount() int {
+	if viewList == 0 { return 0 }
+	send := user32.NewProc("SendMessageW")
+	header, _, _ := send.Call(viewList, lvmGetHeader, 0, 0)
+	if header == 0 { return 0 }
+	count, _, _ := send.Call(header, hdmGetItemCount, 0, 0)
+	if int(count) < 0 { return 0 }
+	return int(count)
+}
+
 func columnViewDeleteColumns() {
 	if viewList == 0 { return }
 	send := user32.NewProc("SendMessageW")
@@ -267,10 +282,13 @@ func columnViewDeleteColumns() {
 	detected := int(count)
 	if detected < 0 { detected = 0 }
 	if detected > 512 { detected = 512 }
+	logf("[DEBUG] columnViewDeleteColumns - columnas antes: %d", detected)
 	for i := 0; i < detected; i++ {
 		r, _, _ := send.Call(viewList, lvmDeleteColumn, 0, 0)
 		if r == 0 { break }
 	}
+	countFinal := columnViewGetColumnCount()
+	logf("[DEBUG] columnViewDeleteColumns - columnas después: %d", countFinal)
 }
 
 func columnViewAutoFit(visible []DatasetColumn) {
@@ -292,6 +310,8 @@ func columnViewAutoFit(visible []DatasetColumn) {
 // columnViewRefresh — única función que toca los EDIT de filtro.
 // Calcula el caché y reconstruye la vista. NO se llama desde el handler de notify.
 func columnViewRefresh() {
+	logf("[DEBUG] columnViewRefresh INICIO - columnas actuales: %d", columnViewGetColumnCount())
+	defer func() { logf("[DEBUG] columnViewRefresh FIN - columnas finales: %d", columnViewGetColumnCount()) }()
 	defer appRecover("columnViewRefresh")
 	if viewList == 0 || viewDataset == nil { return }
 	viewCacheRecords = columnViewFilteredRecords()
@@ -634,7 +654,7 @@ func columnViewNames() {
 func namesWndProc(h uintptr,m uint32,w,l uintptr) uintptr {
 	defer appRecover("namesWndProc")
 	if m==wmEraseBkgnd{return 1}; if m==wmCtlColorStatic { b,_,_:=user32.NewProc("GetSysColorBrush").Call(5);return b }
-	if m==WM_COMMAND { cmd:=int(w&0xffff); if cmd==idNamesOK { for _,c:=range viewDataset.Columns { if eh:=namesEdits[datasetColumnKey(c)];eh!=0 { if t:=strings.TrimSpace(appGetEdit(eh));t!="" { appSettings.ColumnTitles[datasetColumnKey(c)]=t } } }; _=saveDatasetSettings(appSettings); closeNames(); columnViewRefresh(); return 0 }; if cmd==idNamesCancel {closeNames();return 0} }
+	if m==WM_COMMAND { cmd:=int(w&0xffff); if cmd==idNamesOK { for _,c:=range viewDataset.Columns { if eh:=namesEdits[datasetColumnKey(c)];eh!=0 { if t:=strings.TrimSpace(appGetEdit(eh));t!="" { appSettings.ColumnTitles[datasetColumnKey(c)]=t } } };_ = saveDatasetSettings(appSettings); closeNames(); columnViewRefresh(); return 0 }; if cmd==idNamesCancel {closeNames();return 0} }
 	if m==WM_CLOSE||m==WM_DESTROY {closeNames();return 0}; r,_,_:=user32.NewProc("DefWindowProcW").Call(h,uintptr(m),w,l);return r
 }
 
