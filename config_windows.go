@@ -11,10 +11,10 @@ const configWM_TIMER uint32 = 0x0113
 const configLayoutTimer uintptr = 7311
 
 const (
-	LB_GETCURSEL  = 0x0188
-	LB_GETTEXT    = 0x0189
+	LB_GETCURSEL = 0x0188
+	LB_GETTEXT = 0x0189
 	LBN_SELCHANGE = 1
-	LBN_DBLCLK    = 2
+	LBN_DBLCLK = 2
 	LB_SETITEMHEIGHT = 0x01A0
 )
 
@@ -87,12 +87,15 @@ func configLayoutFormulaSelector(h uintptr) {
 		user32.NewProc("MoveWindow").Call(check, 20, uintptr(cy), 200, 26, 1)
 	}
 
-	// Explicitly keep the LISTBOX vertical-scrollable and disable integral-height
-	// rounding so the last visible item is not clipped when the window is resized.
+	// GWLP_STYLE is -16. Convert it to its 64-bit uintptr representation
+	// without a compile-time negative-constant overflow.
+	const gwlpStyle uintptr = ^uintptr(15)
 	const LBS_NOINTEGRALHEIGHT uintptr = 0x0100
-	style, _, _ := user32.NewProc("GetWindowLongPtrW").Call(configFormulaSelector, uintptr(-16))
+	getStyle := user32.NewProc("GetWindowLongPtrW")
+	setStyle := user32.NewProc("SetWindowLongPtrW")
+	style, _, _ := getStyle.Call(configFormulaSelector, gwlpStyle)
 	if style&LBS_NOINTEGRALHEIGHT == 0 {
-		user32.NewProc("SetWindowLongPtrW").Call(configFormulaSelector, uintptr(-16), style|LBS_NOINTEGRALHEIGHT)
+		setStyle.Call(configFormulaSelector, gwlpStyle, style|LBS_NOINTEGRALHEIGHT)
 	}
 }
 
