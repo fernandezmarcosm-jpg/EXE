@@ -8,8 +8,6 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
     env:
       CGO_ENABLED: "0"
       GOOS: windows
@@ -17,76 +15,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Apply surgical COLUMNAS fix
-        shell: pwsh
-        run: |
-          $p = 'column_view_windows.go'
-          $s = Get-Content -Raw -Encoding UTF8 $p
-          $s = $s.Replace('datasetColummKey', 'datasetColumnKey')
-          $pattern = '(?s)\tif changed \{.*?\r?\n\t\}\r?\n\tcolumnViewBuildFilters\(\)'
-          $replacement = "`tif changed {`r`n`t`tcolumnViewRebuildOrderFromVisible()`r`n`t`t_ = saveDatasetSettings(appSettings)`r`n`t}`r`n`tcolumnViewBuildFilters()"
-          $rx = [regex]::Matches($s, $pattern)
-          if ($rx.Count -ne 1) { throw "No se encontro exactamente el bloque COLUMNAS esperado: $($rx.Count)" }
-          $s = [regex]::Replace($s, $pattern, $replacement, 1)
-          Set-Content -Path $p -Value $s -Encoding UTF8 -NoNewline
-          $workflow = @'
-name: Build GestionSO V57 Minimal
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: windows-latest
-    env:
-      CGO_ENABLED: "0"
-      GOOS: windows
-      GOARCH: amd64
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Go version
-        shell: pwsh
-        run: go version
-
-      - name: Test
-        shell: pwsh
-        run: go test ./...
-
-      - name: Vet
-        shell: pwsh
-        run: go vet ./...
-
-      - name: Build EXE
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          go build -trimpath -ldflags "-H=windowsgui" -o dist/GestionSO-V57.exe .
-          if (-not (Test-Path dist/GestionSO-V57.exe)) { throw 'No se genero GestionSO-V57.exe' }
-
-      - name: Package EXE
-        shell: pwsh
-        run: Compress-Archive -Path dist/GestionSO-V57.exe -DestinationPath dist/GestionSO-V57.zip -Force
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GestionSO-V57
-          path: dist/GestionSO-V57.zip
-          if-no-files-found: error
-          retention-days: 30
-'@
-          Set-Content -Path '.github/workflows/build-exe.yml' -Value $workflow -Encoding UTF8 -NoNewline
-          if (Test-Path '.github/workflows/fix-columnas-main.yml') { Remove-Item '.github/workflows/fix-columnas-main.yml' }
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add column_view_windows.go .github/workflows/build-exe.yml .github/workflows/fix-columnas-main.yml
-          git commit -m "Fix: no recargar dataset al cambiar columnas"
-          git push origin main
 
       - name: Go version
         shell: pwsh
