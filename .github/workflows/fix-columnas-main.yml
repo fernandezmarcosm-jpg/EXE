@@ -1,0 +1,40 @@
+name: Fix COLUMNAS main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply surgical fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('column_view_windows.go')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('datasetColummKey', 'datasetColumnKey')
+          pattern = r'\tif changed \{.*?\n\t\}\n\tcolumnViewBuildFilters\(\)'
+          replacement = '\tif changed {\n\t\tcolumnViewRebuildOrderFromVisible()\n\t\t_ = saveDatasetSettings(appSettings)\n\t}\n\tcolumnViewBuildFilters()'
+          s2, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'No se encontró exactamente el bloque COLUMNAS esperado: {n}')
+          p.write_text(s2, encoding='utf-8')
+          PY
+          git diff --check
+          git diff -- column_view_windows.go
+          rm .github/workflows/fix-columnas-main.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add column_view_windows.go .github/workflows/fix-columnas-main.yml
+          git commit -m "Fix: no recargar dataset al cambiar columnas"
+          git push origin main
