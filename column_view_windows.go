@@ -485,6 +485,8 @@ func columnViewReloadFromImported() error {
 	if err != nil {
 		return fmt.Errorf("BuildMemoryDataset: %w", err)
 	}
+	applyDatasetFormula(ds, appSettings)
+	applySavedColumnVisibility(ds)
 	appImportedDataset = ds
 	columnViewSetDatasetSafe(ds)
 	return nil
