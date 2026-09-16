@@ -236,7 +236,7 @@ func columnViewVisibleColumns() []DatasetColumn {
 	}
 	byID := map[string]DatasetColumn{}
 	for _, c := range viewDataset.Columns {
-		byID[datasetColummKey(c)] = c
+		byID[datasetColumnKey(c)] = c
 	}
 	seen := map[string]bool{}
 	out := []DatasetColumn{}
@@ -250,7 +250,7 @@ func columnViewVisibleColumns() []DatasetColumn {
 	}
 	for _, c := range viewDataset.Columns {
 		if len(out) >= limit { break }
-		k := datasetColummKey(c)
+		k := datasetColumnKey(c)
 		if seen[k] || !c.Visible { continue }
 		out = append(out, c)
 		seen[k] = true
@@ -556,19 +556,6 @@ func columnViewShowMenu(hwnd uintptr) {
 	}
 
 	if changed {
-		// Reconstruir el orden de columnas desde cero, usando solo las visibles actuales.
-		// Esto descarta IDs huérfanos de configuraciones previas.
-		columnViewRebuildOrderFromVisible()
-		_ = saveDatasetSettings(appSettings)
-
-		// Recargar el dataset completo desde los XLSX importados,
-		// preservando decorateXLSXDates y columnViewSetDatasetSafe.
-		if err := columnViewReloadFromImported(); err != nil {
-			appLog("WARN: recarga del dataset tras COLUMNAS falló: %v", err)
-		}
-
-		// Tras la recarga, el ColumnOrder puede haber cambiado;
-		// reconstruirlo otra vez para que coincida con el dataset nuevo.
 		columnViewRebuildOrderFromVisible()
 		_ = saveDatasetSettings(appSettings)
 	}
