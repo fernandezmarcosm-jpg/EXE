@@ -1,9 +1,0 @@
-name: Temporary trigger
-on:
-  push:
-    branches: [main]
-jobs:
-  noop:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo trigger
