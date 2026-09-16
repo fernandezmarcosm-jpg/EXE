@@ -19,6 +19,34 @@ type MemoryDataset struct{Columns []DatasetColumn;Records []DatasetRecord;CSVRow
 type csvMaster struct{Headers []string;ByKey map[string]map[string]string}
 func normalizeJoinKey(v string)string{return strings.ToUpper(strings.TrimSpace(v))}
 
+// normalizeHeader produces the stable internal identity used for physical
+// Excel columns. Display titles remain untouched so the grid shows exactly
+// the header text that came from the workbook.
+func normalizeHeader(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "Nº", "N")
+	s = strings.ReplaceAll(s, "N°", "N")
+	s = strings.ReplaceAll(s, "º", "o")
+	s = strings.ReplaceAll(s, "°", "o")
+	s = strings.ToUpper(s)
+	s = strings.Join(strings.Fields(s), " ")
+	return s
+}
+
+// uniqueNormalizedHeaderID returns normalizeHeader(title) and preserves
+// physical duplicates with deterministic _2, _3... suffixes.
+func uniqueNormalizedHeaderID(title string, used map[string]int) string {
+	base := normalizeHeader(title)
+	if base == "" {
+		base = "COLUMNA"
+	}
+	used[base]++
+	if used[base] == 1 {
+		return base
+	}
+	return fmt.Sprintf("%s_%d", base, used[base])
+}
+
 // datasetColumnKey is the internal identity of a column. It MUST NOT depend
 // on Source or Title because titles are allowed to repeat in the input file.
 func datasetColumnKey(c DatasetColumn)string{return c.ID}
@@ -38,13 +66,15 @@ func applyConfiguredColumnType(c DatasetColumn)DatasetColumn{t:=parseConfiguredT
 
 func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");if strings.EqualFold(strings.TrimSpace(h[i]),"CLAVE"){ki=i}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(row[i])}};m.ByKey[k]=v};return m,source,nil}
 func csvHeaderTypes(m *csvMaster)map[string]ValueType{out:=map[string]ValueType{};if m==nil{return out};for _,h:=range m.Headers{out[h]=ValueText};for _,row:=range m.ByKey{for h,raw:=range row{if raw==""{continue};t:=inferValueType(raw);if t==ValueNumber{out[h]=ValueNumber}}};return out}
-func findConfiguredSOColumn(sh MemorySheet,configured int)string{if configured>0{for _,c:=range sh.Columns{if c.Index==configured-1{return c.ID}}};for _,c:=range sh.Columns{n:=normalizeHeaderKey(c.Title);switch n{case "so","nro so","n° so","numero so","número so","orden de venta","ordenventa","sales order":return c.ID}};return ""}
+func findConfiguredSOColumn(sh MemorySheet,configured int)string{if configured>0{for _,c:=range sh.Columns{if c.Index==configured-1{return c.ID}}};for _,c:=range sh.Columns{n:=normalizeHeader(c.Title);switch n{case "SO","NRO SO","N SO","NUMERO SO","NÚMERO SO","ORDEN DE VENTA","ORDENVENTA","SALES ORDER":return c.ID}};return ""}
 
 // BuildMemoryDataset creates one DatasetColumn for EVERY physical input
-// column. The position/MemoryColumn.ID is the identity; duplicate titles are
-// intentionally not merged.
-func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")};m,_,e:=loadMasterCSV("");if e!=nil{return nil,e};ds:=&MemoryDataset{CSVRows:len(m.ByKey)};addCSV:=func(t string,typ ValueType)string{x:=fmt.Sprintf("D%03d",len(ds.Columns)+1);c:=DatasetColumn{ID:x,Title:strings.TrimSpace(t),Source:"CSV",Type:typ,Width:140,Visible:true};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c);return x};csvTypes:=csvHeaderTypes(m);csvIDs:=map[string]string{};for _,h:=range m.Headers{if _,exists:=csvIDs[h];exists{continue};csvIDs[h]=addCSV(h,csvTypes[h])};seenLines:=map[string]bool{}
-	for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{soID:=findConfiguredSOColumn(sh,s.SOColumn);joinID,itemID:="","";mapID:=map[string]string{};for _,c:=range sh.Columns{id:=fmt.Sprintf("D%03d",len(ds.Columns)+1);dc:=DatasetColumn{ID:id,Title:strings.TrimSpace(c.Title),Source:"XLSX",Type:c.Type,Width:c.Width,Visible:true};if dc.Width<1{dc.Width=140};dc=applyConfiguredColumnType(dc);ds.Columns=append(ds.Columns,dc);mapID[c.ID]=id;if strings.EqualFold(strings.TrimSpace(c.Title),strings.TrimSpace(s.JoinExcelColumn)){joinID=c.ID};if strings.EqualFold(strings.TrimSpace(c.Title),"ITEM"){itemID=c.ID}};if soID==""{continue};for _,row:=range sh.Rows{v,ok:=row.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue};lineKey:="";if itemID!=""{if item,ok:=row.Values[itemID];ok&&strings.TrimSpace(item.Raw)!=""{lineKey=normalizeJoinKey(v.Raw)+"\x1f"+normalizeJoinKey(item.Raw)}};if lineKey!=""{if seenLines[lineKey]{ds.DuplicateSO++;continue};seenLines[lineKey]=true};rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x;if old==joinID{join=x.Raw}}};if item,ok:=m.ByKey[normalizeJoinKey(join)];ok{ds.Enriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}};ds.Records=append(ds.Records,rec)}}}
+// Excel column, in the same order as the workbook. IDs come from the original
+// Excel headers after normalization; repeated normalized headers receive
+// deterministic _2, _3... suffixes. CSV enrichment columns remain available
+// for formulas but are kept separate from the physical XLSX columns.
+func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")};m,_,e:=loadMasterCSV("");if e!=nil{return nil,e};ds:=&MemoryDataset{CSVRows:len(m.ByKey)};addCSV:=func(t string,typ ValueType)string{x:=fmt.Sprintf("CSV:%s",normalizeHeader(t));c:=DatasetColumn{ID:x,Title:strings.TrimSpace(t),Source:"CSV",Type:typ,Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c);return x};csvTypes:=csvHeaderTypes(m);csvIDs:=map[string]string{};for _,h:=range m.Headers{if _,exists:=csvIDs[h];exists{continue};csvIDs[h]=addCSV(h,csvTypes[h])};seenLines:=map[string]bool{}
+	for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{soID:=findConfiguredSOColumn(sh,s.SOColumn);joinID,itemID:="","";mapID:=map[string]string{};usedIDs:=map[string]int{};for _,c:=range sh.Columns{id:=uniqueNormalizedHeaderID(c.Title,usedIDs);dc:=DatasetColumn{ID:id,Title:c.Title,Source:"XLSX",Type:c.Type,Width:c.Width,Visible:true};if strings.TrimSpace(c.Title)==""{dc.Title=fmt.Sprintf("C%d",c.Index+1)};if dc.Width<1{dc.Width=140};dc=applyConfiguredColumnType(dc);ds.Columns=append(ds.Columns,dc);mapID[c.ID]=id;normalizedTitle:=normalizeHeader(c.Title);if normalizedTitle==normalizeHeader(s.JoinExcelColumn){joinID=c.ID};if normalizedTitle=="ITEM"{itemID=c.ID}};if soID==""{continue};for _,row:=range sh.Rows{v,ok:=row.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue};lineKey:="";if itemID!=""{if item,ok:=row.Values[itemID];ok&&strings.TrimSpace(item.Raw)!=""{lineKey=normalizeJoinKey(v.Raw)+"\x1f"+normalizeJoinKey(item.Raw)}};if lineKey!=""{if seenLines[lineKey]{ds.DuplicateSO++;continue};seenLines[lineKey]=true};rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x;if old==joinID{join=x.Raw}}};if item,ok:=m.ByKey[normalizeJoinKey(join)];ok{ds.Enriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}};ds.Records=append(ds.Records,rec)}}}
 	if len(ds.Records)==0{return nil,fmt.Errorf("no se encontraron filas con SO: columna configurada N°%d y tampoco se detectó una cabecera SO válida",s.SOColumn)};ensureCalculatedDatasetColumns(ds,s);return ds,nil}
 
 func ensureCalculatedDatasetColumns(ds *MemoryDataset,s DatasetSettings){if ds==nil{return};ensure:=func(name string)DatasetColumn{for _,c:=range ds.Columns{if c.Source=="CALCULADA"&&strings.EqualFold(c.Title,name){return c}};c:=DatasetColumn{ID:fmt.Sprintf("D%03d",len(ds.Columns)+1),Title:name,Source:"CALCULADA",Type:ValueNumber,Width:150,Visible:true};ds.Columns=append(ds.Columns,c);return c};if strings.TrimSpace(s.FormulaTitle)!=""&&strings.TrimSpace(s.Formula)!=""{ensure(strings.TrimSpace(s.FormulaTitle))};for _,cc:=range s.CalculatedColumns{if strings.TrimSpace(cc.Name)!=""&&strings.TrimSpace(cc.Formula)!=""{ensure(strings.TrimSpace(cc.Name))}}}
