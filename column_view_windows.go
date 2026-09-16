@@ -223,49 +223,38 @@ func columnViewVisibleColumns() []DatasetColumn {
 	}
 	limit := appSettings.MaxColumns
 	if limit < 1 {
-		limit = 20
+		limit = 500
 	}
-
-	// Índice por ID único (no por nombre). Si hay IDs duplicados en runtime,
-	// eso es un bug del parser, pero acá no los colapsamos silenciosamente:
-	// se incluyen todos los que estén visibles, hasta el límite.
+	xlsxCount := 0
+	for _, c := range viewDataset.Columns {
+		if c.Source == "XLSX" && c.Visible {
+			xlsxCount++
+		}
+	}
+	if xlsxCount > limit {
+		limit = xlsxCount
+	}
 	byID := map[string]DatasetColumn{}
 	for _, c := range viewDataset.Columns {
-		byID[datasetColumnKey(c)] = c
+		byID[datasetColummKey(c)] = c
 	}
-
 	seen := map[string]bool{}
 	out := []DatasetColumn{}
-
-	// 1) Respetar el orden guardado, usando IDs (no nombres).
 	for _, key := range appSettings.ColumnOrder {
-		if len(out) >= limit {
-			break
-		}
-		if seen[key] {
-			continue
-		}
+		if len(out) >= limit { break }
+		if seen[key] { continue }
 		c, ok := byID[key]
-		if !ok || !c.Visible {
-			continue
-		}
+		if !ok || !c.Visible { continue }
 		out = append(out, c)
 		seen[key] = true
 	}
-
-	// 2) Completar con las columnas restantes visibles, en orden físico.
 	for _, c := range viewDataset.Columns {
-		if len(out) >= limit {
-			break
-		}
-		k := datasetColumnKey(c)
-		if seen[k] || !c.Visible {
-			continue
-		}
+		if len(out) >= limit { break }
+		k := datasetColummKey(c)
+		if seen[k] || !c.Visible { continue }
 		out = append(out, c)
 		seen[k] = true
 	}
-
 	return out
 }
 
