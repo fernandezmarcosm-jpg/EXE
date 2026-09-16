@@ -449,6 +449,47 @@ func columnViewApplyFont() {
 	if viewFont != 0 { user32.NewProc("SendMessageW").Call(viewList, WM_SETFONT, viewFont, 1) }
 }
 
+// columnViewRebuildOrderFromVisible reconstruye ColumnOrder y VisibleColumns
+// usando únicamente los IDs de las columnas visibles actuales.
+// No acumula: cada llamada produce un slice nuevo.
+func columnViewRebuildOrderFromVisible() {
+	if viewDataset == nil {
+		return
+	}
+	order := make([]string, 0, len(viewDataset.Columns))
+	for _, c := range viewDataset.Columns {
+		if c.Visible {
+			order = append(order, datasetColumnKey(c))
+		}
+	}
+	appSettings.ColumnOrder = order
+	appSettings.VisibleColumns = order
+}
+
+// columnViewReloadFromImported reabre todos los XLSX en appImportedPaths
+// preservando decorateXLSXDates y columnViewSetDatasetSafe.
+func columnViewReloadFromImported() error {
+	if len(appImportedPaths) == 0 {
+		return nil
+	}
+	docs := make([]*xlsxDoc, 0, len(appImportedPaths))
+	for _, p := range appImportedPaths {
+		d, err := ReadXLSX(p)
+		if err != nil {
+			return fmt.Errorf("ReadXLSX(%q): %w", p, err)
+		}
+		decorateXLSXDates(d, p)
+		docs = append(docs, d)
+	}
+	ds, err := BuildMemoryDataset(docs, appSettings)
+	if err != nil {
+		return fmt.Errorf("BuildMemoryDataset: %w", err)
+	}
+	appImportedDataset = ds
+	columnViewSetDatasetSafe(ds)
+	return nil
+}
+
 func columnViewShowMenu(hwnd uintptr) {
 	if viewDataset == nil {
 		return
@@ -513,6 +554,20 @@ func columnViewShowMenu(hwnd uintptr) {
 	}
 
 	if changed {
+		// Reconstruir el orden de columnas desde cero, usando solo las visibles actuales.
+		// Esto descarta IDs huérfanos de configuraciones previas.
+		columnViewRebuildOrderFromVisible()
+		_ = saveDatasetSettings(appSettings)
+
+		// Recargar el dataset completo desde los XLSX importados,
+		// preservando decorateXLSXDates y columnViewSetDatasetSafe.
+		if err := columnViewReloadFromImported(); err != nil {
+			appLog("WARN: recarga del dataset tras COLUMNAS falló: %v", err)
+		}
+
+		// Tras la recarga, el ColumnOrder puede haber cambiado;
+		// reconstruirlo otra vez para que coincida con el dataset nuevo.
+		columnViewRebuildOrderFromVisible()
 		_ = saveDatasetSettings(appSettings)
 	}
 	columnViewBuildFilters()
