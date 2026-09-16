@@ -218,23 +218,54 @@ func columnViewLayoutFilters(w int) {
 }
 
 func columnViewVisibleColumns() []DatasetColumn {
-	if viewDataset == nil { return nil }
-	out := []DatasetColumn{}
-	used := map[string]bool{}
+	if viewDataset == nil {
+		return nil
+	}
 	limit := appSettings.MaxColumns
-	if limit < 1 { limit = 20 }
-	appendColumn := func(c DatasetColumn) {
-		k := datasetColumnKey(c)
-		if len(out) >= limit || used[k] || !c.Visible { return }
-		out = append(out, c)
-		used[k] = true
+	if limit < 1 {
+		limit = 20
 	}
+
+	// Índice por ID único (no por nombre). Si hay IDs duplicados en runtime,
+	// eso es un bug del parser, pero acá no los colapsamos silenciosamente:
+	// se incluyen todos los que estén visibles, hasta el límite.
+	byID := map[string]DatasetColumn{}
+	for _, c := range viewDataset.Columns {
+		byID[datasetColumnKey(c)] = c
+	}
+
+	seen := map[string]bool{}
+	out := []DatasetColumn{}
+
+	// 1) Respetar el orden guardado, usando IDs (no nombres).
 	for _, key := range appSettings.ColumnOrder {
-		for _, c := range viewDataset.Columns {
-			if datasetColumnKey(c) == key { appendColumn(c); break }
+		if len(out) >= limit {
+			break
 		}
+		if seen[key] {
+			continue
+		}
+		c, ok := byID[key]
+		if !ok || !c.Visible {
+			continue
+		}
+		out = append(out, c)
+		seen[key] = true
 	}
-	for _, c := range viewDataset.Columns { appendColumn(c) }
+
+	// 2) Completar con las columnas restantes visibles, en orden físico.
+	for _, c := range viewDataset.Columns {
+		if len(out) >= limit {
+			break
+		}
+		k := datasetColumnKey(c)
+		if seen[k] || !c.Visible {
+			continue
+		}
+		out = append(out, c)
+		seen[k] = true
+	}
+
 	return out
 }
 
@@ -430,40 +461,71 @@ func columnViewApplyFont() {
 }
 
 func columnViewShowMenu(hwnd uintptr) {
-	if viewDataset == nil { return }
+	if viewDataset == nil {
+		return
+	}
 	m, _, _ := user32.NewProc("CreatePopupMenu").Call()
 	viewMenuIDs = map[uintptr]int{}
 	a := user32.NewProc("AppendMenuW")
+
 	a.Call(m, mfString, menuIDClearFilters, reflect.ValueOf(appU16("LIMPIAR FILTROS")).Pointer())
 	a.Call(m, mfString, menuIDSelectAll, reflect.ValueOf(appU16("MARCAR TODAS")).Pointer())
 	a.Call(m, mfString, menuIDDeselectAll, reflect.ValueOf(appU16("DESMARCAR TODAS")).Pointer())
+
+	// Cada columna física recibe un ID de menú único basado en su índice físico.
+	// El label muestra el Display (puede repetirse), pero el ID interno es único.
 	for i, c := range viewDataset.Columns {
-		id := uintptr(40000 + i); f := uint32(mfString); if c.Visible { f |= mfChecked }
+		id := uintptr(40000 + i)
+		f := uint32(mfString)
+		if c.Visible {
+			f |= mfChecked
+		}
 		a.Call(m, uintptr(f), id, reflect.ValueOf(appU16(datasetColumnDisplayTitle(c))).Pointer())
 		viewMenuIDs[id] = i
 	}
+
 	var pt struct{ X, Y int32 }
 	user32.NewProc("GetCursorPos").Call(uintptr(unsafe.Pointer(&pt)))
 	sel, _, _ := user32.NewProc("TrackPopupMenu").Call(m, tpmRetCmd, uintptr(pt.X), uintptr(pt.Y), 0, hwnd, 0)
+
 	changed := false
 	switch sel {
+	case 0:
+		// Cancelado: no tocar nada.
 	case menuIDClearFilters:
-		for _, h := range viewFilters { appSetEdit(h, "") }
+		for _, h := range viewFilters {
+			appSetEdit(h, "")
+		}
 	case menuIDSelectAll:
-		limit := appSettings.MaxColumns; if limit < 1 { limit = 20 }
-		for i := range viewDataset.Columns { viewDataset.Columns[i].Visible = i < limit }
+		limit := appSettings.MaxColumns
+		if limit < 1 {
+			limit = 20
+		}
+		for i := range viewDataset.Columns {
+			viewDataset.Columns[i].Visible = i < limit
+		}
 		changed = true
 	case menuIDDeselectAll:
-		for i := range viewDataset.Columns { viewDataset.Columns[i].Visible = false }
+		for i := range viewDataset.Columns {
+			viewDataset.Columns[i].Visible = false
+		}
 		changed = true
 	default:
 		if i, ok := viewMenuIDs[sel]; ok {
-			if !viewDataset.Columns[i].Visible && len(columnViewVisibleColumns()) >= appSettings.MaxColumns { break }
-			viewDataset.Columns[i].Visible = !viewDataset.Columns[i].Visible
-			changed = true
+			if i >= 0 && i < len(viewDataset.Columns) {
+				if !viewDataset.Columns[i].Visible && len(columnViewVisibleColumns()) >= appSettings.MaxColumns {
+					// No hacer nada: se alcanzó el límite.
+				} else {
+					viewDataset.Columns[i].Visible = !viewDataset.Columns[i].Visible
+					changed = true
+				}
+			}
 		}
 	}
-	if changed { _ = saveDatasetSettings(appSettings) }
+
+	if changed {
+		_ = saveDatasetSettings(appSettings)
+	}
 	columnViewBuildFilters()
 	columnViewRefresh()
 	user32.NewProc("DestroyMenu").Call(m)
