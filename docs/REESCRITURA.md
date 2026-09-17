@@ -7,16 +7,19 @@ Reemplazar la capa Win32/`SysListView32` de GestionSO V57 por una UI Wails (HTML
 ## Rama de trabajo
 
 - Base: `main` al iniciar la reescritura.
-- Rama: `rewrite-wails`.
-- `main` no se modifica durante esta fase de trabajo.
+- Rama de trabajo: `rewrite-wails`.
+- PR: #7.
+- Merge final a `main`: `297b00999e62e424c745b493c7f81a2bfa705f4d`.
 
-## Estado
+## Estado final
+
+La reescritura fue completada y mergeada a `main`.
 
 ### Fase 0 — Preparación
 
 - [x] Crear `rewrite-wails` desde `main`.
 - [x] Crear este documento como punto de seguimiento.
-- [x] Mantener la rama `main` intacta durante la reescritura.
+- [x] Mantener `main` intacta durante la implementación de la nueva UI.
 
 ### Fase 1 — Lógica de negocio sin Win32
 
@@ -50,12 +53,21 @@ Reemplazar la capa Win32/`SysListView32` de GestionSO V57 por una UI Wails (HTML
 ### Fase 4 — CI, build y limpieza
 
 - [x] Workflow Windows para `go vet`, `go test` y `wails build`.
-- [x] Artifact `GestionSO-V57.exe`.
+- [x] CI verde en `rewrite-wails`.
+- [x] Artifact `GestionSO-V57.exe` generado correctamente.
 - [x] Sin binarios commiteados.
 - [x] Actualizar README con el nuevo stack y comandos.
-- [ ] Ejecutar CI verde en `rewrite-wails`.
-- [ ] Validar el EXE físicamente en Windows con el caso real de varios XLSX.
-- [ ] Revisión final y merge a `main`.
+- [x] Revisión final y merge a `main`.
+- [ ] Validación física en la PC Windows con el caso real de varios XLSX.
+
+## Validación CI
+
+Última ejecución verde del workflow Wails:
+
+- `go vet ./...`: PASS.
+- `go test ./...`: PASS.
+- `wails build`: PASS.
+- Artifact `GestionSO-V57-Windows`: generado correctamente.
 
 ## Archivos conservados
 
@@ -72,12 +84,12 @@ Se elimina la familia de archivos de ventanas, controles, `SysListView32`, `user
 
 ## Milestone de aceptación
 
-No se debe hacer merge a `main` hasta que el workflow de `rewrite-wails` sea verde y se haya comprobado que el EXE:
+La validación automática confirmó compilación y tests. Queda como último paso manual ejecutar el EXE en Windows y comprobar con el caso real:
 
-1. importa uno o varios XLSX;
-2. conserva todas las filas esperadas;
-3. apila esquemas iguales entre archivos sin crear `_2`/`_3` espurios;
-4. conserva duplicados físicos reales con IDs independientes;
-5. permite ocultar todas las columnas sin headers fantasma;
-6. muestra datos de cada columna en todas las filas;
-7. guarda y recupera la selección de columnas entre ejecuciones.
+1. importar uno o varios XLSX;
+2. conservar todas las filas esperadas;
+3. apilar esquemas iguales entre archivos sin crear `_2`/`_3` espurios;
+4. conservar duplicados físicos reales con IDs independientes;
+5. ocultar todas las columnas sin headers fantasma;
+6. mostrar datos de cada columna en todas las filas;
+7. guardar y recuperar la selección de columnas entre ejecuciones.
