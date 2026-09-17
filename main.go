@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options"
 )
 
@@ -19,7 +20,7 @@ func main() {
 		Height: 850,
 		MinWidth: 900,
 		MinHeight: 500,
-		AssetServer: options.AssetServer{Assets: assets},
+		AssetServer: &assetserver.Options{Assets: assets},
 		OnStartup: app.startup,
 		Bind: []interface{}{app},
 	})
