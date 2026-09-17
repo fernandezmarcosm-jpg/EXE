@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 import "encoding/xml"
@@ -8,53 +6,32 @@ import "encoding/xml"
 // children of <sheetData>, not direct children of <worksheet>.
 func (x *sheetXML) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	x.Rows = nil
-
 	for {
 		tok, err := d.Token()
-		if err != nil {
-			return err
-		}
-
+		if err != nil { return err }
 		switch t := tok.(type) {
 		case xml.StartElement:
 			if t.Name.Local != "sheetData" {
-				if err := d.Skip(); err != nil {
-					return err
-				}
+				if err := d.Skip(); err != nil { return err }
 				continue
 			}
-
-			// Decode each row explicitly. This avoids depending on a direct
-			// worksheet->row XML mapping and handles normal Excel worksheet XML.
 			sheetDataDone := false
 			for !sheetDataDone {
 				rowTok, err := d.Token()
-				if err != nil {
-					return err
-				}
-
+				if err != nil { return err }
 				switch r := rowTok.(type) {
 				case xml.StartElement:
 					if r.Name.Local == "row" {
 						var row sheetRowXML
-						if err := d.DecodeElement(&row, &r); err != nil {
-							return err
-						}
+						if err := d.DecodeElement(&row, &r); err != nil { return err }
 						x.Rows = append(x.Rows, row)
-					} else if err := d.Skip(); err != nil {
-						return err
-					}
+					} else if err := d.Skip(); err != nil { return err }
 				case xml.EndElement:
-					if r.Name.Local == "sheetData" {
-						sheetDataDone = true
-					}
+					if r.Name.Local == "sheetData" { sheetDataDone = true }
 				}
 			}
-
 		case xml.EndElement:
-			if t.Name == start.Name {
-				return nil
-			}
+			if t.Name == start.Name { return nil }
 		}
 	}
 }
