@@ -30,7 +30,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
 
       - name: Resolve Go modules
-        run: go mod download
+        run: go get github.com/wailsapp/wails/v2@v2.10.2
 
       - name: Go vet
         run: go vet ./...
