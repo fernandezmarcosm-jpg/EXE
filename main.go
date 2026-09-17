@@ -1,105 +1,28 @@
-//go:build windows
-
 package main
 
 import (
-    "runtime"
-    "syscall"
-    "time"
-    "unsafe"
+	"embed"
+	"log"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-var (
-    user32   = syscall.NewLazyDLL("user32.dll")
-    kernel32 = syscall.NewLazyDLL("kernel32.dll")
-    comctl32 = syscall.NewLazyDLL("comctl32.dll")
-    comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
-    hInstance uintptr
-)
-
-type winPOINT struct{ X, Y int32 }
-
-// MSG de Win32 incluye lPrivate al final. En Windows 64-bit su tamaño es 48 bytes.
-type winMSG struct {
-    Hwnd uintptr
-    Message uint32
-    _ uint32
-    WParam, LParam uintptr
-    Time uint32
-    Pt winPOINT
-    LPrivate uint32
-    _ uint32
-}
+//go:embed all:frontend/dist
+var assets embed.FS
 
 func main() {
-    // CRITICO: una ventana Win32 pertenece a la cola de mensajes del hilo que
-    // la crea. Go puede migrar una goroutine entre hilos del SO si no se fija
-    // explícitamente. Para una GUI Win32, creación de ventana + message loop
-    // deben vivir en el MISMO OS thread durante toda la vida de la aplicación.
-    runtime.LockOSThread()
-    defer runtime.UnlockOSThread()
-
-    appLogInit()
-    defer appRecover("main")
-    appLog("EVENTO: inicio del programa")
-    appLog("EVENTO: hilo Win32 fijado con runtime.LockOSThread")
-
-    console, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
-    if console != 0 {
-        user32.NewProc("ShowWindow").Call(console, 0)
-    }
-    comctl32.NewProc("InitCommonControls").Call()
-    appLog("EVENTO: common controls inicializados")
-
-    hwnd := crearVentana()
-    appLog("EVENTO: crearVentana => hwnd=0x%X", hwnd)
-    if hwnd == 0 {
-        appLog("ERROR: no se pudo crear la ventana principal")
-        return
-    }
-
-    go func() {
-        ticker := time.NewTicker(2 * time.Second)
-        defer ticker.Stop()
-        for range ticker.C {
-            appLog("HEARTBEAT: proceso activo hwnd=0x%X", appHwnd)
-        }
-    }()
-
-    var msg winMSG
-    seq := uint64(0)
-    for {
-        ret, _, _ := user32.NewProc("GetMessageW").Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-        if int32(ret) <= 0 {
-            appLog("EVENTO: GetMessageW finalizó ret=%d", int32(ret))
-            break
-        }
-        seq++
-        logMessage := shouldLogMessage(msg.Message)
-        var start time.Time
-        if logMessage {
-            start = time.Now()
-            appLog("MSG[%d] antes Translate/Dispatch msg=0x%X hwnd=0x%X wp=0x%X lp=0x%X", seq, msg.Message, msg.Hwnd, msg.WParam, msg.LParam)
-        }
-        user32.NewProc("TranslateMessage").Call(uintptr(unsafe.Pointer(&msg)))
-        user32.NewProc("DispatchMessageW").Call(uintptr(unsafe.Pointer(&msg)))
-        if logMessage {
-            elapsed := time.Since(start)
-            appLog("MSG[%d] después Dispatch msg=0x%X duración=%s", seq, msg.Message, elapsed)
-            if elapsed > 500*time.Millisecond {
-                appLog("DIAGNOSTICO: DispatchMessageW tardó %s para msg=0x%X", elapsed, msg.Message)
-            }
-        }
-    }
-    appLog("=== FIN GestionSO V57 ===")
-}
-
-func shouldLogMessage(msg uint32) bool {
-    switch msg {
-    case 0x0001, 0x0002, 0x0005, 0x000F, 0x0010, 0x0111,
-        0x0100, 0x0101, 0x0201, 0x0202, 0x8001:
-        return true
-    default:
-        return false
-    }
+	app := NewApp()
+	err := wails.Run(&options.App{
+		Title: "GestionSO V57",
+		Width: 1400,
+		Height: 850,
+		MinWidth: 900,
+		MinHeight: 500,
+		AssetServer: &assetserver.Options{Assets: assets},
+		OnStartup: app.startup,
+		Bind: []interface{}{app},
+	})
+	if err != nil { log.Fatal(err) }
 }

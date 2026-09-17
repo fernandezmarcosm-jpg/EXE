@@ -1,0 +1,50 @@
+name: build-wails
+
+on:
+  push:
+    branches: [main, rewrite-wails]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.2'
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Wails CLI
+        shell: pwsh
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+
+      - name: Resolve Go modules
+        run: go get github.com/wailsapp/wails/v2@v2.10.2
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Build Windows EXE
+        shell: pwsh
+        run: wails build
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionSO-V57-Windows
+          path: build/bin/GestionSO-V57.exe
+          if-no-files-found: error
