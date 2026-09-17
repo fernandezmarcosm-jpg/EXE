@@ -1,5 +1,5 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SetVisibleColumns } from '../../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SetVisibleColumns } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean }
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[] }
@@ -26,14 +26,14 @@ app.innerHTML = `
   <div id="column-list" class="column-list"></div>
 </aside>`
 
-const $ = <T extends Element>(id:string) => document.getElementById(id) as T
-const openBtn = $('open') as HTMLButtonElement
-const status = $('status') as HTMLDivElement
-const tableWrap = $('table-wrap') as HTMLDivElement
-const footer = $('footer') as HTMLDivElement
-const panel = $('column-panel') as HTMLElement
-const backdrop = $('backdrop') as HTMLDivElement
-const columnList = $('column-list') as HTMLDivElement
+const byId = <T extends Element>(id:string) => document.getElementById(id) as unknown as T
+const openBtn = byId<HTMLButtonElement>('open')
+const status = byId<HTMLDivElement>('status')
+const tableWrap = byId<HTMLDivElement>('table-wrap')
+const footer = byId<HTMLDivElement>('footer')
+const panel = byId<HTMLElement>('column-panel')
+const backdrop = byId<HTMLDivElement>('backdrop')
+const columnList = byId<HTMLDivElement>('column-list')
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
 function filteredRows(){
@@ -79,18 +79,18 @@ openBtn.addEventListener('click', async () => {
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
   finally { openBtn.disabled = false }
 })
-$('columns').addEventListener('click', () => setPanel(true))
-$('close').addEventListener('click', () => setPanel(false))
+byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true))
+byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
 backdrop.addEventListener('click', () => setPanel(false))
-$('all').addEventListener('click', async () => {
+byId<HTMLButtonElement>('all').addEventListener('click', async () => {
   if (!state.data) return
   state.data.columns.forEach(c => c.visible=true); render(); renderColumnPanel(); await SetVisibleColumns(state.data.columns.map(c=>c.id))
 })
-$('none').addEventListener('click', async () => {
+byId<HTMLButtonElement>('none').addEventListener('click', async () => {
   if (!state.data) return
   state.data.columns.forEach(c => c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
 })
-$('clear').addEventListener('click', () => { state.filters={}; render(); status.textContent='Filtros limpiados.' })
+byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; render(); status.textContent='Filtros limpiados.' })
 
 void GetSettings().then(() => render()).catch(() => render())
 
