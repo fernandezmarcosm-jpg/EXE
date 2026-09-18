@@ -7,8 +7,8 @@ type SubtotalRow = { group_value:string; values:Record<string,string>; total:boo
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 
-const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
-  data:null, filters:{}, columnsOpen:false,
+const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
+  data:null, filters:{}, columnsOpen:false, panelMode:'columns',
   visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
 }
 
@@ -28,10 +28,10 @@ app.innerHTML = `
 <div id="backdrop" class="backdrop hidden"></div>
 <aside id="column-panel" class="column-panel hidden">
   <div class="panel-head"><h2>Columnas</h2><button id="close">×</button></div>
-  <div class="panel-actions">
+  <div id="panel-actions" class="panel-actions">
     <button id="all">MARCAR TODAS</button><button id="none">DESMARCAR TODAS</button><button id="clear">LIMPIAR FILTROS</button>
   </div>
-  <div id="column-list" class="column-list"></div><section class="panel-section"><h3>CAMPOS CALCULADOS</h3><div class="calc-form"><input id="calc-name" placeholder="Nombre"><input id="calc-formula" placeholder="Fórmula"><label><input id="calc-percent" type="checkbox"> Porcentaje</label><div id="formula-tokens" class="formula-tokens"></div><div><button id="calc-save">AGREGAR</button><button id="calc-cancel" class="hidden">CANCELAR</button></div></div><div id="calc-list"></div></section><section class="panel-section"><h3>SUBTOTALES</h3><label class="subtotal-control">Agrupar por <select id="subtotal-group"></select></label><div id="subtotal-fields"></div></section>
+  <div id="column-list" class="column-list"></div><section id="calculated-section" class="panel-section"><h3>CAMPOS CALCULADOS</h3><div class="calc-form"><input id="calc-name" placeholder="Nombre"><input id="calc-formula" placeholder="Fórmula"><label><input id="calc-percent" type="checkbox"> Porcentaje</label><div id="formula-tokens" class="formula-tokens"></div><div><button id="calc-save">AGREGAR</button><button id="calc-cancel" class="hidden">CANCELAR</button></div></div><div id="calc-list"></div></section><section id="subtotal-section" class="panel-section"><h3>SUBTOTALES</h3><label class="subtotal-control">Agrupar por <select id="subtotal-group"></select></label><div id="subtotal-fields"></div></section>
 </aside>`
 
 const byId = <T extends Element>(id:string) => document.getElementById(id) as unknown as T
@@ -53,6 +53,9 @@ const calcList = byId<HTMLDivElement>('calc-list')
 const formulaTokens = byId<HTMLDivElement>('formula-tokens')
 const subtotalGroup = byId<HTMLSelectElement>('subtotal-group')
 const subtotalFields = byId<HTMLDivElement>('subtotal-fields')
+const calculatedSection = byId<HTMLElement>('calculated-section')
+const subtotalSection = byId<HTMLElement>('subtotal-section')
+const panelTitle = panel.querySelector<HTMLHeadingElement>('.panel-head h2')!
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
 function filteredRows(){
@@ -64,7 +67,7 @@ function filteredRows(){
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
 function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),60,600) }
-function isNumericColumn(c:Column){ return c.type==='number' || c.source==='CALCULADA' }
+function isNumericColumn(c:Column){ return c.type.toLowerCase()==='number' || c.source==='CALCULADA' }
 function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; return 'decimal' }
 
 async function persistVisualSettings(){
@@ -89,10 +92,37 @@ function render(){
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
-  const body = rows.map(row => `<tr>${cols.map(c => `<td>${esc(row[c.id] ?? '')}</td>`).join('')}</tr>`).join('')
+  const groupId = state.visual.settings?.subtotal_column ?? ''
+  const activeSubtotal = !!groupId && !!state.data.subtotals?.length
+  const displayRows = activeSubtotal ? (() => {
+    const firstSeen = new Map<string,number>()
+    rows.forEach((row,index) => { const key = row[groupId] ?? ''; if (!firstSeen.has(key)) firstSeen.set(key,index) })
+    return [...rows].map((row,index) => ({row,index,key:row[groupId] ?? ''}))
+      .sort((a,b) => (firstSeen.get(a.key)! - firstSeen.get(b.key)!) || (a.index-b.index))
+  })() : rows.map((row,index) => ({row,index,key:''}))
+  const body = displayRows.map(item => `<tr>${cols.map(c => `<td>${esc(item.row[c.id] ?? '')}</td>`).join('')}</tr>`).join('')
   tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
   const tbody=tableWrap.querySelector('tbody')!
-  ;(state.data.subtotals??[]).forEach(sr=>{const tr=document.createElement('tr');tr.className=sr.total?'subtotal subtotal-total':'subtotal';cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=sr.values[c.id] ?? (i===0?sr.group_value:'');tr.appendChild(td)});tbody.appendChild(tr)})
+  if (activeSubtotal) {
+    const subtotalByGroup = new Map((state.data.subtotals ?? []).filter(sr => !sr.total).map(sr => [sr.group_value, sr]))
+    displayRows.forEach((item,index) => {
+      const nextKey = displayRows[index + 1]?.key
+      if (nextKey !== item.key) {
+        const sr = subtotalByGroup.get(item.key)
+        if (!sr) return
+        const tr=document.createElement('tr'); tr.className='subtotal'
+        cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=sr.values[c.id] ?? (i===0?sr.group_value:'');tr.appendChild(td)})
+        const rowNodes = tbody.querySelectorAll('tr')
+        rowNodes[index]?.after(tr)
+      }
+    })
+    const total = (state.data.subtotals ?? []).find(sr => sr.total)
+    if (total) {
+      const tr=document.createElement('tr'); tr.className='subtotal subtotal-total'
+      cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=total.values[c.id] ?? (i===0?total.group_value:'');tr.appendChild(td)})
+      tbody.appendChild(tr)
+    }
+  }
   tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; render() }))
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
 }
@@ -163,7 +193,18 @@ function renderCalculatedPanel(){formulaTokens.innerHTML=state.data?.columns.map
 function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=visibleColumns().filter(isNumericColumn).map(c=>'<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option><option value="suma">Suma</option><option value="promedio">Promedio</option></select></label>').join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
 async function saveSubtotals(){const agg:Record<string,string>={};subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{if(s.value)agg[s.dataset.subtotalId!]=s.value});try{state.data=await SetSubtotals(subtotalGroup.value,agg) as Dataset;state.visual.settings.subtotal_column=subtotalGroup.value;state.visual.settings.subtotal_agg=agg;render()}catch(e){status.textContent='Error guardando subtotales: '+String(e)}}
 function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
-async function setPanel(open:boolean){state.columnsOpen=open;panel.classList.toggle('hidden',!open);backdrop.classList.toggle('hidden',!open);if(open){renderColumnPanel();try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)};renderSubtotalControls()}}
+async function setPanel(open:boolean, mode: 'columns'|'calculated' = state.panelMode){
+  state.columnsOpen=open; state.panelMode=mode
+  panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open)
+  if(!open)return
+  panelTitle.textContent=mode==='columns'?'Columnas':'Campos calculados'
+  byId<HTMLDivElement>('column-list').classList.toggle('hidden',mode!=='columns')
+  byId<HTMLDivElement>('panel-actions').classList.toggle('hidden',mode!=='columns')
+  calculatedSection.classList.toggle('hidden',mode!=='calculated')
+  subtotalSection.classList.toggle('hidden',mode!=='columns')
+  if(mode==='columns'){renderColumnPanel();renderSubtotalControls()}
+  else {try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)}}
+}
 
 fontInput.addEventListener('change', async () => {
   state.visual.fontSize = clamp(Number(fontInput.value) || 14,10,28)
@@ -190,8 +231,8 @@ openBtn.addEventListener('click', async () => {
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
   finally { openBtn.disabled = false }
 })
-byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true))
-byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true))
+byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true,'columns'))
+byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))
 byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
 backdrop.addEventListener('click', () => setPanel(false))
 byId<HTMLButtonElement>('all').addEventListener('click', async () => {
