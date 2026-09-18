@@ -271,7 +271,7 @@ func (a *App) SetSubtotals(groupColumnID string, agg map[string]string) (Dataset
 	clean := map[string]string{}
 	for id, v := range agg {
 		v = strings.ToLower(strings.TrimSpace(v))
-		if v != "" && v != "suma" && v != "promedio" { return DatasetDTO{}, fmt.Errorf("agregación inválida para %s: %s", id, v) }
+		if v != "" && v != "suma" && v != "promedio" && v != "conteo_unico" { return DatasetDTO{}, fmt.Errorf("agregación inválida para %s: %s", id, v) }
 		if v != "" {
 			found := false; for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
 			if !found { return DatasetDTO{}, fmt.Errorf("columna de subtotal desconocida: %s", id) }
