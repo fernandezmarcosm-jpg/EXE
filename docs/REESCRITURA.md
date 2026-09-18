@@ -102,3 +102,5 @@ La validación automática confirmó compilación y tests. Queda como último pa
 
 - [x] Piso de ancho de columna reducido a 20 px en backend y frontend.
 - [x] Alineación por columna persistente (`left`/`center`/`right`) con default izquierdo para texto y derecho para numéricas/calculadas.
+
+- [x] Alias de título por columna persistente, sin modificar IDs ni claves internas; alias vacío restaura el título físico.
