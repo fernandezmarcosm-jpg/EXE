@@ -100,29 +100,20 @@ function render(){
     return [...rows].map((row,index) => ({row,index,key:row[groupId] ?? ''}))
       .sort((a,b) => (firstSeen.get(a.key)! - firstSeen.get(b.key)!) || (a.index-b.index))
   })() : rows.map((row,index) => ({row,index,key:''}))
-  const body = displayRows.map(item => `<tr>${cols.map(c => `<td>${esc(item.row[c.id] ?? '')}</td>`).join('')}</tr>`).join('')
-  tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
-  const tbody=tableWrap.querySelector('tbody')!
-  if (activeSubtotal) {
-    const subtotalByGroup = new Map((state.data.subtotals ?? []).filter(sr => !sr.total).map(sr => [sr.group_value, sr]))
-    displayRows.forEach((item,index) => {
-      const nextKey = displayRows[index + 1]?.key
-      if (nextKey !== item.key) {
-        const sr = subtotalByGroup.get(item.key)
-        if (!sr) return
-        const tr=document.createElement('tr'); tr.className='subtotal'
-        cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=sr.values[c.id] ?? (i===0?sr.group_value:'');tr.appendChild(td)})
-        const rowNodes = tbody.querySelectorAll('tr')
-        rowNodes[index]?.after(tr)
-      }
-    })
-    const total = (state.data.subtotals ?? []).find(sr => sr.total)
-    if (total) {
-      const tr=document.createElement('tr'); tr.className='subtotal subtotal-total'
-      cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=total.values[c.id] ?? (i===0?total.group_value:'');tr.appendChild(td)})
-      tbody.appendChild(tr)
+  const subtotalByGroup = new Map((state.data.subtotals ?? []).filter(sr => !sr.total).map(sr => [sr.group_value, sr]))
+  const bodyParts:string[] = []
+  displayRows.forEach((item,index) => {
+    bodyParts.push(`<tr>${cols.map(c => `<td>${esc(item.row[c.id] ?? '')}</td>`).join('')}</tr>`)
+    if (activeSubtotal && displayRows[index + 1]?.key !== item.key) {
+      const sr = subtotalByGroup.get(item.key)
+      if (sr) bodyParts.push(`<tr class="subtotal">${cols.map((c,i) => `<td>${esc(sr.values[c.id] ?? (i===0?sr.group_value:''))}</td>`).join('')}</tr>`)
     }
+  })
+  if (activeSubtotal) {
+    const total = (state.data.subtotals ?? []).find(sr => sr.total)
+    if (total) bodyParts.push(`<tr class="subtotal subtotal-total">${cols.map((c,i) => `<td>${esc(total.values[c.id] ?? (i===0?total.group_value:''))}</td>`).join('')}</tr>`)
   }
+  tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${bodyParts.join('')}</tbody></table>`
   tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; render() }))
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
 }
