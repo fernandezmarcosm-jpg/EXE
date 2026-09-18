@@ -1,5 +1,5 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SetVisibleColumns } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SetVisibleColumns, SetColumnOrder } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean }
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[] }
@@ -56,13 +56,44 @@ function render(){
 
 function renderColumnPanel(){
   if (!state.data) { columnList.innerHTML = '<div class="empty">Importe un Excel primero.</div>'; return }
-  columnList.innerHTML = state.data.columns.map((c,i) => `<label class="column-item"><input type="checkbox" data-index="${i}" ${c.visible?'checked':''}><span>${esc(c.title)}</span><small>${esc(c.source)}</small></label>`).join('')
+  columnList.innerHTML = state.data.columns.map((c,i) => `
+    <div class="column-item">
+      <input type="checkbox" data-index="${i}" ${c.visible?'checked':''}>
+      <span title="${escAttr(c.title)}">${esc(c.title)}</span>
+      <small>${esc(c.source)}</small>
+      <div class="column-move">
+        <button class="move-column" data-move="up" data-index="${i}" ${i===0?'disabled':''} title="Subir">▲</button>
+        <button class="move-column" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''} title="Bajar">▼</button>
+      </div>
+    </div>`).join('')
+
   columnList.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach(box => box.addEventListener('change', async () => {
     const i = Number(box.dataset.index), c = state.data!.columns[i]
     c.visible = box.checked
     render()
     try { await SetVisibleColumns(state.data!.columns.filter(x=>x.visible).map(x=>x.id)); status.textContent = 'Configuración de columnas guardada.' }
     catch (e) { status.textContent = `Error guardando columnas: ${String(e)}` }
+  }))
+
+  columnList.querySelectorAll<HTMLButtonElement>('.move-column').forEach(button => button.addEventListener('click', async () => {
+    if (!state.data) return
+    const from = Number(button.dataset.index)
+    const direction = button.dataset.move
+    const to = direction === 'up' ? from - 1 : from + 1
+    if (from < 0 || to < 0 || to >= state.data.columns.length) return
+
+    const columns = state.data.columns
+    const [moved] = columns.splice(from, 1)
+    columns.splice(to, 0, moved)
+    render()
+    renderColumnPanel()
+
+    try {
+      await SetColumnOrder(columns.map(c => c.id))
+      status.textContent = 'Orden de columnas guardado.'
+    } catch (e) {
+      status.textContent = `Error guardando orden: ${String(e)}`
+    }
   }))
 }
 
