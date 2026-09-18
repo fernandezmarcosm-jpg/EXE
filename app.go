@@ -17,6 +17,8 @@ type ColumnDTO struct {
 	Source string `json:"source"`
 	Type string `json:"type"`
 	Visible bool `json:"visible"`
+	HighlightSign bool `json:"highlight_sign"`
+	Background string `json:"background"`
 }
 
 type DatasetDTO struct {
@@ -206,13 +208,13 @@ func (a *App) DeleteCalculatedColumn(name string) (DatasetDTO, error) {
 	return datasetDTO(viewDataset), nil
 }
 
-func (a *App) SetColumnFormat(id string, decimals int, percent bool, kind string) (DatasetDTO, error) {
+func (a *App) SetColumnFormat(id string, decimals int, percent bool, kind string, thousands bool) (DatasetDTO, error) {
 	id = strings.TrimSpace(id); kind = strings.ToLower(strings.TrimSpace(kind))
 	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
 	found := false
 	for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
 	if !found { return DatasetDTO{}, fmt.Errorf("columna desconocida: %s", id) }
-	if kind != "entero" && kind != "decimal" && kind != "porcentaje" { return DatasetDTO{}, fmt.Errorf("tipo de formato inválido: %s", kind) }
+	if kind != "entero" && kind != "decimal" && kind != "porcentaje" && kind != "moneda" { return DatasetDTO{}, fmt.Errorf("tipo de formato inválido: %s", kind) }
 	if kind == "entero" { decimals = 0 }
 	if decimals < 0 { decimals = 0 }; if decimals > 8 { decimals = 8 }
 	if appSettings.ColumnDecimals == nil { appSettings.ColumnDecimals = map[string]int{} }
@@ -220,7 +222,38 @@ func (a *App) SetColumnFormat(id string, decimals int, percent bool, kind string
 	if appSettings.ColumnTypes == nil { appSettings.ColumnTypes = map[string]string{} }
 	appSettings.ColumnDecimals[id] = decimals
 	appSettings.ColumnPercent[id] = percent || kind == "porcentaje"
+	if appSettings.ColumnCurrency == nil { appSettings.ColumnCurrency = map[string]bool{} }
+	if appSettings.ColumnThousands == nil { appSettings.ColumnThousands = map[string]bool{} }
+	appSettings.ColumnCurrency[id] = kind == "moneda"
+	appSettings.ColumnThousands[id] = thousands || kind == "moneda"
 	appSettings.ColumnTypes[id] = kind
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	return datasetDTO(viewDataset), nil
+}
+
+
+func (a *App) SetColumnSignHighlight(id string, on bool) (DatasetDTO, error) {
+	id = strings.TrimSpace(id)
+	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
+	found := false
+	for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+	if !found { return DatasetDTO{}, fmt.Errorf("columna desconocida: %s", id) }
+	if appSettings.ColumnHighlightSign == nil { appSettings.ColumnHighlightSign = map[string]bool{} }
+	appSettings.ColumnHighlightSign[id] = on
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	return datasetDTO(viewDataset), nil
+}
+
+func (a *App) SetColumnBackground(id string, color string) (DatasetDTO, error) {
+	id = strings.TrimSpace(id); color = strings.TrimSpace(color)
+	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
+	found := false
+	for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+	if !found { return DatasetDTO{}, fmt.Errorf("columna desconocida: %s", id) }
+	if color != "" && !(len(color) == 7 && strings.HasPrefix(color, "#")) { return DatasetDTO{}, fmt.Errorf("color inválido: %s", color) }
+	if color != "" { for _, ch := range color[1:] { if !strings.ContainsRune("0123456789abcdefABCDEF", ch) { return DatasetDTO{}, fmt.Errorf("color inválido: %s", color) } } }
+	if appSettings.ColumnBackground == nil { appSettings.ColumnBackground = map[string]string{} }
+	appSettings.ColumnBackground[id] = color
 	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
 	return datasetDTO(viewDataset), nil
 }
@@ -331,7 +364,7 @@ func datasetDTO(ds *MemoryDataset) DatasetDTO {
 		Subtotals: computeSubtotals(ds),
 	}
 	for _, c := range ds.Columns {
-		out.Columns = append(out.Columns, ColumnDTO{ID:c.ID, Title:datasetColumnDisplayTitle(c), Source:c.Source, Type:valueTypeName(c.Type), Visible:c.Visible})
+		out.Columns = append(out.Columns, ColumnDTO{ID:c.ID, Title:datasetColumnDisplayTitle(c), Source:c.Source, Type:valueTypeName(c.Type), Visible:c.Visible, HighlightSign:datasetColumnHighlightSign(c), Background:datasetColumnBackground(c)})
 	}
 	for _, record := range ds.Records {
 		row := make(map[string]string, len(ds.Columns))
@@ -349,6 +382,8 @@ func datasetValueText(c DatasetColumn, v MemoryValue) string {
 	switch v.Type {
 	case ValueNumber:
 		if datasetColumnIsPercent(c) { return formatDatasetNumber(v.Number*100, datasetColumnDecimals(c)) + "%" }
+		if datasetColumnCurrency(c) { return "$" + formatDatasetNumberGrouped(v.Number, datasetColumnDecimals(c)) }
+		if datasetColumnThousands(c) { return formatDatasetNumberGrouped(v.Number, datasetColumnDecimals(c)) }
 		return formatDatasetNumber(v.Number, datasetColumnDecimals(c))
 	case ValueDate:
 		return v.Raw
