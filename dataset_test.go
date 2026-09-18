@@ -36,3 +36,26 @@ func TestBuildMemoryDatasetFallsBackToITEMForCSVJoin(t *testing.T) {
 	if m.Enriched <= 0 { t.Fatalf("Enriched=%d; want > 0 using ITEM fallback", m.Enriched) }
 	v, ok := m.Records[0].Values["CSV:CLAVE"]; if !ok || strings.TrimSpace(v.Raw) == "" { t.Fatalf("CSV:CLAVE not populated through ITEM fallback: ok=%v raw=%q", ok, v.Raw) }
 }
+
+func TestCalculatedPercentIsAppliedOnlyByDisplayFormatting(t *testing.T) {
+	old := appSettings
+	defer func() { appSettings = old }()
+	appSettings = defaultDatasetSettings()
+	appSettings.CalculatedColumns = []CalculatedColumn{{Name:"MARGEN",Formula:"[BASE] / [TOTAL]",Percent:true}}
+	d := &MemoryDataset{
+		Columns: []DatasetColumn{
+			{ID:"BASE",Title:"BASE",Source:"XLSX",Type:ValueNumber},
+			{ID:"TOTAL",Title:"TOTAL",Source:"XLSX",Type:ValueNumber},
+		},
+		Records: []DatasetRecord{{Values: map[string]MemoryValue{
+			"BASE":{ColumnID:"BASE",Type:ValueNumber,Number:1},
+			"TOTAL":{ColumnID:"TOTAL",Type:ValueNumber,Number:2},
+		}}},
+	}
+	applyDatasetFormula(d, appSettings)
+	c, ok := d.columnByTitle("MARGEN")
+	if !ok { t.Fatal("calculated column not created") }
+	v := d.Records[0].Values[c.ID]
+	if v.Number != 0.5 { t.Fatalf("stored value=%v; want 0.5", v.Number) }
+	if got := datasetValueText(c, v); got != "50.00" { t.Fatalf("display value=%q; want 50.00", got) }
+}
