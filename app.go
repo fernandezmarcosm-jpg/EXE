@@ -77,14 +77,14 @@ func (a *App) SaveSettings(s DatasetSettings) error {
 }
 
 func (a *App) SetFontSize(px int) error {
-	if px < 10 { px = 10 }
+	if px < 6 { px = 6 }
 	if px > 28 { px = 28 }
 	appSettings.FontSize = px
 	return saveDatasetSettings(appSettings)
 }
 
 func (a *App) SetRowHeight(px int) error {
-	if px < 18 { px = 18 }
+	if px < 10 { px = 10 }
 	if px > 60 { px = 60 }
 	appSettings.RowHeight = px
 	return saveDatasetSettings(appSettings)
