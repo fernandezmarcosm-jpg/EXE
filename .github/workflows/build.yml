@@ -38,6 +38,13 @@ jobs:
       - name: Go tests
         run: go test ./...
 
+      - name: Regenerate Wails bindings
+        shell: pwsh
+        run: wails generate module
+
+      - name: Go build
+        run: go build ./...
+
       - name: Build Windows EXE
         shell: pwsh
         run: wails build
