@@ -83,3 +83,18 @@ func TestComputeSubtotalsUsesFormattedGroupValue(t *testing.T) {
 	if rows[0].GroupValue != "1.20" { t.Fatalf("group value=%q; want 1.20", rows[0].GroupValue) }
 	if rows[0].Values["VALOR"] != "15.00" { t.Fatalf("group subtotal=%q; want 15.00", rows[0].Values["VALOR"]) }
 }
+
+
+func TestDatasetNumberFormattingGroupedAndCurrency(t *testing.T) {
+	old := appSettings
+	defer func(){ appSettings = old }()
+	appSettings = defaultDatasetSettings()
+	c := DatasetColumn{ID:"IMPORTE",Title:"IMPORTE",Source:"XLSX",Type:ValueNumber}
+	appSettings.ColumnCurrency[c.ID] = true
+	appSettings.ColumnDecimals[c.ID] = 2
+	v := MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:-1234567.8}
+	if got:=datasetValueText(c,v); got != "$-1.234.567,80" { t.Fatalf("currency=%q; want $-1.234.567,80",got) }
+	delete(appSettings.ColumnCurrency,c.ID)
+	appSettings.ColumnThousands[c.ID] = true
+	if got:=datasetValueText(c,v); got != "-1.234.567,80" { t.Fatalf("grouped=%q; want -1.234.567,80",got) }
+}
