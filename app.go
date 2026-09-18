@@ -72,6 +72,35 @@ func (a *App) SaveSettings(s DatasetSettings) error {
 	return saveDatasetSettings(s)
 }
 
+func (a *App) SetFontSize(px int) error {
+	if px < 10 { px = 10 }
+	if px > 28 { px = 28 }
+	appSettings.FontSize = px
+	return saveDatasetSettings(appSettings)
+}
+
+func (a *App) SetRowHeight(px int) error {
+	if px < 18 { px = 18 }
+	if px > 60 { px = 60 }
+	persistedVisualSettings.RowHeight = px
+	return saveDatasetSettings(appSettings)
+}
+
+func (a *App) SetColumnWidth(id string, px int) error {
+	id = strings.TrimSpace(id)
+	if id == "" { return fmt.Errorf("id de columna vacío") }
+	if viewDataset != nil {
+		found := false
+		for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+		if !found { return fmt.Errorf("columna desconocida: %s", id) }
+	}
+	if px < 60 { px = 60 }
+	if px > 600 { px = 600 }
+	if persistedVisualSettings.ColumnWidths == nil { persistedVisualSettings.ColumnWidths = map[string]int{} }
+	persistedVisualSettings.ColumnWidths[id] = px
+	return saveDatasetSettings(appSettings)
+}
+
 func (a *App) SetVisibleColumns(ids []string) error {
 	clean := make([]string, 0, len(ids))
 	for _, id := range ids {
