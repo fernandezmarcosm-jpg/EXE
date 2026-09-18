@@ -7,6 +7,8 @@ type SubtotalRow = { group_value:string; values:Record<string,string>; total:boo
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 
+let draggedColumnId = ''
+
 const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
   data:null, filters:{}, columnsOpen:false, panelMode:'columns',
   visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
@@ -94,7 +96,7 @@ function render(){
   if (!state.data) { tableWrap.innerHTML = '<div class="empty">No hay datos cargados.</div>'; return }
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
-  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
+  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
   const displayRows = activeSubtotal ? (() => {
@@ -117,7 +119,55 @@ function render(){
     if (total) bodyParts.push(`<tr class="subtotal subtotal-total">${cols.map((c,i) => `<td>${esc(total.values[c.id] ?? (i===0?total.group_value:''))}</td>`).join('')}</tr>`)
   }
   tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${bodyParts.join('')}</tbody></table>`
-  tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() }))
+  tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => {
+    input.addEventListener('dragstart', event => event.stopPropagation())
+    input.addEventListener('mousedown', event => event.stopPropagation())
+    input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() })
+  })
+  tableWrap.querySelectorAll<HTMLTableCellElement>('th[data-column-id][draggable="true"]').forEach(th => {
+    th.addEventListener('dragstart', event => {
+      draggedColumnId = th.dataset.columnId ?? ''
+      th.classList.add('column-dragging')
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', draggedColumnId)
+      }
+    })
+    th.addEventListener('dragend', () => {
+      draggedColumnId = ''
+      th.classList.remove('column-dragging')
+      tableWrap.querySelectorAll('th.column-drop-target').forEach(target => target.classList.remove('column-drop-target'))
+    })
+    th.addEventListener('dragover', event => {
+      event.preventDefault()
+      if (!draggedColumnId || draggedColumnId === th.dataset.columnId) return
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+      th.classList.add('column-drop-target')
+    })
+    th.addEventListener('dragleave', () => th.classList.remove('column-drop-target'))
+    th.addEventListener('drop', async event => {
+      event.preventDefault()
+      th.classList.remove('column-drop-target')
+      const sourceId = draggedColumnId || event.dataTransfer?.getData('text/plain') || ''
+      const targetId = th.dataset.columnId ?? ''
+      draggedColumnId = ''
+      if (!state.data || !sourceId || !targetId || sourceId === targetId) return
+      const columns = state.data.columns
+      const sourceIndex = columns.findIndex(c => c.id === sourceId)
+      const targetIndex = columns.findIndex(c => c.id === targetId)
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return
+      const [moved] = columns.splice(sourceIndex, 1)
+      columns.splice(targetIndex, 0, moved)
+      render()
+      renderColumnPanel()
+      try {
+        await SetColumnOrder(columns.map(c => c.id))
+        status.textContent = 'Orden de columnas guardado.'
+      } catch (e) {
+        status.textContent = `Error guardando orden: ${String(e)}`
+      }
+    })
+  })
   renderBody()
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
 }
