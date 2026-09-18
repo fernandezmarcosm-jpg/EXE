@@ -95,6 +95,7 @@ function render(){
   const cols = visibleColumns(), rows = filteredRows()
   if (!state.data) { tableWrap.innerHTML = '<div class="empty">No hay datos cargados.</div>'; return }
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
+  const tableWidth = cols.reduce((sum, c) => sum + columnWidth(c.id), 0)
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
@@ -118,7 +119,7 @@ function render(){
     const total = (state.data.subtotals ?? []).find(sr => sr.total)
     if (total) bodyParts.push(`<tr class="subtotal subtotal-total">${cols.map((c,i) => { const value=c.id===groupId && total.group_count>0 ? `${total.group_value} · ${total.group_count} únicos` : (total.values[c.id] ?? (i===0?total.group_value:'')); return `<td>${esc(value)}</td>` }).join('')}</tr>`)
   }
-  tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${bodyParts.join('')}</tbody></table>`
+  tableWrap.innerHTML = `<table style="width:${tableWidth}px"><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${bodyParts.join('')}</tbody></table>`
   tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => {
     input.addEventListener('dragstart', event => event.stopPropagation())
     input.addEventListener('mousedown', event => event.stopPropagation())
@@ -143,6 +144,8 @@ function render(){
         currentWidth = clamp(startWidth + (moveEvent.clientX - startX), 8, 600)
         state.visual.columnWidths[id] = currentWidth
         col.style.width = `${currentWidth}px`
+        const table = tableWrap.querySelector<HTMLTableElement>('table')
+        if (table) table.style.width = `${cols.reduce((sum, c) => sum + columnWidth(c.id), 0)}px`
       }
       const finish = async () => {
         window.removeEventListener('pointermove', move)
