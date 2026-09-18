@@ -125,3 +125,24 @@ func TestComputeSubtotalsCountsUniqueTextValues(t *testing.T) {
 	if rows[1].Values["SDDOCO"] != "1" { t.Fatalf("group B distinct count=%q; want 1", rows[1].Values["SDDOCO"]) }
 	if rows[2].Values["SDDOCO"] != "3" { t.Fatalf("total distinct count=%q; want 3", rows[2].Values["SDDOCO"]) }
 }
+
+func TestComputeSubtotalsReportsUniqueGroupCount(t *testing.T) {
+	old := appSettings
+	defer func(){ appSettings = old }()
+	appSettings = defaultDatasetSettings()
+	appSettings.SubtotalColumn = "SDDOCO"
+	appSettings.SubtotalAgg = map[string]string{"SDDOCO":"conteo_unico"}
+	d := &MemoryDataset{
+		Columns: []DatasetColumn{{ID:"SDDOCO",Title:"SDDOCO",Source:"XLSX",Type:ValueText}},
+		Records: []DatasetRecord{
+			{Values:map[string]MemoryValue{"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"100"}}},
+			{Values:map[string]MemoryValue{"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"100"}}},
+			{Values:map[string]MemoryValue{"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"200"}}},
+			{Values:map[string]MemoryValue{"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"300"}}},
+			{Values:map[string]MemoryValue{"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:""}}},
+		},
+	}
+	rows := computeSubtotals(d)
+	if len(rows) != 4 { t.Fatalf("subtotal rows=%d; want 4",len(rows)) }
+	if rows[3].GroupCount != 3 { t.Fatalf("unique group count=%d; want 3",rows[3].GroupCount) }
+}
