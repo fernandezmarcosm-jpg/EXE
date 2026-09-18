@@ -169,7 +169,11 @@ function render(){
     })
   })
   renderBody()
-  footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
+  const subtotalColumn = state.visual.settings?.subtotal_column ?? ''
+  const subtotalGroup = subtotalColumn ? state.data.columns.find(c => c.id === subtotalColumn) : undefined
+  const subtotalTotal = (state.data.subtotals ?? []).find(sr => sr.total)
+  const uniqueSuffix = subtotalColumn && subtotalGroup && subtotalTotal && subtotalTotal.group_count > 0 ? ` · ${subtotalGroup.title} únicos: ${subtotalTotal.group_count}` : ''
+  footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}${uniqueSuffix}`
 }
 
 function renderBody(){
