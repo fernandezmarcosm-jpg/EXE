@@ -30,7 +30,7 @@ func TestBuildMemoryDatasetFallsBackToITEMForCSVJoin(t *testing.T) {
 	d := &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{
 		Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText}},
 		Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM":{Raw:"ACE0001",Type:ValueText}}}},
-	}}}}}
+	}}}}
 	s := defaultDatasetSettings(); s.SOColumn = 1; s.JoinExcelColumn = "SKU"
 	m, err := BuildMemoryDataset([]*xlsxDoc{d}, s); if err != nil { t.Fatal(err) }
 	if m.Enriched <= 0 { t.Fatalf("Enriched=%d; want > 0 using ITEM fallback", m.Enriched) }
