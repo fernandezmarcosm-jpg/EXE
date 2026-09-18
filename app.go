@@ -247,6 +247,19 @@ func (a *App) SetColumnSignHighlight(id string, on bool) (DatasetDTO, error) {
 	return datasetDTO(viewDataset), nil
 }
 
+func (a *App) SetColumnTitle(id string, alias string) (DatasetDTO, error) {
+	id = strings.TrimSpace(id)
+	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
+	found := false
+	for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+	if !found { return DatasetDTO{}, fmt.Errorf("columna desconocida: %s", id) }
+	alias = strings.TrimSpace(alias)
+	if appSettings.ColumnTitles == nil { appSettings.ColumnTitles = map[string]string{} }
+	if alias == "" { delete(appSettings.ColumnTitles, id) } else { appSettings.ColumnTitles[id] = alias }
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	return datasetDTO(viewDataset), nil
+}
+
 func (a *App) SetColumnAlign(id string, align string) (DatasetDTO, error) {
 	id = strings.TrimSpace(id)
 	align = strings.ToLower(strings.TrimSpace(align))
