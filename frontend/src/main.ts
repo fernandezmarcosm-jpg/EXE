@@ -68,7 +68,7 @@ function filteredRows(){
 }
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
-function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),20,600) }
+function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),8,600) }
 function isNumericColumn(c:Column){ return c.type.toLowerCase()==='number' || c.source==='CALCULADA' }
 function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje'||t==='moneda')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; if(state.visual.settings?.column_currency?.[c.id])return 'moneda'; return 'decimal' }
 function columnThousands(c:Column){ return !!state.visual.settings?.column_thousands?.[c.id] || columnFormatKind(c)==='moneda' }
@@ -96,7 +96,7 @@ function render(){
   if (!state.data) { tableWrap.innerHTML = '<div class="empty">No hay datos cargados.</div>'; return }
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
-  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
+  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
   const displayRows = activeSubtotal ? (() => {
@@ -124,6 +124,45 @@ function render(){
     input.addEventListener('mousedown', event => event.stopPropagation())
     input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() })
   })
+  tableWrap.querySelectorAll<HTMLSpanElement>('.col-resizer').forEach(handle => {
+    const id = handle.dataset.resizeId ?? ''
+    handle.addEventListener('dragstart', event => event.stopPropagation())
+    handle.addEventListener('pointerdown', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!id || !state.data) return
+      const cols = visibleColumns()
+      const index = cols.findIndex(c => c.id === id)
+      const col = tableWrap.querySelectorAll<HTMLTableColElement>('col')[index]
+      if (index < 0 || !col) return
+      const startX = event.clientX
+      const startWidth = columnWidth(id)
+      let currentWidth = startWidth
+      const move = (moveEvent: PointerEvent) => {
+        moveEvent.preventDefault()
+        currentWidth = clamp(startWidth + (moveEvent.clientX - startX), 8, 600)
+        state.visual.columnWidths[id] = currentWidth
+        col.style.width = `${currentWidth}px`
+      }
+      const finish = async () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', finish)
+        window.removeEventListener('pointercancel', finish)
+        try {
+          render()
+          renderColumnPanel()
+          await persistVisualSettings()
+          status.textContent = 'Ancho de columna guardado.'
+        } catch (e) {
+          status.textContent = `Error guardando ancho: ${String(e)}`
+        }
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', finish)
+      window.addEventListener('pointercancel', finish)
+    })
+  })
+
   tableWrap.querySelectorAll<HTMLTableCellElement>('th[data-column-id][draggable="true"]').forEach(th => {
     th.addEventListener('dragstart', event => {
       draggedColumnId = th.dataset.columnId ?? ''
@@ -265,7 +304,7 @@ function renderColumnPanel(){
 
   columnList.querySelectorAll<HTMLInputElement>('input[data-width-index]').forEach(input => input.addEventListener('change', async () => {
     const i = Number(input.dataset.widthIndex), c = state.data!.columns[i]
-    const width = clamp(Number(input.value) || 140,20,600)
+    const width = clamp(Number(input.value) || 140,8,600)
     state.visual.columnWidths[c.id] = width
     input.value = String(width)
     render()
