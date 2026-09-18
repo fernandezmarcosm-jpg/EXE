@@ -99,3 +99,6 @@ La validación automática confirmó compilación y tests. Queda como último pa
 
 - [x] Subtotal por conteo de valores únicos (`conteo_unico`), incluyendo columnas de texto y TOTAL GENERAL.
 - [x] Control de frontend para seleccionar `Contador (únicos)` en cualquier columna distinta de la agrupación.
+
+- [x] Piso de ancho de columna reducido a 20 px en backend y frontend.
+- [x] Alineación por columna persistente (`left`/`center`/`right`) con default izquierdo para texto y derecho para numéricas/calculadas.
