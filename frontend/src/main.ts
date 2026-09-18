@@ -1,10 +1,14 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SetVisibleColumns, SetColumnOrder } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean }
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[] }
+type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 
-const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean} = {data:null, filters:{}, columnsOpen:false}
+const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; visual:VisualState} = {
+  data:null, filters:{}, columnsOpen:false,
+  visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}
+}
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -12,6 +16,8 @@ app.innerHTML = `
   <header class="toolbar">
     <button id="open">ABRIR EXCEL</button>
     <button id="columns">COLUMNAS</button>
+    <label class="visual-control">Fuente <input id="font-size" type="number" min="10" max="28" step="1"></label>
+    <label class="visual-control">Fila <input id="row-height" type="number" min="18" max="60" step="1"></label>
     <div id="status" class="status">Seleccione uno o varios archivos XLSX.</div>
   </header>
   <main class="table-wrap" id="table-wrap"><div class="empty">No hay datos cargados.</div></main>
@@ -34,6 +40,8 @@ const footer = byId<HTMLDivElement>('footer')
 const panel = byId<HTMLElement>('column-panel')
 const backdrop = byId<HTMLDivElement>('backdrop')
 const columnList = byId<HTMLDivElement>('column-list')
+const fontInput = byId<HTMLInputElement>('font-size')
+const rowHeightInput = byId<HTMLInputElement>('row-height')
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
 function filteredRows(){
@@ -43,29 +51,49 @@ function filteredRows(){
   return rows.filter(row => active.every(([id,needle]) => (row[id] ?? '').toLocaleLowerCase().includes(needle.toLocaleLowerCase())))
 }
 
+function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
+function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),60,600) }
+
+async function persistVisualSettings(){
+  if (!state.visual.settings) return
+  state.visual.settings.font_size = state.visual.fontSize
+  state.visual.settings.row_height = state.visual.rowHeight
+  state.visual.settings.column_widths = {...state.visual.columnWidths}
+  await SaveSettings(state.visual.settings)
+}
+
+function applyVisualSettings(){
+  tableWrap.style.setProperty('--grid-font', `${state.visual.fontSize}px`)
+  tableWrap.style.setProperty('--grid-row-h', `${state.visual.rowHeight}px`)
+  fontInput.value = String(state.visual.fontSize)
+  rowHeightInput.value = String(state.visual.rowHeight)
+}
+
 function render(){
+  applyVisualSettings()
   const cols = visibleColumns(), rows = filteredRows()
   if (!state.data) { tableWrap.innerHTML = '<div class="empty">No hay datos cargados.</div>'; return }
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
-  const head = cols.map(c => `<th><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
+  const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
+  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
   const body = rows.map(row => `<tr>${cols.map(c => `<td>${esc(row[c.id] ?? '')}</td>`).join('')}</tr>`).join('')
-  tableWrap.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
+  tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
   tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; render() }))
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
 }
 
 function renderColumnPanel(){
   if (!state.data) { columnList.innerHTML = '<div class="empty">Importe un Excel primero.</div>'; return }
-  columnList.innerHTML = state.data.columns.map((c,i) => `
-    <div class="column-item">
+  columnList.innerHTML = state.data.columns.map((c,i) => {
+    const width = columnWidth(c.id)
+    return `<div class="column-item">
       <input type="checkbox" data-index="${i}" ${c.visible?'checked':''}>
       <span title="${escAttr(c.title)}">${esc(c.title)}</span>
       <small>${esc(c.source)}</small>
-      <div class="column-move">
-        <button class="move-column" data-move="up" data-index="${i}" ${i===0?'disabled':''} title="Subir">▲</button>
-        <button class="move-column" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''} title="Bajar">▼</button>
-      </div>
-    </div>`).join('')
+      <label class="column-width">Ancho <input type="number" min="60" max="600" step="10" data-width-index="${i}" value="${width}"></label>
+      <div class="column-move"><button type="button" data-move="up" data-index="${i}" ${i===0?'disabled':''}>▲</button><button type="button" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''}>▼</button></div>
+    </div>`
+  }).join('')
 
   columnList.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach(box => box.addEventListener('change', async () => {
     const i = Number(box.dataset.index), c = state.data!.columns[i]
@@ -75,29 +103,45 @@ function renderColumnPanel(){
     catch (e) { status.textContent = `Error guardando columnas: ${String(e)}` }
   }))
 
-  columnList.querySelectorAll<HTMLButtonElement>('.move-column').forEach(button => button.addEventListener('click', async () => {
-    if (!state.data) return
-    const from = Number(button.dataset.index)
-    const direction = button.dataset.move
-    const to = direction === 'up' ? from - 1 : from + 1
-    if (from < 0 || to < 0 || to >= state.data.columns.length) return
+  columnList.querySelectorAll<HTMLInputElement>('input[data-width-index]').forEach(input => input.addEventListener('change', async () => {
+    const i = Number(input.dataset.widthIndex), c = state.data!.columns[i]
+    const width = clamp(Number(input.value) || 140,60,600)
+    state.visual.columnWidths[c.id] = width
+    input.value = String(width)
+    render()
+    try { await persistVisualSettings(); status.textContent = 'Ancho de columna guardado.' }
+    catch (e) { status.textContent = `Error guardando ancho: ${String(e)}` }
+  }))
 
-    const columns = state.data.columns
-    const [moved] = columns.splice(from, 1)
-    columns.splice(to, 0, moved)
+  columnList.querySelectorAll<HTMLButtonElement>('button[data-move]').forEach(button => button.addEventListener('click', async () => {
+    const i = Number(button.dataset.index)
+    const direction = button.dataset.move === 'up' ? -1 : 1
+    const target = i + direction
+    if (target < 0 || target >= state.data!.columns.length) return
+    const columns = state.data!.columns
+    ;[columns[i], columns[target]] = [columns[target], columns[i]]
     render()
     renderColumnPanel()
-
-    try {
-      await SetColumnOrder(columns.map(c => c.id))
-      status.textContent = 'Orden de columnas guardado.'
-    } catch (e) {
-      status.textContent = `Error guardando orden: ${String(e)}`
-    }
+    try { await SetColumnOrder(columns.map(c=>c.id)); status.textContent = 'Orden de columnas guardado.' }
+    catch (e) { status.textContent = `Error guardando orden: ${String(e)}` }
   }))
 }
 
 function setPanel(open:boolean){ state.columnsOpen=open; panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open); if(open) renderColumnPanel() }
+
+fontInput.addEventListener('change', async () => {
+  state.visual.fontSize = clamp(Number(fontInput.value) || 14,10,28)
+  applyVisualSettings(); render()
+  try { await persistVisualSettings(); status.textContent = 'Tamaño de fuente guardado.' }
+  catch (e) { status.textContent = `Error guardando fuente: ${String(e)}` }
+})
+
+rowHeightInput.addEventListener('change', async () => {
+  state.visual.rowHeight = clamp(Number(rowHeightInput.value) || 28,18,60)
+  applyVisualSettings(); render()
+  try { await persistVisualSettings(); status.textContent = 'Alto de fila guardado.' }
+  catch (e) { status.textContent = `Error guardando alto de fila: ${String(e)}` }
+})
 
 openBtn.addEventListener('click', async () => {
   openBtn.disabled = true; status.textContent = 'Importando Excel...'
@@ -115,15 +159,22 @@ byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false)
 backdrop.addEventListener('click', () => setPanel(false))
 byId<HTMLButtonElement>('all').addEventListener('click', async () => {
   if (!state.data) return
-  state.data.columns.forEach(c => c.visible=true); render(); renderColumnPanel(); await SetVisibleColumns(state.data.columns.map(c=>c.id))
+  state.data.columns.forEach(c=>c.visible=true); render(); renderColumnPanel(); await SetVisibleColumns(state.data.columns.map(c=>c.id))
 })
 byId<HTMLButtonElement>('none').addEventListener('click', async () => {
   if (!state.data) return
-  state.data.columns.forEach(c => c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
+  state.data.columns.forEach(c=>c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
 })
 byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; render(); status.textContent='Filtros limpiados.' })
 
-void GetSettings().then(() => render()).catch(() => render())
+void GetSettings().then((settings:any) => {
+  state.visual.settings = settings
+  state.visual.fontSize = clamp(Number(settings.font_size) || 14,10,28)
+  state.visual.rowHeight = clamp(Number(settings.row_height) || 28,18,60)
+  state.visual.columnWidths = {...(settings.column_widths ?? {})}
+  applyVisualSettings()
+  render()
+}).catch(() => render())
 
 function esc(v:string){ return v.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;') }
 function escAttr(v:string){ return esc(v) }
