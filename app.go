@@ -136,6 +136,22 @@ func validateCalculatedFormula(name, formula string, original string) error {
 	return nil
 }
 
+func syncCalculatedFormatSettings(ds *MemoryDataset) {
+	if ds == nil { return }
+	if appSettings.ColumnPercent == nil { appSettings.ColumnPercent = map[string]bool{} }
+	if appSettings.ColumnTypes == nil { appSettings.ColumnTypes = map[string]string{} }
+	for _, cc := range appSettings.CalculatedColumns {
+		c, ok := ds.columnByTitle(cc.Name)
+		if !ok { continue }
+		appSettings.ColumnPercent[c.ID] = cc.Percent
+		if cc.Percent {
+			appSettings.ColumnTypes[c.ID] = "porcentaje"
+		} else if strings.EqualFold(strings.TrimSpace(appSettings.ColumnTypes[c.ID]), "porcentaje") {
+			appSettings.ColumnTypes[c.ID] = "decimal"
+		}
+	}
+}
+
 func rebuildCalculatedColumns() {
 	if viewDataset == nil { return }
 	for i := len(viewDataset.Columns)-1; i >= 0; i-- {
@@ -143,12 +159,15 @@ func rebuildCalculatedColumns() {
 		id := viewDataset.Columns[i].ID
 		for r := range viewDataset.Records { delete(viewDataset.Records[r].Values, id) }
 		delete(appSettings.ColumnPercent, id)
+		delete(appSettings.ColumnTypes, id)
 		viewDataset.Columns = append(viewDataset.Columns[:i], viewDataset.Columns[i+1:]...)
 	}
 	ensureCalculatedDatasetColumns(viewDataset, appSettings)
+	syncCalculatedFormatSettings(viewDataset)
 	applyDatasetFormula(viewDataset, appSettings)
 	applySavedColumnVisibility(viewDataset)
 	applySavedColumnOrder(viewDataset)
+	_ = saveDatasetSettings(appSettings)
 }
 
 func (a *App) AddCalculatedColumn(name, formula string, percent bool) (DatasetDTO, error) {
@@ -329,7 +348,7 @@ func datasetDTO(ds *MemoryDataset) DatasetDTO {
 func datasetValueText(c DatasetColumn, v MemoryValue) string {
 	switch v.Type {
 	case ValueNumber:
-		if datasetColumnIsPercent(c) { return formatDatasetNumber(v.Number*100, datasetColumnDecimals(c)) }
+		if datasetColumnIsPercent(c) { return formatDatasetNumber(v.Number*100, datasetColumnDecimals(c)) + "%" }
 		return formatDatasetNumber(v.Number, datasetColumnDecimals(c))
 	case ValueDate:
 		return v.Raw
