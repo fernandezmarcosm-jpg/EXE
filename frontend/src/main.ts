@@ -143,6 +143,7 @@ function renderColumnPanel(){
       <span title="${escAttr(c.title)}">${esc(c.title)}</span>
       <small>${esc(c.source)}</small>
       <label class="column-width">Ancho <input type="number" min="60" max="600" step="10" data-width-index="${i}" value="${width}"></label>
+      <label class="column-background">Fondo <input type="color" data-background-index="${i}" value="${c.background||state.visual.settings?.column_background?.[c.id]||'#ffffff'}"></label>
       <div class="column-move"><button type="button" data-move="up" data-index="${i}" ${i===0?'disabled':''}>▲</button><button type="button" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''}>▼</button></div>
     </div>`
   }).join('')
@@ -169,6 +170,24 @@ function renderColumnPanel(){
   columnList.querySelectorAll<HTMLInputElement>('input[data-decimals-index]').forEach(inp=>inp.addEventListener('change',async()=>{
     const i=Number(inp.dataset.decimalsIndex),c=state.data!.columns[i],kind=columnFormatKind(c);let d=Math.max(0,Math.min(8,Number(inp.value)||0));if(kind==='entero')d=0;inp.value=String(d)
     try{state.data=await SetColumnFormat(c.id,d,kind==='porcentaje',kind,!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]').checked) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};render()}catch(e){status.textContent='Error guardando decimales: '+String(e)}
+  }))
+
+  columnList.querySelectorAll<HTMLInputElement>('input[data-thousands-index]').forEach(inp => inp.addEventListener('change', async () => {
+    const i=Number(inp.dataset.thousandsIndex), c=state.data!.columns[i], kind=columnFormatKind(c), d=kind==='entero'?0:Number(columnList.querySelector<HTMLInputElement>('input[data-decimals-index="'+i+'"]')!.value)||0
+    try { state.data=await SetColumnFormat(c.id,d,kind==='porcentaje',kind,inp.checked) as Dataset; state.visual.settings.column_thousands={...(state.visual.settings.column_thousands??{}),[c.id]:inp.checked||kind==='moneda'}; render(); renderColumnPanel() }
+    catch(e){ status.textContent='Error guardando separador: '+String(e) }
+  }))
+
+  columnList.querySelectorAll<HTMLInputElement>('input[data-sign-index]').forEach(inp => inp.addEventListener('change', async () => {
+    const i=Number(inp.dataset.signIndex), c=state.data!.columns[i]
+    try { state.data=await SetColumnSignHighlight(c.id,inp.checked) as Dataset; state.visual.settings.column_highlight_sign={...(state.visual.settings.column_highlight_sign??{}),[c.id]:inp.checked}; render(); renderColumnPanel() }
+    catch(e){ status.textContent='Error guardando color de signo: '+String(e) }
+  }))
+
+  columnList.querySelectorAll<HTMLInputElement>('input[data-background-index]').forEach(inp => inp.addEventListener('change', async () => {
+    const i=Number(inp.dataset.backgroundIndex), c=state.data!.columns[i]
+    try { state.data=await SetColumnBackground(c.id,inp.value) as Dataset; state.visual.settings.column_background={...(state.visual.settings.column_background??{}),[c.id]:inp.value}; render(); renderColumnPanel() }
+    catch(e){ status.textContent='Error guardando fondo: '+String(e) }
   }))
 
   columnList.querySelectorAll<HTMLInputElement>('input[data-width-index]').forEach(input => input.addEventListener('change', async () => {
