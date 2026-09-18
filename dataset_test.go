@@ -19,15 +19,20 @@ func TestMemoryDatasetReusesHeadersAcrossFilesAndStacksRows(t *testing.T){s:=def
 func TestBuildMemoryDatasetPreservesPhysicalDuplicates(t *testing.T){d:=&xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM1",Title:"ITEM",Index:1,Type:ValueText},{ID:"ITEM2",Title:"ITEM",Index:2,Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM1":{Raw:"A",Type:ValueText},"ITEM2":{Raw:"B",Type:ValueText}}}}}}}};s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{d},s);if err!=nil{t.Fatal(err)};ids:=map[string]int{};for _,c:=range m.Columns{if c.Source=="XLSX"{ids[c.ID]++}};if ids["ITEM"]!=1||ids["ITEM_2"]!=1{t.Fatalf("physical duplicate IDs: ITEM=%d ITEM_2=%d; want 1,1",ids["ITEM"],ids["ITEM_2"]) };if _,ok:=m.Records[0].Values["ITEM"];!ok{t.Fatal("missing first physical ITEM value")};if _,ok:=m.Records[0].Values["ITEM_2"];!ok{t.Fatal("missing second physical ITEM value")}}
 
 func TestBuildMemoryDatasetJoinsExcelCLAVEToCSVMaster(t *testing.T) {
-	d := &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{
-		Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText},{ID:"CLAVE",Title:"CLAVE",Index:2,Type:ValueText}},
-		Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM":{Raw:"1",Type:ValueText},"CLAVE":{Raw:"ACE0001",Type:ValueText}}}},
-	}}}}}
-	s := defaultDatasetSettings()
-	s.SOColumn = 1
-	m, err := BuildMemoryDataset([]*xlsxDoc{d}, s)
-	if err != nil { t.Fatal(err) }
+	d := &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText},{ID:"CLAVE",Title:"CLAVE",Index:2,Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM":{Raw:"1",Type:ValueText},"CLAVE":{Raw:"ACE0001",Type:ValueText}}}}}}}}
+	s := defaultDatasetSettings(); s.SOColumn = 1
+	m, err := BuildMemoryDataset([]*xlsxDoc{d}, s); if err != nil { t.Fatal(err) }
 	if m.Enriched <= 0 { t.Fatalf("Enriched=%d; want > 0", m.Enriched) }
-	v, ok := m.Records[0].Values["CSV:CLAVE"]
-	if !ok || strings.TrimSpace(v.Raw) == "" { t.Fatalf("CSV:CLAVE not populated: ok=%v raw=%q", ok, v.Raw) }
+	v, ok := m.Records[0].Values["CSV:CLAVE"]; if !ok || strings.TrimSpace(v.Raw) == "" { t.Fatalf("CSV:CLAVE not populated: ok=%v raw=%q", ok, v.Raw) }
+}
+
+func TestBuildMemoryDatasetFallsBackToITEMForCSVJoin(t *testing.T) {
+	d := &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{
+		Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText}},
+		Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM":{Raw:"ACE0001",Type:ValueText}}}},
+	}}}}}
+	s := defaultDatasetSettings(); s.SOColumn = 1; s.JoinExcelColumn = "SKU"
+	m, err := BuildMemoryDataset([]*xlsxDoc{d}, s); if err != nil { t.Fatal(err) }
+	if m.Enriched <= 0 { t.Fatalf("Enriched=%d; want > 0 using ITEM fallback", m.Enriched) }
+	v, ok := m.Records[0].Values["CSV:CLAVE"]; if !ok || strings.TrimSpace(v.Raw) == "" { t.Fatalf("CSV:CLAVE not populated through ITEM fallback: ok=%v raw=%q", ok, v.Raw) }
 }
