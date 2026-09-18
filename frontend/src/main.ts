@@ -1,13 +1,15 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean }
-type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[] }
+type CalculatedColumn = { Name:string; Formula:string; Percent:boolean }
+type SubtotalRow = { group_value:string; values:Record<string,string>; total:boolean }
+type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 
-const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; visual:VisualState} = {
+const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
   data:null, filters:{}, columnsOpen:false,
-  visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}
+  visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
 }
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -15,7 +17,7 @@ app.innerHTML = `
 <div class="shell">
   <header class="toolbar">
     <button id="open">ABRIR EXCEL</button>
-    <button id="columns">COLUMNAS</button>
+    <button id="columns">COLUMNAS</button><button id="calculated">CAMPOS CALCULADOS</button>
     <label class="visual-control">Fuente <input id="font-size" type="number" min="10" max="28" step="1"></label>
     <label class="visual-control">Fila <input id="row-height" type="number" min="18" max="60" step="1"></label>
     <div id="status" class="status">Seleccione uno o varios archivos XLSX.</div>
@@ -29,7 +31,7 @@ app.innerHTML = `
   <div class="panel-actions">
     <button id="all">MARCAR TODAS</button><button id="none">DESMARCAR TODAS</button><button id="clear">LIMPIAR FILTROS</button>
   </div>
-  <div id="column-list" class="column-list"></div>
+  <div id="column-list" class="column-list"></div><section class="panel-section"><h3>CAMPOS CALCULADOS</h3><div class="calc-form"><input id="calc-name" placeholder="Nombre"><input id="calc-formula" placeholder="Fórmula"><label><input id="calc-percent" type="checkbox"> Porcentaje</label><div id="formula-tokens" class="formula-tokens"></div><div><button id="calc-save">AGREGAR</button><button id="calc-cancel" class="hidden">CANCELAR</button></div></div><div id="calc-list"></div></section><section class="panel-section"><h3>SUBTOTALES</h3><label class="subtotal-control">Agrupar por <select id="subtotal-group"></select></label><div id="subtotal-fields"></div></section>
 </aside>`
 
 const byId = <T extends Element>(id:string) => document.getElementById(id) as unknown as T
@@ -42,6 +44,15 @@ const backdrop = byId<HTMLDivElement>('backdrop')
 const columnList = byId<HTMLDivElement>('column-list')
 const fontInput = byId<HTMLInputElement>('font-size')
 const rowHeightInput = byId<HTMLInputElement>('row-height')
+const calcName = byId<HTMLInputElement>('calc-name')
+const calcFormula = byId<HTMLInputElement>('calc-formula')
+const calcPercent = byId<HTMLInputElement>('calc-percent')
+const calcSave = byId<HTMLButtonElement>('calc-save')
+const calcCancel = byId<HTMLButtonElement>('calc-cancel')
+const calcList = byId<HTMLDivElement>('calc-list')
+const formulaTokens = byId<HTMLDivElement>('formula-tokens')
+const subtotalGroup = byId<HTMLSelectElement>('subtotal-group')
+const subtotalFields = byId<HTMLDivElement>('subtotal-fields')
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
 function filteredRows(){
@@ -53,6 +64,8 @@ function filteredRows(){
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
 function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),60,600) }
+function isNumericColumn(c:Column){ return c.type==='number' || c.source==='CALCULADA' }
+function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; return 'decimal' }
 
 async function persistVisualSettings(){
   if (!state.visual.settings) return
@@ -78,6 +91,8 @@ function render(){
   const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
   const body = rows.map(row => `<tr>${cols.map(c => `<td>${esc(row[c.id] ?? '')}</td>`).join('')}</tr>`).join('')
   tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
+  const tbody=tableWrap.querySelector('tbody')!
+  ;(state.data.subtotals??[]).forEach(sr=>{const tr=document.createElement('tr');tr.className=sr.total?'subtotal subtotal-total':'subtotal';cols.forEach((c,i)=>{const td=document.createElement('td');td.textContent=sr.values[c.id] ?? (i===0?sr.group_value:'');tr.appendChild(td)});tbody.appendChild(tr)})
   tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; render() }))
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
 }
@@ -101,6 +116,22 @@ function renderColumnPanel(){
     render()
     try { await SetVisibleColumns(state.data!.columns.filter(x=>x.visible).map(x=>x.id)); status.textContent = 'Configuración de columnas guardada.' }
     catch (e) { status.textContent = `Error guardando columnas: ${String(e)}` }
+  }))
+
+  columnList.querySelectorAll<HTMLDivElement>('.column-item').forEach((item,i)=>{
+    const c=state.data!.columns[i]; if(!isNumericColumn(c)) return
+    const controls=document.createElement('span'); controls.className='column-format-controls'
+    const kind=columnFormatKind(c); const dec=Number(state.visual.settings?.column_decimals?.[c.id] ?? 2)
+    controls.innerHTML='<select data-format-index="'+i+'"><option value="entero">Entero</option><option value="decimal">Decimal</option><option value="porcentaje">Porcentaje</option></select><input type="number" min="0" max="8" step="1" data-decimals-index="'+i+'" value="'+dec+'">'
+    item.appendChild(controls); const sel=controls.querySelector<HTMLSelectElement>('select')!; sel.value=kind
+  })
+  columnList.querySelectorAll<HTMLSelectElement>('select[data-format-index]').forEach(sel=>sel.addEventListener('change',async()=>{
+    const i=Number(sel.dataset.formatIndex),c=state.data!.columns[i];let d=Number(columnList.querySelector<HTMLInputElement>('input[data-decimals-index="'+i+'"]')!.value)||0;if(sel.value==='entero')d=0
+    try{state.data=await SetColumnFormat(c.id,d,sel.value==='porcentaje',sel.value) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};state.visual.settings.column_percent={...(state.visual.settings.column_percent??{}),[c.id]:sel.value==='porcentaje'};state.visual.settings.column_types={...(state.visual.settings.column_types??{}),[c.id]:sel.value};render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error guardando formato: '+String(e)}
+  }))
+  columnList.querySelectorAll<HTMLInputElement>('input[data-decimals-index]').forEach(inp=>inp.addEventListener('change',async()=>{
+    const i=Number(inp.dataset.decimalsIndex),c=state.data!.columns[i],kind=columnFormatKind(c);let d=Math.max(0,Math.min(8,Number(inp.value)||0));if(kind==='entero')d=0;inp.value=String(d)
+    try{state.data=await SetColumnFormat(c.id,d,kind==='porcentaje',kind) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};render()}catch(e){status.textContent='Error guardando decimales: '+String(e)}
   }))
 
   columnList.querySelectorAll<HTMLInputElement>('input[data-width-index]').forEach(input => input.addEventListener('change', async () => {
@@ -127,7 +158,12 @@ function renderColumnPanel(){
   }))
 }
 
-function setPanel(open:boolean){ state.columnsOpen=open; panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open); if(open) renderColumnPanel() }
+async function refreshCalculatedList(){state.calculated.list=await ListCalculatedColumns() as CalculatedColumn[];renderCalculatedPanel()}
+function renderCalculatedPanel(){formulaTokens.innerHTML=state.data?.columns.map(c=>'<button type="button" data-token="'+escAttr('['+c.title+']')+'">'+esc(c.title)+'</button>').join('')??'';formulaTokens.querySelectorAll<HTMLButtonElement>('button[data-token]').forEach(b=>b.addEventListener('click',()=>{calcFormula.value+=(calcFormula.value&&!/[+\\-*/( ]$/.test(calcFormula.value)?' ':'')+b.dataset.token;calcFormula.focus()}));calcList.innerHTML=state.calculated.list.map((c,i)=>'<div class="calc-row"><span><strong>'+esc(c.Name)+'</strong><small>'+esc(c.Formula)+(c.Percent?' · %':'')+'</small></span><span><button data-edit="'+i+'">Editar</button> <button data-delete="'+i+'">Eliminar</button></span></div>').join('')||'<div class="empty">No hay campos calculados.</div>';calcList.querySelectorAll<HTMLButtonElement>('button[data-edit]').forEach(b=>b.addEventListener('click',()=>{const c=state.calculated.list[Number(b.dataset.edit)];state.calculated.editingOriginal=c.Name;calcName.value=c.Name;calcFormula.value=c.Formula;calcPercent.checked=c.Percent;calcSave.textContent='GUARDAR';calcCancel.classList.remove('hidden')}));calcList.querySelectorAll<HTMLButtonElement>('button[data-delete]').forEach(b=>b.addEventListener('click',async()=>{const c=state.calculated.list[Number(b.dataset.delete)];if(!confirm('Eliminar "'+c.Name+'"?'))return;try{state.data=await DeleteCalculatedColumn(c.Name) as Dataset;await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error eliminando: '+String(e)}}))}
+function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=visibleColumns().filter(isNumericColumn).map(c=>'<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option><option value="suma">Suma</option><option value="promedio">Promedio</option></select></label>').join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
+async function saveSubtotals(){const agg:Record<string,string>={};subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{if(s.value)agg[s.dataset.subtotalId!]=s.value});try{state.data=await SetSubtotals(subtotalGroup.value,agg) as Dataset;state.visual.settings.subtotal_column=subtotalGroup.value;state.visual.settings.subtotal_agg=agg;render()}catch(e){status.textContent='Error guardando subtotales: '+String(e)}}
+function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
+async function setPanel(open:boolean){state.columnsOpen=open;panel.classList.toggle('hidden',!open);backdrop.classList.toggle('hidden',!open);if(open){renderColumnPanel();try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)};renderSubtotalControls()}}
 
 fontInput.addEventListener('change', async () => {
   state.visual.fontSize = clamp(Number(fontInput.value) || 14,10,28)
@@ -155,6 +191,7 @@ openBtn.addEventListener('click', async () => {
   finally { openBtn.disabled = false }
 })
 byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true))
+byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true))
 byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
 backdrop.addEventListener('click', () => setPanel(false))
 byId<HTMLButtonElement>('all').addEventListener('click', async () => {
@@ -166,12 +203,16 @@ byId<HTMLButtonElement>('none').addEventListener('click', async () => {
   state.data.columns.forEach(c=>c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
 })
 byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; render(); status.textContent='Filtros limpiados.' })
+calcSave.addEventListener('click',async()=>{try{state.data=(state.calculated.editingOriginal?await UpdateCalculatedColumn(state.calculated.editingOriginal,calcName.value,calcFormula.value,calcPercent.checked):await AddCalculatedColumn(calcName.value,calcFormula.value,calcPercent.checked)) as Dataset;resetCalc();await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls();status.textContent='Campo calculado guardado.'}catch(e){status.textContent='Error guardando: '+String(e)}})
+calcCancel.addEventListener('click',resetCalc)
+subtotalGroup.addEventListener('change',saveSubtotals)
 
 void GetSettings().then((settings:any) => {
   state.visual.settings = settings
   state.visual.fontSize = clamp(Number(settings.font_size) || 14,10,28)
   state.visual.rowHeight = clamp(Number(settings.row_height) || 28,18,60)
   state.visual.columnWidths = {...(settings.column_widths ?? {})}
+  state.visual.settings = {...settings,column_decimals:{...(settings.column_decimals??{})},column_percent:{...(settings.column_percent??{})},column_types:{...(settings.column_types??{})},subtotal_agg:{...(settings.subtotal_agg??{})}}
   applyVisualSettings()
   render()
 }).catch(() => render())
