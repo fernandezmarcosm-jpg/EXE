@@ -57,15 +57,23 @@ type SubtotalRow struct{GroupValue string `json:"group_value"`;Values map[string
 func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{
 	if ds==nil||strings.TrimSpace(appSettings.SubtotalColumn)==""||len(appSettings.SubtotalAgg)==0{return nil}
 	group,ok:=ds.columnByTitle(appSettings.SubtotalColumn);if !ok{for _,c:=range ds.Columns{if c.ID==appSettings.SubtotalColumn{group=c;ok=true;break}}};if !ok{return nil}
-	type accum struct{sum map[string]float64;count map[string]int}
+	type accum struct{sum map[string]float64;count map[string]int;unique map[string]map[string]struct{}}
 	groups:=map[string]*accum{};order:=[]string{}
-	total:=&accum{sum:map[string]float64{},count:map[string]int{}}
+	total:=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}}
 	for _,r:=range ds.Records{
-		gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{}};order=append(order,gv)}
+		gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};order=append(order,gv)}
 		g:=groups[gv]
-		for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"{continue};cok:=false;for _,c:=range ds.Columns{if c.ID==id{cok=true;v,has:=r.Values[id];if has&&v.Type==ValueNumber{g.sum[id]+=v.Number;g.count[id]++;total.sum[id]+=v.Number;total.count[id]++};break}};_ = cok}
+		for id,agg:=range appSettings.SubtotalAgg{
+			if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue}
+			for _,c:=range ds.Columns{if c.ID!=id{continue}
+				v,has:=r.Values[id]
+				if agg=="conteo_unico"{raw:=strings.TrimSpace(v.Raw);if has&&raw!=""{if g.unique[id]==nil{g.unique[id]=map[string]struct{}{}};if total.unique[id]==nil{total.unique[id]=map[string]struct{}{}};g.unique[id][raw]=struct{}{};total.unique[id][raw]=struct{}{}};break}
+				if has&&v.Type==ValueNumber{g.sum[id]+=v.Number;g.count[id]++;total.sum[id]+=v.Number;total.count[id]++}
+				break
+			}
+		}
 	}
-	makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"{continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}}
+	makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};if agg=="conteo_unico"{vals[id]=strconv.Itoa(len(a.unique[id]));continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}}
 	out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));return out
 }
 
