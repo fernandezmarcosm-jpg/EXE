@@ -8,10 +8,65 @@ var embeddedMasterCSV []byte
 type CalculatedColumn struct{Name string; Formula string; Percent bool}
 type DatasetSettings struct{Decimals int `json:"decimals"`;FontSize int `json:"font_size"`;RowHeight int `json:"row_height"`;ColumnWidths map[string]int `json:"column_widths"`;SOColumn int `json:"so_column"`;JoinExcelColumn string `json:"join_excel_column"`;FormulaTitle string `json:"formula_title"`;Formula string `json:"formula"`;SubtotalColumn string `json:"subtotal_column"`;SubtotalEnabled bool `json:"subtotal_enabled"`;ColumnTitles map[string]string `json:"column_titles"`;ColumnOrder []string `json:"column_order"`;MaxColumns int `json:"max_columns"`;VisibleColumns []string `json:"visible_columns"`;ColumnDecimals map[string]int `json:"column_decimals"`;SubtotalColumns []string `json:"subtotal_columns"`;ColumnPercent map[string]bool `json:"column_percent"`;ColumnCurrency map[string]bool `json:"column_currency"`;ColumnThousands map[string]bool `json:"column_thousands"`;HighlightNegative map[string]bool `json:"highlight_negative"`;ColumnHighlightSign map[string]bool `json:"column_highlight_sign"`;ColumnBackground map[string]string `json:"column_background"`;ColumnAlign map[string]string `json:"column_align"`;ColumnTypes map[string]string `json:"column_types"`;CalculatedColumns []CalculatedColumn `json:"calculated_columns"`;SubtotalAgg map[string]string `json:"subtotal_agg"`}
 func defaultDatasetSettings()DatasetSettings{return DatasetSettings{Decimals:2,FontSize:10,RowHeight:28,ColumnWidths:map[string]int{},SOColumn:5,JoinExcelColumn:"CLAVE",FormulaTitle:"CALCULADA",Formula:"",SubtotalEnabled:false,ColumnTitles:map[string]string{},ColumnOrder:[]string{},MaxColumns:500,VisibleColumns:[]string{},ColumnDecimals:map[string]int{},ColumnPercent:map[string]bool{},ColumnCurrency:map[string]bool{},ColumnThousands:map[string]bool{},HighlightNegative:map[string]bool{},ColumnHighlightSign:map[string]bool{},ColumnBackground:map[string]string{},ColumnAlign:map[string]string{},ColumnTypes:map[string]string{},CalculatedColumns:[]CalculatedColumn{},SubtotalAgg:map[string]string{}}}
-func datasetSettingsPath()string{if d,e:=os.UserConfigDir();e==nil{return filepath.Join(d,"GestionSO V57","dataset.txt")};return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")}
-func loadDatasetSettings()DatasetSettings{s:=defaultDatasetSettings();if b,e:=os.ReadFile(datasetSettingsPath());e==nil&&json.Unmarshal(b,&s)==nil{datasetSettingsNormalize(&s);return s};return s}
+func datasetSettingsPortablePath()string{
+	if x,e:=os.Executable();e==nil&&strings.TrimSpace(x)!=""{
+		return filepath.Join(filepath.Dir(x),"dataset.txt")
+	}
+	if d,e:=os.Getwd();e==nil&&strings.TrimSpace(d)!=""{
+		return filepath.Join(d,"dataset.txt")
+	}
+	return ""
+}
+func datasetSettingsFallbackPath()string{
+	if d,e:=os.UserConfigDir();e==nil&&strings.TrimSpace(d)!=""{
+		return filepath.Join(d,"GestionSO V57","dataset.txt")
+	}
+	return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")
+}
+func datasetSettingsPaths()[]string{
+	paths:=make([]string,0,2)
+	add:=func(p string){if strings.TrimSpace(p)==""{return};for _,x:=range paths{if filepath.Clean(x)==filepath.Clean(p){return}};paths=append(paths,p)}
+	add(datasetSettingsPortablePath())
+	add(datasetSettingsFallbackPath())
+	return paths
+}
+func datasetSettingsPath()string{
+	paths:=datasetSettingsPaths()
+	if len(paths)>0{return paths[0]}
+	return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")
+}
+func loadDatasetSettings()DatasetSettings{
+	s:=defaultDatasetSettings()
+	for _,p:=range datasetSettingsPaths(){
+		b,e:=os.ReadFile(p)
+		if e!=nil{continue}
+		if json.Unmarshal(b,&s)==nil{
+			datasetSettingsNormalize(&s)
+			return s
+		}
+	}
+	return s
+}
 func datasetSettingsNormalize(s *DatasetSettings){if s.Decimals<0||s.Decimals>8{s.Decimals=2};if s.FontSize<=0{s.FontSize=14};if s.FontSize<10{s.FontSize=10};if s.FontSize>28{s.FontSize=28};if s.RowHeight<18||s.RowHeight>60{s.RowHeight=28};if s.ColumnWidths==nil{s.ColumnWidths=map[string]int{}};if s.SOColumn<1||s.SOColumn>1024{s.SOColumn=5};if s.MaxColumns<1||s.MaxColumns>100{s.MaxColumns=20};if s.ColumnTitles==nil{s.ColumnTitles=map[string]string{}};if s.ColumnDecimals==nil{s.ColumnDecimals=map[string]int{}};if s.ColumnPercent==nil{s.ColumnPercent=map[string]bool{}};if s.ColumnCurrency==nil{s.ColumnCurrency=map[string]bool{}};if s.ColumnThousands==nil{s.ColumnThousands=map[string]bool{}};if s.ColumnHighlightSign==nil{s.ColumnHighlightSign=map[string]bool{}};if s.ColumnBackground==nil{s.ColumnBackground=map[string]string{}};if s.ColumnAlign==nil{s.ColumnAlign=map[string]string{}};for id,v:=range s.ColumnAlign{v=strings.ToLower(strings.TrimSpace(v));if v!="left"&&v!="center"&&v!="right"{delete(s.ColumnAlign,id)}else{s.ColumnAlign[id]=v}};if s.HighlightNegative==nil{s.HighlightNegative=map[string]bool{}};if s.ColumnTypes==nil{s.ColumnTypes=map[string]string{}};if s.SubtotalAgg==nil{s.SubtotalAgg=map[string]string{}}}
-func saveDatasetSettings(s DatasetSettings)error{datasetSettingsNormalize(&s);if viewDataset!=nil{keys:=make([]string,0,len(viewDataset.Columns));for _,c:=range viewDataset.Columns{if c.Visible{keys=append(keys,datasetColumnKey(c))}};if len(keys)==0{keys=[]string{"__NONE__"}};s.VisibleColumns=keys};p:=datasetSettingsPath();if e:=os.MkdirAll(filepath.Dir(p),0755);e!=nil{return e};b,e:=json.MarshalIndent(s,"","  ");if e!=nil{return e};return os.WriteFile(p,b,0644)}
+func saveDatasetSettings(s DatasetSettings)error{
+	datasetSettingsNormalize(&s)
+	if viewDataset!=nil{
+		keys:=make([]string,0,len(viewDataset.Columns))
+		for _,c:=range viewDataset.Columns{if c.Visible{keys=append(keys,datasetColumnKey(c))}}
+		if len(keys)==0{keys=[]string{"__NONE__"}}
+		s.VisibleColumns=keys
+	}
+	b,e:=json.MarshalIndent(s,"","  ")
+	if e!=nil{return e}
+	paths:=datasetSettingsPaths()
+	var lastErr error
+	for _,p:=range paths{
+		if e:=os.MkdirAll(filepath.Dir(p),0755);e!=nil{lastErr=e;continue}
+		if e:=os.WriteFile(p,b,0644);e==nil{return nil}else{lastErr=e}
+	}
+	if lastErr!=nil{return lastErr}
+	return fmt.Errorf("no hay una ruta disponible para guardar dataset.txt")
+}
 
 type DatasetColumn struct{ID,Title,Source string;Type ValueType;Width int;Visible bool}
 type DatasetRecord struct{SO string;Values map[string]MemoryValue}
