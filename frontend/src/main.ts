@@ -241,7 +241,7 @@ function renderColumnPanel(){
       <label class="column-alias">Alias <input type="text" data-alias-index="${i}" value="${escAttr(c.title)}"></label>
       <small>${esc(c.source)}</small>
       <label class="column-alignment">Alineación <select data-align-index="${i}"><option value="left">Izq.</option><option value="center">Centro</option><option value="right">Der.</option></select></label>
-      <label class="column-width">Ancho <input type="number" min="20" max="600" step="10" data-width-index="${i}" value="${width}"></label>
+      <label class="column-width">Ancho <input type="number" min="8" max="600" step="10" data-width-index="${i}" value="${width}"></label>
       <label class="column-background">Fondo <input type="color" data-background-index="${i}" value="${c.background||state.visual.settings?.column_background?.[c.id]||'#ffffff'}"></label>
       <div class="column-move"><button type="button" data-move="up" data-index="${i}" ${i===0?'disabled':''}>▲</button><button type="button" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''}>▼</button></div>
     </div>`
