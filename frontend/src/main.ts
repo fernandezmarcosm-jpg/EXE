@@ -118,6 +118,7 @@ function render(){
   }
   tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${bodyParts.join('')}</tbody></table>`
   tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() }))
+  renderBody()
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
 }
 
