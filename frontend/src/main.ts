@@ -68,7 +68,7 @@ function filteredRows(){
 }
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
-function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),8,600) }
+function columnWidth(id:string){ return Math.round(clamp(Number(state.visual.columnWidths[id] ?? 140),8,600)) }
 function isNumericColumn(c:Column){ return c.type.toLowerCase()==='number' || c.source==='CALCULADA' }
 function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje'||t==='moneda')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; if(state.visual.settings?.column_currency?.[c.id])return 'moneda'; return 'decimal' }
 function columnThousands(c:Column){ return !!state.visual.settings?.column_thousands?.[c.id] || columnFormatKind(c)==='moneda' }
@@ -79,7 +79,7 @@ async function persistVisualSettings(){
   if (!state.visual.settings) return
   state.visual.settings.font_size = state.visual.fontSize
   state.visual.settings.row_height = state.visual.rowHeight
-  state.visual.settings.column_widths = {...state.visual.columnWidths}
+  state.visual.settings.column_widths = Object.fromEntries(Object.entries(state.visual.columnWidths).map(([id,width]) => [id,Math.round(clamp(Number(width),8,600))]))
   await SaveSettings(state.visual.settings)
 }
 
@@ -141,7 +141,7 @@ function render(){
       let currentWidth = startWidth
       const move = (moveEvent: PointerEvent) => {
         moveEvent.preventDefault()
-        currentWidth = clamp(startWidth + (moveEvent.clientX - startX), 8, 600)
+        currentWidth = Math.round(clamp(startWidth + (moveEvent.clientX - startX), 8, 600))
         state.visual.columnWidths[id] = currentWidth
         col.style.width = `${currentWidth}px`
         const table = tableWrap.querySelector<HTMLTableElement>('table')
