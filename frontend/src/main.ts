@@ -1,7 +1,7 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign } from '../wailsjs/go/main/App'
 
-type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string }
+type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
 type CalculatedColumn = { Name:string; Formula:string; Percent:boolean }
 type SubtotalRow = { group_value:string; values:Record<string,string>; total:boolean }
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
@@ -68,12 +68,12 @@ function filteredRows(){
 }
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
-function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),60,600) }
+function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),20,600) }
 function isNumericColumn(c:Column){ return c.type.toLowerCase()==='number' || c.source==='CALCULADA' }
 function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje'||t==='moneda')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; if(state.visual.settings?.column_currency?.[c.id])return 'moneda'; return 'decimal' }
 function columnThousands(c:Column){ return !!state.visual.settings?.column_thousands?.[c.id] || columnFormatKind(c)==='moneda' }
 function parseCellNumber(value:string){ const s=value.trim().replace(/[%$\s]/g,'').replace(/\./g,'').replace(',', '.'); const n=Number(s); return Number.isFinite(n)?n:null }
-function cellMarkup(c:Column,value:string){ const bg=c.background||state.visual.settings?.column_background?.[c.id]||''; const sign=c.highlight_sign && isNumericColumn(c) ? parseCellNumber(value) : null; const cls=sign!==null?(sign<0?'cell-neg':sign>0?'cell-pos':''):''; const style=bg?' style="background:'+escAttr(bg)+'"':''; return '<td class="'+cls+'"'+style+'>'+esc(value)+'</td>' }
+function cellMarkup(c:Column,value:string){ const bg=c.background||state.visual.settings?.column_background?.[c.id]||''; const sign=c.highlight_sign && isNumericColumn(c) ? parseCellNumber(value) : null; const cls=sign!==null?(sign<0?'cell-neg':sign>0?'cell-pos':''):''; const align=c.align||'left'; const styles=(bg?'background:'+escAttr(bg)+';':'')+'text-align:'+align+';'; return '<td class="'+cls+'" style="'+styles+'">'+esc(value)+'</td>' }
 
 async function persistVisualSettings(){
   if (!state.visual.settings) return
@@ -96,7 +96,7 @@ function render(){
   if (!state.data) { tableWrap.innerHTML = '<div class="empty">No hay datos cargados.</div>'; return }
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
-  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
+  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."></th>`).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
   const displayRows = activeSubtotal ? (() => {
@@ -193,7 +193,8 @@ function renderColumnPanel(){
       <input type="checkbox" data-index="${i}" ${c.visible?'checked':''}>
       <span title="${escAttr(c.title)}">${esc(c.title)}</span>
       <small>${esc(c.source)}</small>
-      <label class="column-width">Ancho <input type="number" min="60" max="600" step="10" data-width-index="${i}" value="${width}"></label>
+      <label class="column-alignment">Alineación <select data-align-index="${i}"><option value="left">Izq.</option><option value="center">Centro</option><option value="right">Der.</option></select></label>
+      <label class="column-width">Ancho <input type="number" min="20" max="600" step="10" data-width-index="${i}" value="${width}"></label>
       <label class="column-background">Fondo <input type="color" data-background-index="${i}" value="${c.background||state.visual.settings?.column_background?.[c.id]||'#ffffff'}"></label>
       <div class="column-move"><button type="button" data-move="up" data-index="${i}" ${i===0?'disabled':''}>▲</button><button type="button" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''}>▼</button></div>
     </div>`
@@ -214,6 +215,13 @@ function renderColumnPanel(){
     controls.innerHTML='<select data-format-index="'+i+'"><option value="entero">Entero</option><option value="decimal">Decimal</option><option value="porcentaje">Porcentaje</option><option value="moneda">Moneda ($)</option></select><input type="number" min="0" max="8" step="1" data-decimals-index="'+i+'" value="'+dec+'"><label><input type="checkbox" data-thousands-index="'+i+'" '+(thousands?'checked':'')+'> Miles</label><label><input type="checkbox" data-sign-index="'+i+'" '+(sign?'checked':'')+'> Color +/-</label>'
     item.appendChild(controls); const sel=controls.querySelector<HTMLSelectElement>('select')!; sel.value=kind
   })
+  columnList.querySelectorAll<HTMLSelectElement>('select[data-align-index]').forEach(sel => sel.addEventListener('change', async () => {
+    const i = Number(sel.dataset.alignIndex), col = state.data!.columns[i]
+    try { state.data = await SetColumnAlign(col.id, sel.value) as Dataset; render(); renderColumnPanel() }
+    catch(e) { status.textContent = 'Error guardando alineación: '+String(e) }
+  }))
+  columnList.querySelectorAll<HTMLSelectElement>('select[data-align-index]').forEach((sel,i) => { sel.value = state.data!.columns[i].align || 'left' })
+
   columnList.querySelectorAll<HTMLSelectElement>('select[data-format-index]').forEach(sel=>sel.addEventListener('change',async()=>{
     const i=Number(sel.dataset.formatIndex),c=state.data!.columns[i];let d=Number(columnList.querySelector<HTMLInputElement>('input[data-decimals-index="'+i+'"]')!.value)||0;if(sel.value==='entero')d=0
     try{state.data=await SetColumnFormat(c.id,d,sel.value==='porcentaje',sel.value,!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]')?.checked) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};state.visual.settings.column_percent={...(state.visual.settings.column_percent??{}),[c.id]:sel.value==='porcentaje'};state.visual.settings.column_types={...(state.visual.settings.column_types??{}),[c.id]:sel.value};state.visual.settings.column_currency={...(state.visual.settings.column_currency??{}),[c.id]:sel.value==='moneda'};state.visual.settings.column_thousands={...(state.visual.settings.column_thousands??{}),[c.id]:sel.value==='moneda'||!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]')?.checked};render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error guardando formato: '+String(e)}
@@ -243,7 +251,7 @@ function renderColumnPanel(){
 
   columnList.querySelectorAll<HTMLInputElement>('input[data-width-index]').forEach(input => input.addEventListener('change', async () => {
     const i = Number(input.dataset.widthIndex), c = state.data!.columns[i]
-    const width = clamp(Number(input.value) || 140,60,600)
+    const width = clamp(Number(input.value) || 140,20,600)
     state.visual.columnWidths[c.id] = width
     input.value = String(width)
     render()
