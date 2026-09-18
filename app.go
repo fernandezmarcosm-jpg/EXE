@@ -27,6 +27,7 @@ type DatasetDTO struct {
 	CSVRows int `json:"csv_rows"`
 	Enriched int `json:"enriched"`
 	SourceFiles []string `json:"source_files"`
+	Subtotals []SubtotalRow `json:"subtotals"`
 }
 
 func NewApp() *App { return &App{} }
@@ -99,6 +100,135 @@ func (a *App) SetColumnWidth(id string, px int) error {
 	if appSettings.ColumnWidths == nil { appSettings.ColumnWidths = map[string]int{} }
 	appSettings.ColumnWidths[id] = px
 	return saveDatasetSettings(appSettings)
+}
+
+func (a *App) ListCalculatedColumns() []CalculatedColumn {
+	out := make([]CalculatedColumn, len(appSettings.CalculatedColumns))
+	copy(out, appSettings.CalculatedColumns)
+	return out
+}
+
+func calculatedNameExists(name, except string) bool {
+	n := strings.TrimSpace(name)
+	for _, c := range viewDataset.Columns {
+		if strings.EqualFold(strings.TrimSpace(c.Title), n) && !strings.EqualFold(strings.TrimSpace(c.Title), strings.TrimSpace(except)) {
+			return true
+		}
+	}
+	for _, c := range appSettings.CalculatedColumns {
+		if strings.EqualFold(strings.TrimSpace(c.Name), n) && !strings.EqualFold(strings.TrimSpace(c.Name), strings.TrimSpace(except)) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateCalculatedFormula(name, formula string, original string) error {
+	name = strings.TrimSpace(name)
+	formula = strings.TrimSpace(formula)
+	if name == "" { return fmt.Errorf("el nombre del campo calculado no puede estar vacío") }
+	if formula == "" { return fmt.Errorf("la fórmula no puede estar vacía") }
+	if viewDataset == nil || len(viewDataset.Records) == 0 { return fmt.Errorf("no hay datos cargados para validar la fórmula") }
+	if calculatedNameExists(name, original) { return fmt.Errorf("ya existe una columna con el nombre %q", name) }
+	if _, ok := evaluateFormula(formula, viewDataset.Records[0], viewDataset.Columns); !ok {
+		return fmt.Errorf("fórmula inválida o referencia a una columna no numérica: %s", formula)
+	}
+	return nil
+}
+
+func rebuildCalculatedColumns() {
+	if viewDataset == nil { return }
+	for i := len(viewDataset.Columns)-1; i >= 0; i-- {
+		if viewDataset.Columns[i].Source != "CALCULADA" { continue }
+		id := viewDataset.Columns[i].ID
+		for r := range viewDataset.Records { delete(viewDataset.Records[r].Values, id) }
+		delete(appSettings.ColumnPercent, id)
+		viewDataset.Columns = append(viewDataset.Columns[:i], viewDataset.Columns[i+1:]...)
+	}
+	ensureCalculatedDatasetColumns(viewDataset, appSettings)
+	applyDatasetFormula(viewDataset, appSettings)
+	applySavedColumnVisibility(viewDataset)
+	applySavedColumnOrder(viewDataset)
+}
+
+func (a *App) AddCalculatedColumn(name, formula string, percent bool) (DatasetDTO, error) {
+	name = strings.TrimSpace(name); formula = strings.TrimSpace(formula)
+	if err := validateCalculatedFormula(name, formula, ""); err != nil { return DatasetDTO{}, err }
+	appSettings.CalculatedColumns = append(appSettings.CalculatedColumns, CalculatedColumn{Name:name, Formula:formula, Percent:percent})
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	rebuildCalculatedColumns()
+	return datasetDTO(viewDataset), nil
+}
+
+func (a *App) UpdateCalculatedColumn(originalName, name, formula string, percent bool) (DatasetDTO, error) {
+	originalName = strings.TrimSpace(originalName); name = strings.TrimSpace(name); formula = strings.TrimSpace(formula)
+	idx := -1
+	for i, c := range appSettings.CalculatedColumns {
+		if strings.EqualFold(strings.TrimSpace(c.Name), originalName) { idx = i; break }
+	}
+	if idx < 0 { return DatasetDTO{}, fmt.Errorf("campo calculado no encontrado: %s", originalName) }
+	if err := validateCalculatedFormula(name, formula, originalName); err != nil { return DatasetDTO{}, err }
+	appSettings.CalculatedColumns[idx] = CalculatedColumn{Name:name, Formula:formula, Percent:percent}
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	rebuildCalculatedColumns()
+	return datasetDTO(viewDataset), nil
+}
+
+func (a *App) DeleteCalculatedColumn(name string) (DatasetDTO, error) {
+	name = strings.TrimSpace(name)
+	idx := -1
+	for i, c := range appSettings.CalculatedColumns {
+		if strings.EqualFold(strings.TrimSpace(c.Name), name) { idx = i; break }
+	}
+	if idx < 0 { return DatasetDTO{}, fmt.Errorf("campo calculado no encontrado: %s", name) }
+	appSettings.CalculatedColumns = append(appSettings.CalculatedColumns[:idx], appSettings.CalculatedColumns[idx+1:]...)
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	rebuildCalculatedColumns()
+	return datasetDTO(viewDataset), nil
+}
+
+func (a *App) SetColumnFormat(id string, decimals int, percent bool, kind string) (DatasetDTO, error) {
+	id = strings.TrimSpace(id); kind = strings.ToLower(strings.TrimSpace(kind))
+	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
+	found := false
+	for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+	if !found { return DatasetDTO{}, fmt.Errorf("columna desconocida: %s", id) }
+	if kind != "entero" && kind != "decimal" && kind != "porcentaje" { return DatasetDTO{}, fmt.Errorf("tipo de formato inválido: %s", kind) }
+	if kind == "entero" { decimals = 0 }
+	if decimals < 0 { decimals = 0 }; if decimals > 8 { decimals = 8 }
+	if appSettings.ColumnDecimals == nil { appSettings.ColumnDecimals = map[string]int{} }
+	if appSettings.ColumnPercent == nil { appSettings.ColumnPercent = map[string]bool{} }
+	if appSettings.ColumnTypes == nil { appSettings.ColumnTypes = map[string]string{} }
+	appSettings.ColumnDecimals[id] = decimals
+	appSettings.ColumnPercent[id] = percent || kind == "porcentaje"
+	appSettings.ColumnTypes[id] = kind
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	return datasetDTO(viewDataset), nil
+}
+
+func (a *App) SetSubtotals(groupColumnID string, agg map[string]string) (DatasetDTO, error) {
+	groupColumnID = strings.TrimSpace(groupColumnID)
+	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
+	if groupColumnID != "" {
+		found := false
+		for _, c := range viewDataset.Columns { if c.ID == groupColumnID { found = true; break } }
+		if !found { return DatasetDTO{}, fmt.Errorf("columna de agrupación desconocida: %s", groupColumnID) }
+	}
+	clean := map[string]string{}
+	for id, v := range agg {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v != "" && v != "suma" && v != "promedio" { return DatasetDTO{}, fmt.Errorf("agregación inválida para %s: %s", id, v) }
+		if v != "" {
+			found := false; for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+			if !found { return DatasetDTO{}, fmt.Errorf("columna de subtotal desconocida: %s", id) }
+			clean[id] = v
+		}
+	}
+	appSettings.SubtotalColumn = groupColumnID
+	appSettings.SubtotalAgg = clean
+	appSettings.SubtotalEnabled = groupColumnID != "" && len(clean) > 0
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	return datasetDTO(viewDataset), nil
 }
 
 func (a *App) SetVisibleColumns(ids []string) error {
@@ -179,6 +309,7 @@ func datasetDTO(ds *MemoryDataset) DatasetDTO {
 		Rows: make([]map[string]string, 0, len(ds.Records)),
 		TotalRows: len(ds.Records), Duplicated: ds.DuplicateSO, CSVRows: ds.CSVRows, Enriched: ds.Enriched,
 		SourceFiles: append([]string(nil), ds.SourceFiles...),
+		Subtotals: computeSubtotals(ds),
 	}
 	for _, c := range ds.Columns {
 		out.Columns = append(out.Columns, ColumnDTO{ID:c.ID, Title:datasetColumnDisplayTitle(c), Source:c.Source, Type:valueTypeName(c.Type), Visible:c.Visible})
