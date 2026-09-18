@@ -93,3 +93,9 @@ La validación automática confirmó compilación y tests. Queda como último pa
 5. ocultar todas las columnas sin headers fantasma;
 6. mostrar datos de cada columna en todas las filas;
 7. guardar y recuperar la selección de columnas entre ejecuciones.
+
+
+## Evolución posterior — Subtotales y presentación
+
+- [x] Subtotal por conteo de valores únicos (`conteo_unico`), incluyendo columnas de texto y TOTAL GENERAL.
+- [x] Control de frontend para seleccionar `Contador (únicos)` en cualquier columna distinta de la agrupación.
