@@ -143,6 +143,11 @@ func TestComputeSubtotalsReportsUniqueGroupCount(t *testing.T) {
 		},
 	}
 	rows := computeSubtotals(d)
-	if len(rows) != 4 { t.Fatalf("subtotal rows=%d; want 4",len(rows)) }
-	if rows[3].GroupCount != 3 { t.Fatalf("unique group count=%d; want 3",rows[3].GroupCount) }
+	var total SubtotalRow
+	foundTotal := false
+	for _, row := range rows {
+		if row.Total { total = row; foundTotal = true; break }
+	}
+	if !foundTotal { t.Fatal("TOTAL GENERAL subtotal row not found") }
+	if total.GroupCount != 3 { t.Fatalf("unique group count=%d; want 3",total.GroupCount) }
 }
