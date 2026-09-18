@@ -82,7 +82,7 @@ func (a *App) SetFontSize(px int) error {
 func (a *App) SetRowHeight(px int) error {
 	if px < 18 { px = 18 }
 	if px > 60 { px = 60 }
-	persistedVisualSettings.RowHeight = px
+	appSettings.RowHeight = px
 	return saveDatasetSettings(appSettings)
 }
 
@@ -96,8 +96,8 @@ func (a *App) SetColumnWidth(id string, px int) error {
 	}
 	if px < 60 { px = 60 }
 	if px > 600 { px = 600 }
-	if persistedVisualSettings.ColumnWidths == nil { persistedVisualSettings.ColumnWidths = map[string]int{} }
-	persistedVisualSettings.ColumnWidths[id] = px
+	if appSettings.ColumnWidths == nil { appSettings.ColumnWidths = map[string]int{} }
+	appSettings.ColumnWidths[id] = px
 	return saveDatasetSettings(appSettings)
 }
 
