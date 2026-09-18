@@ -1,5 +1,5 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
 type CalculatedColumn = { Name:string; Formula:string; Percent:boolean }
@@ -192,6 +192,7 @@ function renderColumnPanel(){
     return `<div class="column-item">
       <input type="checkbox" data-index="${i}" ${c.visible?'checked':''}>
       <span title="${escAttr(c.title)}">${esc(c.title)}</span>
+      <label class="column-alias">Alias <input type="text" data-alias-index="${i}" value="${escAttr(c.title)}"></label>
       <small>${esc(c.source)}</small>
       <label class="column-alignment">Alineación <select data-align-index="${i}"><option value="left">Izq.</option><option value="center">Centro</option><option value="right">Der.</option></select></label>
       <label class="column-width">Ancho <input type="number" min="20" max="600" step="10" data-width-index="${i}" value="${width}"></label>
@@ -199,6 +200,12 @@ function renderColumnPanel(){
       <div class="column-move"><button type="button" data-move="up" data-index="${i}" ${i===0?'disabled':''}>▲</button><button type="button" data-move="down" data-index="${i}" ${i===state.data!.columns.length-1?'disabled':''}>▼</button></div>
     </div>`
   }).join('')
+
+  columnList.querySelectorAll<HTMLInputElement>('input[data-alias-index]').forEach(input => input.addEventListener('change', async () => {
+    const i = Number(input.dataset.aliasIndex), col = state.data!.columns[i]
+    try { state.data = await SetColumnTitle(col.id, input.value) as Dataset; render(); renderColumnPanel() }
+    catch(e) { status.textContent = 'Error guardando alias: '+String(e) }
+  }))
 
   columnList.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach(box => box.addEventListener('change', async () => {
     const i = Number(box.dataset.index), c = state.data!.columns[i]
