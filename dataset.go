@@ -53,16 +53,16 @@ func(e *MemoryDataset)columnByTitle(t string)(DatasetColumn,bool){for _,c:=range
 func evaluateFormula(expr string,r DatasetRecord,cols []DatasetColumn)(float64,bool){vals:=map[string]float64{};for _,c:=range cols{if v,ok:=r.Values[c.ID];ok&&(v.Type==ValueNumber||v.Type==ValueDate){n:=v.Number;title:=strings.ToLower(strings.TrimSpace(c.Title));vals[title]=n;vals[strings.ToLower(strings.TrimSpace(c.Source+":"+c.Title))]=n;if c.Source=="CSV"{vals["csv:"+title]=n}}};p:=&formulaParser{s:expr,values:vals};v,ok:=p.expr();p.skip();return v,ok&&p.pos==len(p.s)}
 type formulaParser struct{s string;values map[string]float64;pos int};func(p *formulaParser)skip(){for p.pos<len(p.s)&&(p.s[p.pos]==' '||p.s[p.pos]=='\t'){p.pos++}};func(p *formulaParser)expr()(float64,bool){a,ok:=p.term();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='+'&&o!='-'{return a,true};p.pos++;b,ok:=p.term();if !ok{return 0,false};if o=='+'{a+=b}else{a-=b}}};func(p *formulaParser)term()(float64,bool){a,ok:=p.factor();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='*'&&o!='/'{return a,true};p.pos++;b,ok:=p.factor();if !ok{return 0,false};if o=='*'{a*=b}else{if b==0{return 0,false};a/=b}}};func(p *formulaParser)factor()(float64,bool){p.skip();if p.pos>=len(p.s){return 0,false};if p.s[p.pos]=='(' {p.pos++;v,ok:=p.expr();p.skip();if p.pos>=len(p.s)||p.s[p.pos]!=')'{return 0,false};p.pos++;return v,ok};st:=p.pos;if p.s[p.pos]=='['{if e:=strings.IndexByte(p.s[st:],']');e>=0{e+=st;key:=strings.ToLower(strings.TrimSpace(p.s[st+1:e]));p.pos=e+1;v,ok:=p.values[key];return v,ok}};for p.pos<len(p.s)&&((p.s[p.pos]>='0'&&p.s[p.pos]<='9')||p.s[p.pos]=='.'||p.s[p.pos]==','){p.pos++};if p.pos>st{v,e:=strconv.ParseFloat(strings.ReplaceAll(p.s[st:p.pos],",","."),64);return v,e==nil};return 0,false}
 func applyDatasetFormula(ds *MemoryDataset,s DatasetSettings){if ds==nil{return};ensureCalculatedDatasetColumns(ds,s);if s.ColumnPercent==nil{s.ColumnPercent=map[string]bool{}};if s.ColumnTypes==nil{s.ColumnTypes=map[string]string{}};for _,cc:=range s.CalculatedColumns{if c,ok:=ds.columnByTitle(cc.Name);ok{s.ColumnPercent[c.ID]=cc.Percent;if cc.Percent{s.ColumnTypes[c.ID]="porcentaje"}}};if s.Formula!=""&&s.FormulaTitle!=""{if c,ok:=ds.columnByTitle(s.FormulaTitle);ok{for i:=range ds.Records{if v,ok:=evaluateFormula(s.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,datasetColumnDecimals(c))}}}}};for _,cc:=range s.CalculatedColumns{c,ok:=ds.columnByTitle(cc.Name);if !ok{continue};for i:=range ds.Records{if v,ok:=evaluateFormula(cc.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,datasetColumnDecimals(c))}}}}}
-type SubtotalRow struct{GroupValue string `json:"group_value"`;Values map[string]string `json:"values"`;Total bool `json:"total"`}
+type SubtotalRow struct{GroupValue string `json:"group_value"`;GroupCount int `json:"group_count"`;Values map[string]string `json:"values"`;Total bool `json:"total"`}
 
 func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{
 	if ds==nil||strings.TrimSpace(appSettings.SubtotalColumn)==""||len(appSettings.SubtotalAgg)==0{return nil}
 	group,ok:=ds.columnByTitle(appSettings.SubtotalColumn);if !ok{for _,c:=range ds.Columns{if c.ID==appSettings.SubtotalColumn{group=c;ok=true;break}}};if !ok{return nil}
 	type accum struct{sum map[string]float64;count map[string]int;unique map[string]map[string]struct{}}
-	groups:=map[string]*accum{};order:=[]string{}
+	groups:=map[string]*accum{};order:=[]string{};seenGroups:=map[string]struct{}{}
 	total:=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}}
 	for _,r:=range ds.Records{
-		gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};order=append(order,gv)}
+		gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if strings.TrimSpace(gv)!=""{if _,seen:=seenGroups[gv];!seen{seenGroups[gv]=struct{}{} }};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};order=append(order,gv)}
 		g:=groups[gv]
 		for id,agg:=range appSettings.SubtotalAgg{
 			if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue}
@@ -75,7 +75,7 @@ func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{
 		}
 	}
 	makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};if agg=="conteo_unico"{vals[id]=strconv.Itoa(len(a.unique[id]));continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}}
-	out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));return out
+	out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));out[len(out)-1].GroupCount=len(seenGroups);return out
 }
 
 func formatDatasetNumber(v float64,d int)string{if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
