@@ -19,6 +19,7 @@ type ColumnDTO struct {
 	Visible bool `json:"visible"`
 	HighlightSign bool `json:"highlight_sign"`
 	Background string `json:"background"`
+	Align string `json:"align"`
 }
 
 type DatasetDTO struct {
@@ -97,7 +98,7 @@ func (a *App) SetColumnWidth(id string, px int) error {
 		for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
 		if !found { return fmt.Errorf("columna desconocida: %s", id) }
 	}
-	if px < 60 { px = 60 }
+	if px < 20 { px = 20 }
 	if px > 600 { px = 600 }
 	if appSettings.ColumnWidths == nil { appSettings.ColumnWidths = map[string]int{} }
 	appSettings.ColumnWidths[id] = px
@@ -246,6 +247,20 @@ func (a *App) SetColumnSignHighlight(id string, on bool) (DatasetDTO, error) {
 	return datasetDTO(viewDataset), nil
 }
 
+func (a *App) SetColumnAlign(id string, align string) (DatasetDTO, error) {
+	id = strings.TrimSpace(id)
+	align = strings.ToLower(strings.TrimSpace(align))
+	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
+	found := false
+	for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
+	if !found { return DatasetDTO{}, fmt.Errorf("columna desconocida: %s", id) }
+	if align != "left" && align != "center" && align != "right" { return DatasetDTO{}, fmt.Errorf("alineación inválida: %s", align) }
+	if appSettings.ColumnAlign == nil { appSettings.ColumnAlign = map[string]string{} }
+	appSettings.ColumnAlign[id] = align
+	if err := saveDatasetSettings(appSettings); err != nil { return DatasetDTO{}, err }
+	return datasetDTO(viewDataset), nil
+}
+
 func (a *App) SetColumnBackground(id string, color string) (DatasetDTO, error) {
 	id = strings.TrimSpace(id); color = strings.TrimSpace(color)
 	if viewDataset == nil { return DatasetDTO{}, fmt.Errorf("no hay un dataset cargado") }
@@ -366,7 +381,7 @@ func datasetDTO(ds *MemoryDataset) DatasetDTO {
 		Subtotals: computeSubtotals(ds),
 	}
 	for _, c := range ds.Columns {
-		out.Columns = append(out.Columns, ColumnDTO{ID:c.ID, Title:datasetColumnDisplayTitle(c), Source:c.Source, Type:valueTypeName(c.Type), Visible:c.Visible, HighlightSign:datasetColumnHighlightSign(c), Background:datasetColumnBackground(c)})
+		out.Columns = append(out.Columns, ColumnDTO{ID:c.ID, Title:datasetColumnDisplayTitle(c), Source:c.Source, Type:valueTypeName(c.Type), Visible:c.Visible, HighlightSign:datasetColumnHighlightSign(c), Background:datasetColumnBackground(c), Align:datasetColumnAlign(c)})
 	}
 	for _, record := range ds.Records {
 		row := make(map[string]string, len(ds.Columns))
