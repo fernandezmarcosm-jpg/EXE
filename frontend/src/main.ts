@@ -1,7 +1,7 @@
 import './style.css'
-import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground } from '../wailsjs/go/main/App'
 
-type Column = { id:string; title:string; source:string; type:string; visible:boolean }
+type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string }
 type CalculatedColumn = { Name:string; Formula:string; Percent:boolean }
 type SubtotalRow = { group_value:string; values:Record<string,string>; total:boolean }
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
@@ -68,7 +68,10 @@ function filteredRows(){
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
 function columnWidth(id:string){ return clamp(Number(state.visual.columnWidths[id] ?? 140),60,600) }
 function isNumericColumn(c:Column){ return c.type.toLowerCase()==='number' || c.source==='CALCULADA' }
-function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; return 'decimal' }
+function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje'||t==='moneda')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; if(state.visual.settings?.column_currency?.[c.id])return 'moneda'; return 'decimal' }
+function columnThousands(c:Column){ return !!state.visual.settings?.column_thousands?.[c.id] || columnFormatKind(c)==='moneda' }
+function parseCellNumber(value:string){ const s=value.trim().replace(/[%$\s]/g,'').replace(/\./g,'').replace(',', '.'); const n=Number(s); return Number.isFinite(n)?n:null }
+function cellMarkup(c:Column,value:string){ const bg=c.background||state.visual.settings?.column_background?.[c.id]||''; const sign=c.highlight_sign && isNumericColumn(c) ? parseCellNumber(value) : null; const cls=sign!==null?(sign<0?'cell-neg':sign>0?'cell-pos':''):''; const style=bg?' style="background:'+escAttr(bg)+'"':''; return '<td class="'+cls+'"'+style+'>'+esc(value)+'</td>' }
 
 async function persistVisualSettings(){
   if (!state.visual.settings) return
@@ -114,8 +117,21 @@ function render(){
     if (total) bodyParts.push(`<tr class="subtotal subtotal-total">${cols.map((c,i) => `<td>${esc(total.values[c.id] ?? (i===0?total.group_value:''))}</td>`).join('')}</tr>`)
   }
   tableWrap.innerHTML = `<table><colgroup>${colgroup}</colgroup><thead><tr>${head}</tr></thead><tbody>${bodyParts.join('')}</tbody></table>`
-  tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; render() }))
+  tableWrap.querySelectorAll<HTMLInputElement>('.filter').forEach(input => input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() }))
   footer.textContent = `Filas: ${state.data.total_rows} · Duplicadas: ${state.data.duplicated} · CSV: ${state.data.csv_rows} · Enriquecidas: ${state.data.enriched} · Mostradas: ${rows.length}`
+}
+
+function renderBody(){
+  if(!state.data)return
+  const cols=visibleColumns(), rows=filteredRows(), groupId=state.visual.settings?.subtotal_column??''
+  const activeSubtotal=!!groupId&&!!state.data.subtotals?.length
+  const displayRows=activeSubtotal?(()=>{const firstSeen=new Map<string,number>();rows.forEach((row,index)=>{const key=row[groupId]??'';if(!firstSeen.has(key))firstSeen.set(key,index)});return [...rows].map((row,index)=>({row,index,key:row[groupId]??''})).sort((a,b)=>(firstSeen.get(a.key)!-firstSeen.get(b.key)!)||(a.index-b.index))})():rows.map((row,index)=>({row,index,key:''}))
+  const subtotalByGroup=new Map((state.data.subtotals??[]).filter(sr=>!sr.total).map(sr=>[sr.group_value,sr]))
+  const bodyParts:string[]=[]
+  displayRows.forEach((item,index)=>{bodyParts.push('<tr>'+cols.map(c=>cellMarkup(c,item.row[c.id]??'')).join('')+'</tr>');if(activeSubtotal&&displayRows[index+1]?.key!==item.key){const sr=subtotalByGroup.get(item.key);if(sr)bodyParts.push('<tr class="subtotal">'+cols.map((c,i)=>cellMarkup(c,sr.values[c.id]??(i===0?sr.group_value:'')).replace('class=""','')).join('')+'</tr>')}})
+  if(activeSubtotal){const total=(state.data.subtotals??[]).find(sr=>sr.total);if(total)bodyParts.push('<tr class="subtotal subtotal-total">'+cols.map((c,i)=>cellMarkup(c,total.values[c.id]??(i===0?total.group_value:'')).replace('class=""','')).join('')+'</tr>')}
+  const tbody=tableWrap.querySelector('tbody');if(tbody)tbody.innerHTML=bodyParts.join('')
+  footer.textContent='Filas: '+state.data.total_rows+' · Duplicadas: '+state.data.duplicated+' · CSV: '+state.data.csv_rows+' · Enriquecidas: '+state.data.enriched+' · Mostradas: '+rows.length
 }
 
 function renderColumnPanel(){
@@ -142,17 +158,17 @@ function renderColumnPanel(){
   columnList.querySelectorAll<HTMLDivElement>('.column-item').forEach((item,i)=>{
     const c=state.data!.columns[i]; if(!isNumericColumn(c)) return
     const controls=document.createElement('span'); controls.className='column-format-controls'
-    const kind=columnFormatKind(c); const dec=Number(state.visual.settings?.column_decimals?.[c.id] ?? 2)
-    controls.innerHTML='<select data-format-index="'+i+'"><option value="entero">Entero</option><option value="decimal">Decimal</option><option value="porcentaje">Porcentaje</option></select><input type="number" min="0" max="8" step="1" data-decimals-index="'+i+'" value="'+dec+'">'
+    const kind=columnFormatKind(c); const dec=Number(state.visual.settings?.column_decimals?.[c.id] ?? 2); const thousands=columnThousands(c); const sign=!!c.highlight_sign||!!state.visual.settings?.column_highlight_sign?.[c.id]
+    controls.innerHTML='<select data-format-index="'+i+'"><option value="entero">Entero</option><option value="decimal">Decimal</option><option value="porcentaje">Porcentaje</option><option value="moneda">Moneda ($)</option></select><input type="number" min="0" max="8" step="1" data-decimals-index="'+i+'" value="'+dec+'"><label><input type="checkbox" data-thousands-index="'+i+'" '+(thousands?'checked':'')+'> Miles</label><label><input type="checkbox" data-sign-index="'+i+'" '+(sign?'checked':'')+'> Color +/-</label>'
     item.appendChild(controls); const sel=controls.querySelector<HTMLSelectElement>('select')!; sel.value=kind
   })
   columnList.querySelectorAll<HTMLSelectElement>('select[data-format-index]').forEach(sel=>sel.addEventListener('change',async()=>{
     const i=Number(sel.dataset.formatIndex),c=state.data!.columns[i];let d=Number(columnList.querySelector<HTMLInputElement>('input[data-decimals-index="'+i+'"]')!.value)||0;if(sel.value==='entero')d=0
-    try{state.data=await SetColumnFormat(c.id,d,sel.value==='porcentaje',sel.value) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};state.visual.settings.column_percent={...(state.visual.settings.column_percent??{}),[c.id]:sel.value==='porcentaje'};state.visual.settings.column_types={...(state.visual.settings.column_types??{}),[c.id]:sel.value};render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error guardando formato: '+String(e)}
+    try{state.data=await SetColumnFormat(c.id,d,sel.value==='porcentaje',sel.value,!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]').checked) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};state.visual.settings.column_percent={...(state.visual.settings.column_percent??{}),[c.id]:sel.value==='porcentaje'};state.visual.settings.column_types={...(state.visual.settings.column_types??{}),[c.id]:sel.value};state.visual.settings.column_currency={...(state.visual.settings.column_currency??{}),[c.id]:sel.value==='moneda'};state.visual.settings.column_thousands={...(state.visual.settings.column_thousands??{}),[c.id]:sel.value==='moneda'||!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]').checked};render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error guardando formato: '+String(e)}
   }))
   columnList.querySelectorAll<HTMLInputElement>('input[data-decimals-index]').forEach(inp=>inp.addEventListener('change',async()=>{
     const i=Number(inp.dataset.decimalsIndex),c=state.data!.columns[i],kind=columnFormatKind(c);let d=Math.max(0,Math.min(8,Number(inp.value)||0));if(kind==='entero')d=0;inp.value=String(d)
-    try{state.data=await SetColumnFormat(c.id,d,kind==='porcentaje',kind) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};render()}catch(e){status.textContent='Error guardando decimales: '+String(e)}
+    try{state.data=await SetColumnFormat(c.id,d,kind==='porcentaje',kind,!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]').checked) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};render()}catch(e){status.textContent='Error guardando decimales: '+String(e)}
   }))
 
   columnList.querySelectorAll<HTMLInputElement>('input[data-width-index]').forEach(input => input.addEventListener('change', async () => {
@@ -181,7 +197,7 @@ function renderColumnPanel(){
 
 async function refreshCalculatedList(){state.calculated.list=await ListCalculatedColumns() as CalculatedColumn[];renderCalculatedPanel()}
 function renderCalculatedPanel(){formulaTokens.innerHTML=state.data?.columns.map(c=>{const token=c.source==='CSV'?'[CSV:'+c.title+']':'['+c.title+']';return '<button type="button" data-token="'+escAttr(token)+'">'+esc(token)+'</button>'}).join('')??'';formulaTokens.querySelectorAll<HTMLButtonElement>('button[data-token]').forEach(b=>b.addEventListener('click',()=>{calcFormula.value+=(calcFormula.value&&!/[-+*/( ]$/.test(calcFormula.value)?' ':'')+b.dataset.token;calcFormula.focus()}));calcList.innerHTML=state.calculated.list.map((c,i)=>'<div class="calc-row"><span><strong>'+esc(c.Name)+'</strong><small>'+esc(c.Formula)+(c.Percent?' · %':'')+'</small></span><span><button data-edit="'+i+'">Editar</button> <button data-delete="'+i+'">Eliminar</button></span></div>').join('')||'<div class="empty">No hay campos calculados.</div>';calcList.querySelectorAll<HTMLButtonElement>('button[data-edit]').forEach(b=>b.addEventListener('click',()=>{const c=state.calculated.list[Number(b.dataset.edit)];state.calculated.editingOriginal=c.Name;calcName.value=c.Name;calcFormula.value=c.Formula;calcPercent.checked=c.Percent;calcSave.textContent='GUARDAR';calcCancel.classList.remove('hidden')}));calcList.querySelectorAll<HTMLButtonElement>('button[data-delete]').forEach(b=>b.addEventListener('click',async()=>{const c=state.calculated.list[Number(b.dataset.delete)];if(!confirm('Eliminar "'+c.Name+'"?'))return;try{state.data=await DeleteCalculatedColumn(c.Name) as Dataset;await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error eliminando: '+String(e)}}))}
-function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=visibleColumns().filter(isNumericColumn).map(c=>'<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option><option value="suma">Suma</option><option value="promedio">Promedio</option></select></label>').join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
+function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=state.data.columns.filter(c=>isNumericColumn(c)&&c.id!==current).map(c=>'<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option><option value="suma">Suma</option><option value="promedio">Promedio</option></select></label>').join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
 async function saveSubtotals(){const agg:Record<string,string>={};subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{if(s.value)agg[s.dataset.subtotalId!]=s.value});try{state.data=await SetSubtotals(subtotalGroup.value,agg) as Dataset;state.visual.settings.subtotal_column=subtotalGroup.value;state.visual.settings.subtotal_agg=agg;render()}catch(e){status.textContent='Error guardando subtotales: '+String(e)}}
 function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
 async function setPanel(open:boolean, mode: 'columns'|'calculated' = state.panelMode){
