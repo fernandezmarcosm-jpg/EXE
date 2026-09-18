@@ -98,3 +98,30 @@ func TestDatasetNumberFormattingGroupedAndCurrency(t *testing.T) {
 	appSettings.ColumnThousands[c.ID] = true
 	if got:=datasetValueText(c,v); got != "-1.234.567,80" { t.Fatalf("grouped=%q; want -1.234.567,80",got) }
 }
+
+
+func TestComputeSubtotalsCountsUniqueTextValues(t *testing.T) {
+	old := appSettings
+	defer func(){ appSettings = old }()
+	appSettings = defaultDatasetSettings()
+	appSettings.SubtotalColumn = "GRUPO"
+	appSettings.SubtotalAgg = map[string]string{"SDDOCO":"conteo_unico"}
+	d := &MemoryDataset{
+		Columns: []DatasetColumn{
+			{ID:"GRUPO",Title:"GRUPO",Source:"XLSX",Type:ValueText},
+			{ID:"SDDOCO",Title:"SDDOCO",Source:"XLSX",Type:ValueText},
+		},
+		Records: []DatasetRecord{
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueText,Raw:"A"},"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"100"}}},
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueText,Raw:"A"},"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"100"}}},
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueText,Raw:"A"},"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:" 200 "}}},
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueText,Raw:"B"},"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:"300"}}},
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueText,Raw:"B"},"SDDOCO":{ColumnID:"SDDOCO",Type:ValueText,Raw:""}}},
+		},
+	}
+	rows := computeSubtotals(d)
+	if len(rows) != 3 { t.Fatalf("subtotal rows=%d; want 3", len(rows)) }
+	if rows[0].Values["SDDOCO"] != "2" { t.Fatalf("group A distinct count=%q; want 2", rows[0].Values["SDDOCO"]) }
+	if rows[1].Values["SDDOCO"] != "1" { t.Fatalf("group B distinct count=%q; want 1", rows[1].Values["SDDOCO"]) }
+	if rows[2].Values["SDDOCO"] != "3" { t.Fatalf("total distinct count=%q; want 3", rows[2].Values["SDDOCO"]) }
+}
