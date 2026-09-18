@@ -57,5 +57,29 @@ func TestCalculatedPercentIsAppliedOnlyByDisplayFormatting(t *testing.T) {
 	if !ok { t.Fatal("calculated column not created") }
 	v := d.Records[0].Values[c.ID]
 	if v.Number != 0.5 { t.Fatalf("stored value=%v; want 0.5", v.Number) }
-	if got := datasetValueText(c, v); got != "50.00" { t.Fatalf("display value=%q; want 50.00", got) }
+	if got := datasetValueText(c, v); got != "50.00%" { t.Fatalf("display value=%q; want 50.00%%", got) }
+}
+
+
+func TestComputeSubtotalsUsesFormattedGroupValue(t *testing.T) {
+	old := appSettings
+	defer func() { appSettings = old }()
+	appSettings = defaultDatasetSettings()
+	appSettings.SubtotalColumn = "GRUPO"
+	appSettings.SubtotalAgg = map[string]string{"VALOR":"suma"}
+	appSettings.ColumnDecimals["GRUPO"] = 2
+	d := &MemoryDataset{
+		Columns: []DatasetColumn{
+			{ID:"GRUPO",Title:"GRUPO",Source:"XLSX",Type:ValueNumber},
+			{ID:"VALOR",Title:"VALOR",Source:"XLSX",Type:ValueNumber},
+		},
+		Records: []DatasetRecord{
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueNumber,Number:1.2,Raw:"1.2"},"VALOR":{ColumnID:"VALOR",Type:ValueNumber,Number:10}}},
+			{Values:map[string]MemoryValue{"GRUPO":{ColumnID:"GRUPO",Type:ValueNumber,Number:1.2,Raw:"1.2"},"VALOR":{ColumnID:"VALOR",Type:ValueNumber,Number:5}}},
+		},
+	}
+	rows := computeSubtotals(d)
+	if len(rows) != 2 { t.Fatalf("subtotal rows=%d; want 2", len(rows)) }
+	if rows[0].GroupValue != "1.20" { t.Fatalf("group value=%q; want 1.20", rows[0].GroupValue) }
+	if rows[0].Values["VALOR"] != "15.00" { t.Fatalf("group subtotal=%q; want 15.00", rows[0].Values["VALOR"]) }
 }
