@@ -162,6 +162,8 @@ func rebuildCalculatedColumns() {
 		for r := range viewDataset.Records { delete(viewDataset.Records[r].Values, id) }
 		delete(appSettings.ColumnPercent, id)
 		delete(appSettings.ColumnTypes, id)
+		delete(appSettings.ColumnCurrency, id)
+		delete(appSettings.ColumnThousands, id)
 		viewDataset.Columns = append(viewDataset.Columns[:i], viewDataset.Columns[i+1:]...)
 	}
 	ensureCalculatedDatasetColumns(viewDataset, appSettings)
