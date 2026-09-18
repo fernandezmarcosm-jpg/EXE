@@ -51,7 +51,7 @@ export namespace main {
 	    static createFrom(source: any = {}) {
 	        return new SubtotalRow(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.group_value = source["group_value"];
@@ -80,12 +80,12 @@ export namespace main {
 	        this.rows = source["rows"];
 	        this.total_rows = source["total_rows"];
 	        this.duplicated = source["duplicated"];
-		this.csv_rows = source["csv_rows"];
-        this.enriched = source["enriched"];
-        this.source_files = source["source_files"];
-        this.subtotals = this.convertValues(source["subtotals"], SubtotalRow);
-    }
-
+	        this.csv_rows = source["csv_rows"];
+	        this.enriched = source["enriched"];
+	        this.source_files = source["source_files"];
+	        this.subtotals = this.convertValues(source["subtotals"], SubtotalRow);
+	    }
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -140,30 +140,30 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.decimals = source["decimals"];
 	        this.font_size = source["font_size"];
-		this.row_height = source["row_height"];
-		this.column_widths = source["column_widths"];
-		this.so_column = source["so_column"];
-		this.join_excel_column = source["join_excel_column"];
-		this.formula_title = source["formula_title"];
-		this.formula = source["formula"];
-		this.subtotal_column = source["subtotal_column"];
-		this.subtotal_enabled = source["subtotal_enabled"];
-		this.column_titles = source["column_titles"];
-		this.column_order = source["column_order"];
-		this.max_columns = source["max_columns"];
-		this.visible_columns = source["visible_columns"];
-		this.column_decimals = source["column_decimals"];
-		this.subtotal_columns = source["subtotal_columns"];
-		this.column_percent = source["column_percent"];
-		this.column_currency = source["column_currency"];
-		this.column_thousands = source["column_thousands"];
-		this.highlight_negative = source["highlight_negative"];
-		this.column_highlight_sign = source["column_highlight_sign"];
-		this.column_background = source["column_background"];
-		this.column_align = source["column_align"];
-		this.column_types = source["column_types"];
-		this.calculated_columns = this.convertValues(source["calculated_columns"], CalculatedColumn);
-		this.subtotal_agg = source["subtotal_agg"];
+	        this.row_height = source["row_height"];
+	        this.column_widths = source["column_widths"];
+	        this.so_column = source["so_column"];
+	        this.join_excel_column = source["join_excel_column"];
+	        this.formula_title = source["formula_title"];
+	        this.formula = source["formula"];
+	        this.subtotal_column = source["subtotal_column"];
+	        this.subtotal_enabled = source["subtotal_enabled"];
+	        this.column_titles = source["column_titles"];
+	        this.column_order = source["column_order"];
+	        this.max_columns = source["max_columns"];
+	        this.visible_columns = source["visible_columns"];
+	        this.column_decimals = source["column_decimals"];
+	        this.subtotal_columns = source["subtotal_columns"];
+	        this.column_percent = source["column_percent"];
+	        this.column_currency = source["column_currency"];
+	        this.column_thousands = source["column_thousands"];
+	        this.highlight_negative = source["highlight_negative"];
+	        this.column_highlight_sign = source["column_highlight_sign"];
+	        this.column_background = source["column_background"];
+	        this.column_align = source["column_align"];
+	        this.column_types = source["column_types"];
+	        this.calculated_columns = this.convertValues(source["calculated_columns"], CalculatedColumn);
+	        this.subtotal_agg = source["subtotal_agg"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -186,3 +186,4 @@ export namespace main {
 	}
 
 }
+
