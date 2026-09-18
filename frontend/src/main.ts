@@ -20,8 +20,8 @@ app.innerHTML = `
   <header class="toolbar">
     <button id="open">ABRIR EXCEL</button>
     <button id="columns">COLUMNAS</button><button id="calculated">CAMPOS CALCULADOS</button>
-    <label class="visual-control">Fuente <input id="font-size" type="number" min="10" max="28" step="1"></label>
-    <label class="visual-control">Fila <input id="row-height" type="number" min="18" max="60" step="1"></label>
+    <label class="visual-control">Fuente <input id="font-size" type="number" min="6" max="28" step="1"></label>
+    <label class="visual-control">Fila <input id="row-height" type="number" min="10" max="60" step="1"></label>
     <div id="status" class="status">Seleccione uno o varios archivos XLSX.</div>
   </header>
   <main class="table-wrap" id="table-wrap"><div class="empty">No hay datos cargados.</div></main>
@@ -348,14 +348,14 @@ async function setPanel(open:boolean, mode: 'columns'|'calculated' = state.panel
 }
 
 fontInput.addEventListener('change', async () => {
-  state.visual.fontSize = clamp(Number(fontInput.value) || 14,10,28)
+  state.visual.fontSize = clamp(Number(fontInput.value) || 14,6,28)
   applyVisualSettings(); render()
   try { await persistVisualSettings(); status.textContent = 'Tamaño de fuente guardado.' }
   catch (e) { status.textContent = `Error guardando fuente: ${String(e)}` }
 })
 
 rowHeightInput.addEventListener('change', async () => {
-  state.visual.rowHeight = clamp(Number(rowHeightInput.value) || 28,18,60)
+  state.visual.rowHeight = clamp(Number(rowHeightInput.value) || 28,10,60)
   applyVisualSettings(); render()
   try { await persistVisualSettings(); status.textContent = 'Alto de fila guardado.' }
   catch (e) { status.textContent = `Error guardando alto de fila: ${String(e)}` }
@@ -391,8 +391,8 @@ subtotalGroup.addEventListener('change',saveSubtotals)
 
 void GetSettings().then((settings:any) => {
   state.visual.settings = settings
-  state.visual.fontSize = clamp(Number(settings.font_size) || 14,10,28)
-  state.visual.rowHeight = clamp(Number(settings.row_height) || 28,18,60)
+  state.visual.fontSize = clamp(Number(settings.font_size) || 14,6,28)
+  state.visual.rowHeight = clamp(Number(settings.row_height) || 28,10,60)
   state.visual.columnWidths = {...(settings.column_widths ?? {})}
   state.visual.settings = {...settings,column_decimals:{...(settings.column_decimals??{})},column_percent:{...(settings.column_percent??{})},column_types:{...(settings.column_types??{})},subtotal_agg:{...(settings.subtotal_agg??{})}}
   applyVisualSettings()
