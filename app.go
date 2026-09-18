@@ -57,6 +57,7 @@ func (a *App) ImportXLSX() (DatasetDTO, error) {
 	ds.SourceFiles = append([]string(nil), paths...)
 	viewDataset = ds
 	applySavedColumnVisibility(ds)
+	applySavedColumnOrder(ds)
 	return datasetDTO(ds), nil
 }
 
@@ -78,13 +79,58 @@ func (a *App) SetVisibleColumns(ids []string) error {
 		if id != "" { clean = append(clean, id) }
 	}
 	if len(clean) == 0 { appSettings.VisibleColumns = []string{"__NONE__"} } else { appSettings.VisibleColumns = clean }
-	appSettings.ColumnOrder = append([]string(nil), appSettings.VisibleColumns...)
 	if viewDataset != nil {
 		allowed := make(map[string]bool, len(clean))
 		for _, id := range clean { allowed[id] = true }
 		for i := range viewDataset.Columns { viewDataset.Columns[i].Visible = allowed[viewDataset.Columns[i].ID] }
 	}
 	return saveDatasetSettings(appSettings)
+}
+
+func (a *App) SetColumnOrder(ids []string) error {
+	if viewDataset == nil { return fmt.Errorf("no hay un dataset cargado") }
+
+	known := make(map[string]bool, len(viewDataset.Columns))
+	for _, c := range viewDataset.Columns { known[c.ID] = true }
+	seen := make(map[string]bool, len(ids))
+	order := make([]string, 0, len(viewDataset.Columns))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] { continue }
+		if !known[id] { return fmt.Errorf("columna desconocida: %s", id) }
+		seen[id] = true
+		order = append(order, id)
+	}
+	for _, c := range viewDataset.Columns {
+		if !seen[c.ID] { order = append(order, c.ID) }
+	}
+
+	byID := make(map[string]DatasetColumn, len(viewDataset.Columns))
+	for _, c := range viewDataset.Columns { byID[c.ID] = c }
+	reordered := make([]DatasetColumn, 0, len(viewDataset.Columns))
+	for _, id := range order { reordered = append(reordered, byID[id]) }
+	viewDataset.Columns = reordered
+	appSettings.ColumnOrder = append([]string(nil), order...)
+	return saveDatasetSettings(appSettings)
+}
+
+func applySavedColumnOrder(ds *MemoryDataset) {
+	if ds == nil || len(ds.Columns) == 0 || len(appSettings.ColumnOrder) == 0 { return }
+
+	byID := make(map[string]DatasetColumn, len(ds.Columns))
+	for _, c := range ds.Columns { byID[c.ID] = c }
+	seen := make(map[string]bool, len(ds.Columns))
+	reordered := make([]DatasetColumn, 0, len(ds.Columns))
+	for _, id := range appSettings.ColumnOrder {
+		if c, ok := byID[id]; ok && !seen[id] {
+			reordered = append(reordered, c)
+			seen[id] = true
+		}
+	}
+	for _, c := range ds.Columns {
+		if !seen[c.ID] { reordered = append(reordered, c) }
+	}
+	ds.Columns = reordered
 }
 
 func applySavedColumnVisibility(ds *MemoryDataset) {
