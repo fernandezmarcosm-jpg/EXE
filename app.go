@@ -98,7 +98,7 @@ func (a *App) SetColumnWidth(id string, px int) error {
 		for _, c := range viewDataset.Columns { if c.ID == id { found = true; break } }
 		if !found { return fmt.Errorf("columna desconocida: %s", id) }
 	}
-	if px < 20 { px = 20 }
+	if px < 8 { px = 8 }
 	if px > 600 { px = 600 }
 	if appSettings.ColumnWidths == nil { appSettings.ColumnWidths = map[string]int{} }
 	appSettings.ColumnWidths[id] = px
