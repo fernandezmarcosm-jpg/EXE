@@ -84,7 +84,8 @@ func datasetColumnDisplayTitle(c DatasetColumn)string{if t:=datasetSettingString
 func datasetColumnDecimals(c DatasetColumn)int{if d:=datasetSettingInt(appSettings.ColumnDecimals,c,appSettings.Decimals);d>=0&&d<=8{return d};return appSettings.Decimals}
 func datasetColumnIsPercent(c DatasetColumn)bool{if datasetSettingBool(appSettings.ColumnPercent,c){return true};return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"porcentaje")}
 func datasetColumnHighlightNegative(c DatasetColumn)bool{return datasetSettingBool(appSettings.HighlightNegative,c)}
-func datasetColumnCurrency(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnCurrency,c) || strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"moneda")}\nfunc datasetColumnIsDate(c DatasetColumn)bool{return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"fecha")}
+func datasetColumnCurrency(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnCurrency,c) || strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"moneda")}
+func datasetColumnIsDate(c DatasetColumn)bool{return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"fecha")}
 func datasetColumnThousands(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnThousands,c) || datasetColumnCurrency(c)}
 func datasetColumnHighlightSign(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnHighlightSign,c)}
 func datasetColumnBackground(c DatasetColumn)string{return strings.TrimSpace(appSettings.ColumnBackground[datasetColumnKey(c)])}
