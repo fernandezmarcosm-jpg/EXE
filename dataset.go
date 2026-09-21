@@ -147,5 +147,5 @@ func formatDatasetDate(v MemoryValue)string{
 	}
 	return raw
 }
-func formatDatasetNumber(v float64,d int){if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
+func formatDatasetNumber(v float64,d int)string{if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
 func formatDatasetNumberGrouped(v float64,d int)string{raw:=formatDatasetNumber(math.Abs(v),d);parts:=strings.SplitN(raw,".",2);intPart:=parts[0];for i:=len(intPart)-3;i>0;i-=3{intPart=intPart[:i]+"."+intPart[i:]};out:=intPart;if len(parts)==2{out+=","+parts[1]};if v<0{out="-"+out};return out}
