@@ -72,8 +72,32 @@ type DatasetColumn struct{ID,Title,Source string;Type ValueType;Width int;Visibl
 type DatasetRecord struct{SO string;Values map[string]MemoryValue}
 type MemoryDataset struct{Columns []DatasetColumn;Records []DatasetRecord;CSVRows,Enriched,DuplicateSO int;SourceFiles []string}
 type csvMaster struct{Headers []string;ByKey map[string]map[string]string}
-func normalizeJoinKey(v string)string{return strings.ToUpper(strings.TrimSpace(v))}
+func normalizeJoinKey(v string)string{
+	s:=strings.TrimSpace(strings.ToUpper(v));if s==""{return ""}
+	s=strings.ReplaceAll(s," ","");s=strings.ReplaceAll(s,"\u00a0","")
+	comma:=strings.LastIndex(s,",");dot:=strings.LastIndex(s,".")
+	if comma>=0||dot>=0{
+		dec:=-1;if comma>dot{dec=comma}else{dec=dot}
+		frac:=len(s)-dec-1;integer:=strings.ReplaceAll(strings.ReplaceAll(s,",",""),".","")
+		if frac==0||frac<=2{
+			if n,e:=strconv.ParseFloat(strings.Replace(s[:dec]+"."+s[dec+1:],",","",-1),64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}
+		}
+		if comma>=0&&dot<0&&frac==3{if n,e:=strconv.ParseInt(strings.ReplaceAll(s,",",""),10,64);e==nil{return strconv.FormatInt(n,10)}}
+		if dot>=0&&comma<0&&frac==3{if n,e:=strconv.ParseInt(strings.ReplaceAll(s,".",""),10,64);e==nil{return strconv.FormatInt(n,10)}}
+		_ = integer
+	}
+	return s
+}
 func normalizeHeader(s string) string{s=strings.TrimSpace(s);s=strings.ReplaceAll(s,"Nº","N");s=strings.ReplaceAll(s,"N°","N");s=strings.ReplaceAll(s,"º","o");s=strings.ReplaceAll(s,"°","o");s=strings.ToUpper(s);s=strings.Join(strings.Fields(s)," ");return s}
+func lookupHeaderEquivalent(s string)string{
+	n:=normalizeHeader(s);n=strings.TrimSpace(n)
+	for _,prefix:=range []string{"NRO ","Nº ","N° ","N "} {if strings.HasPrefix(n,prefix){return strings.TrimSpace(n[len(prefix):])}}
+	return n
+}
+func lookupHeadersMatch(a,b string)bool{
+	aN,bN:=normalizeHeader(a),normalizeHeader(b);if aN==bN{return true}
+	return lookupHeaderEquivalent(aN)==lookupHeaderEquivalent(bN)
+}
 func uniqueNormalizedHeaderID(title string,used map[string]int)string{base:=normalizeHeader(title);if base==""{base="COLUMNA"};used[base]++;if used[base]==1{return base};return fmt.Sprintf("%s_%d",base,used[base])}
 func datasetColumnKey(c DatasetColumn)string{return c.ID}
 func legacyDatasetColumnKey(c DatasetColumn)string{return c.Source+"|"+c.Title}
@@ -129,8 +153,8 @@ func loadLookupTables()([]lookupTable,error){
 	return tables,nil
 }
 func lookupColumnForKey(sh MemorySheet,keyHeader string)string{
-	want:=normalizeHeader(keyHeader);if want==""{return ""}
-	for _,c:=range sh.Columns{if normalizeHeader(c.Title)==want{return c.ID}}
+	if strings.TrimSpace(keyHeader)==""{return ""}
+	for _,c:=range sh.Columns{if lookupHeadersMatch(c.Title,keyHeader){return c.ID}}
 	return ""
 }
 func lookupColumnID(baseName,attributeHeader string,used map[string]int)string{
