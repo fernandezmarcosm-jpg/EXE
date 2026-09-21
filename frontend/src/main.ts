@@ -7,7 +7,6 @@ type SubtotalRow = { group_value:string; group_count:number; values:Record<strin
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
-type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
 
 let draggedColumnId = ''
 
@@ -62,28 +61,6 @@ const subtotalSection = byId<HTMLElement>('subtotal-section')
 const panelTitle = panel.querySelector<HTMLHeadingElement>('.panel-head h2')!
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
-function criterionMatches(c:Column, raw:string, criterion:FilterCriterion){
-  const op=criterion.op
-  const raw2=criterion.value2??''
-  const numeric=isNumericColumn(c)
-  const date=isDateColumn(c)
-  const parseDate=(v:string):number|null=>{ const x=v.trim(); if(!x)return null; let m=x.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/); if(m)return Date.UTC(Number(m[3]),Number(m[2])-1,Number(m[1])); m=x.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/); if(m)return Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3])); const t=Date.parse(x); return Number.isFinite(t)?t:null }
-  const a=date?parseDate(raw):numeric?parseCellNumber(raw):raw.trim().toLocaleLowerCase()
-  const b=date?parseDate(criterion.value??''):numeric?parseCellNumber(criterion.value??')'):(criterion.value??'').trim().toLocaleLowerCase()
-  const b2=date?parseDate(raw2):numeric?parseCellNumber(raw2):raw2.trim().toLocaleLowerCase()
-  if(op==='contains') return typeof a==='string' && typeof b==='string' ? a.includes(b) : false
-  if(a===null || b===null || a===undefined || b===undefined) return false
-  if(op==='eq') return a===b
-  if(op==='neq') return a!==b
-  if(op==='between') return b2!==null && b2!==undefined && a>=b && a<=b2
-  if(op==='gt') return a>b
-  if(op==='lt') return a<b
-  if(op==='gte') return a>=b
-  if(op==='lte') return a<=b
-  return true
-}
-function columnHasActiveFilter(id:string){ return (state.filters[id]??'').trim()!=='' || Object.prototype.hasOwnProperty.call(state.valueFilters,id) || Object.prototype.hasOwnProperty.call(state.criteria,id) }
-function parseCriterionDate(value:string):number|null{const x=value.trim();let m=x.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);if(m)return Date.UTC(Number(m[3]),Number(m[2])-1,Number(m[1]));m=x.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);if(m)return Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]));const t=Date.parse(x);return Number.isFinite(t)?t:null}
 function criterionMatches(c:Column,raw:string,f:FilterCriterion){const op=f.op;const date=isDateColumn(c),numeric=isNumericColumn(c);const a=date?parseCriterionDate(raw):numeric?parseCellNumber(raw):raw.trim().toLocaleLowerCase();const b=date?parseCriterionDate(f.value??''):numeric?parseCellNumber(f.value??''):(f.value??'').trim().toLocaleLowerCase();const b2=date?parseCriterionDate(f.value2??''):numeric?parseCellNumber(f.value2??''):(f.value2??'').trim().toLocaleLowerCase();if(op==='contains')return typeof a==='string'&&typeof b==='string'&&a.includes(b);if(a===null||b===null||a===undefined||b===undefined)return false;if(op==='eq')return a===b;if(op==='neq')return a!==b;if(op==='between')return b2!==null&&b2!==undefined&&a>=b&&a<=b2;if(op==='gt')return a>b;if(op==='lt')return a<b;if(op==='gte')return a>=b;if(op==='lte')return a<=b;return true}
 function columnHasActiveFilter(id:string){return (state.filters[id]??'').trim()!==''||Object.prototype.hasOwnProperty.call(state.valueFilters,id)||Object.prototype.hasOwnProperty.call(state.criteria,id)}
 function filteredRows(){const rows=state.data?.rows??[];const activeText=Object.entries(state.filters).filter(([,v])=>v.trim()!=='');const activeValues=Object.entries(state.valueFilters);const activeCriteria=Object.entries(state.criteria);if(!activeText.length&&!activeValues.length&&!activeCriteria.length)return rows;return rows.filter(row=>activeText.every(([id,n])=>(row[id]??'').toLocaleLowerCase().includes(n.toLocaleLowerCase()))&&activeValues.every(([id,a])=>a.has(row[id]??''))&&activeCriteria.every(([id,f])=>{const c=state.data?.columns.find(x=>x.id===id);return !!c&&criterionMatches(c,row[id]??'',f)}))}
@@ -131,7 +108,7 @@ function render(){
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => {
     const active=columnHasActiveFilter(c.id)
-    return `<th class="${active?'column-filtered':''}" data-column-id="${escAttr(c.id)}" class="${active?'column-filtered':''}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
+    return `<th class="${active?'column-filtered':''}" data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
   }).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
@@ -407,7 +384,7 @@ openBtn.addEventListener('click', async () => {
   try {
     const data = await ImportXLSX() as Dataset
     if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
-    state.data = data; state.filters = {}; state.valueFilters = {}
+    state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}
     status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s)`
     render()
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
@@ -425,7 +402,7 @@ byId<HTMLButtonElement>('none').addEventListener('click', async () => {
   if (!state.data) return
   state.data.columns.forEach(c=>c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
 })
-byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; state.valueFilters={}; closeValueFilterMenu(); render(); status.textContent='Filtros limpiados.' })
+byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; state.valueFilters={}; state.criteria={}; closeValueFilterMenu(); render(); status.textContent='Filtros limpiados.' })
 calcSave.addEventListener('click',async()=>{try{state.data=(state.calculated.editingOriginal?await UpdateCalculatedColumn(state.calculated.editingOriginal,calcName.value,calcFormula.value,calcPercent.checked):await AddCalculatedColumn(calcName.value,calcFormula.value,calcPercent.checked)) as Dataset;resetCalc();await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls();status.textContent='Campo calculado guardado.'}catch(e){status.textContent='Error guardando: '+String(e)}})
 calcCancel.addEventListener('click',resetCalc)
 subtotalGroup.addEventListener('change',saveSubtotals)
