@@ -151,3 +151,19 @@ func TestComputeSubtotalsReportsUniqueGroupCount(t *testing.T) {
 	if !foundTotal { t.Fatal("TOTAL GENERAL subtotal row not found") }
 	if total.GroupCount != 3 { t.Fatalf("unique group count=%d; want 3",total.GroupCount) }
 }
+
+
+func TestDatasetValueTextFormatsConfiguredDate(t *testing.T) {
+	old:=appSettings
+	defer func(){appSettings=old}()
+	appSettings=defaultDatasetSettings()
+	appSettings.ColumnTypes["FECHA"]="fecha"
+	c:=DatasetColumn{ID:"FECHA",Title:"FECHA",Source:"XLSX",Type:ValueText}
+	cases:=[]struct{name string;v MemoryValue;want string}{
+		{"date type",MemoryValue{ColumnID:"FECHA",Type:ValueDate,Raw:"2026-09-21"},"2026-09-21"},
+		{"excel serial",MemoryValue{ColumnID:"FECHA",Type:ValueNumber,Number:45921,Raw:"45921"},"21/09/2025"},
+		{"text",MemoryValue{ColumnID:"FECHA",Type:ValueText,Raw:"21/09/2026"},"21/09/2026"},
+		{"invalid",MemoryValue{ColumnID:"FECHA",Type:ValueText,Raw:"sin fecha"},"sin fecha"},
+	}
+	for _,tc:=range cases{if got:=datasetValueText(c,tc.v);got!=tc.want{t.Fatalf("%s: got %q want %q",tc.name,got,tc.want)}}
+}
