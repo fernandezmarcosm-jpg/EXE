@@ -17,7 +17,7 @@ let refreshing = false
 let cachedVisualSettings:any = null
 let savingVisualSettings = false
 
-function parseNumber(value:string):number|null {
+export function parseNumber(value:string):number|null {
   let s=value.trim().replace(/[%$\s]/g,'')
   if (!s) return null
   if (s.includes(',') && s.includes('.')) {
