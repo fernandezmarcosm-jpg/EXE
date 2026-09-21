@@ -95,15 +95,78 @@ func applyConfiguredColumnType(c DatasetColumn)DatasetColumn{t:=parseConfiguredT
 func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");n:=normalizeHeader(h[i]);if n=="CLAVE"||n=="SKU"{if ki<0{ki=i}}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE/SKU")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(row[i])}};m.ByKey[k]=v};return m,source,nil}
 func csvHeaderTypes(m *csvMaster)map[string]ValueType{out:=map[string]ValueType{};if m==nil{return out};for _,h:=range m.Headers{out[h]=ValueText};for _,row:=range m.ByKey{for h,raw:=range row{if raw==""{continue};t:=inferValueType(raw);if t==ValueNumber{out[h]=ValueNumber}}};return out}
 func findConfiguredSOColumn(sh MemorySheet,configured int)string{if configured>0{for _,c:=range sh.Columns{if c.Index==configured-1{return c.ID}}};for _,c:=range sh.Columns{n:=normalizeHeader(c.Title);switch n{case "SO","NRO SO","N SO","NUMERO SO","NÚMERO SO","ORDEN DE VENTA","ORDENVENTA","SALES ORDER":return c.ID}};return ""}
-func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")};m,_,e:=loadMasterCSV("");if e!=nil{return nil,e};ds:=&MemoryDataset{CSVRows:len(m.ByKey)};addCSV:=func(t string,typ ValueType)string{x:=fmt.Sprintf("CSV:%s",normalizeHeader(t));c:=DatasetColumn{ID:x,Title:strings.TrimSpace(t),Source:"CSV",Type:typ,Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c);return x};csvTypes:=csvHeaderTypes(m);csvIDs:=map[string]string{};csvJoinHeader:="";for _,h:=range m.Headers{if _,exists:=csvIDs[h];exists{continue};csvIDs[h]=addCSV(h,csvTypes[h]);if csvJoinHeader==""&&(normalizeHeader(h)=="CLAVE"||normalizeHeader(h)=="SKU"){csvJoinHeader=h}};seenLines:=map[string]bool{};createdColumns:=map[string]bool{}
-	for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{soID:=findConfiguredSOColumn(sh,s.SOColumn);joinID,itemID:="","";mapID:=map[string]string{};usedIDs:=map[string]int{};explicitJoinMatched:=false;for _,c:=range sh.Columns{id:=uniqueNormalizedHeaderID(c.Title,usedIDs);if !createdColumns[id]{dc:=DatasetColumn{ID:id,Title:c.Title,Source:"XLSX",Type:c.Type,Width:c.Width,Visible:true};if strings.TrimSpace(c.Title)==""{dc.Title=fmt.Sprintf("C%d",c.Index+1)};if dc.Width<1{dc.Width=140};dc=applyConfiguredColumnType(dc);ds.Columns=append(ds.Columns,dc);createdColumns[id]=true};mapID[c.ID]=id;normalizedTitle:=normalizeHeader(c.Title);if strings.TrimSpace(s.JoinExcelColumn)!=""&&normalizedTitle==normalizeHeader(s.JoinExcelColumn){joinID=c.ID;explicitJoinMatched=true};if normalizedTitle=="ITEM"{itemID=c.ID}}
-		if !explicitJoinMatched {for _,synonym:=range []string{"CLAVE","SKU","CODIGO","COD"}{for _,c:=range sh.Columns{if normalizeHeader(c.Title)==synonym{joinID=c.ID;break}};if joinID!=""{break}}}
-		if joinID=="" {joinID=itemID}
+type lookupTable struct{Name string;KeyHeader string;Headers []string;ByKey map[string]map[string]string;Source string}
+
+func lookupCSVSeparator(data []byte)rune{
+	line:=strings.SplitN(strings.TrimPrefix(string(data),"\ufeff"),"\n",2)[0]
+	semi:=strings.Count(line,";");comma:=strings.Count(line,",")
+	if comma>semi{return ','}
+	return ';'
+}
+func parseLookupTable(data []byte,name,source string)(lookupTable,error){
+	r:=csv.NewReader(bytes.NewReader(data));r.Comma=lookupCSVSeparator(data);r.FieldsPerRecord=-1
+	rows,e:=r.ReadAll();if e!=nil{return lookupTable{},e};if len(rows)==0{return lookupTable{},fmt.Errorf("CSV %q vacío",name)}
+	h:=make([]string,len(rows[0]));for i,x:=range rows[0]{h[i]=strings.TrimSpace(strings.TrimPrefix(x,"\ufeff"))}
+	if len(h)==0||strings.TrimSpace(h[0])==""{return lookupTable{},fmt.Errorf("CSV %q sin columna clave",name)}
+	t:=lookupTable{Name:name,KeyHeader:h[0],Headers:h,ByKey:map[string]map[string]string{},Source:source}
+	for _,row:=range rows[1:]{if len(row)==0||strings.TrimSpace(row[0])==""{continue};k:=normalizeJoinKey(row[0]);if k==""{continue};v:=map[string]string{};for i,header:=range h{if i<len(row){v[header]=strings.TrimSpace(row[i])}};t.ByKey[k]=v}
+	return t,nil
+}
+func lookupCSVSearchDirs()[]string{
+	dirs:=make([]string,0,2);seen:=map[string]bool{};add:=func(d string){d=strings.TrimSpace(d);if d==""{return};d=filepath.Clean(d);if seen[d]{return};if st,e:=os.Stat(d);e==nil&&st.IsDir(){seen[d]=true;dirs=append(dirs,d)}}
+	if x,e:=os.Executable();e==nil{add(filepath.Dir(x))}
+	if d,e:=os.Getwd();e==nil{add(d)}
+	return dirs
+}
+func lookupCSVFiles()[]string{
+	files:=[]string{};seenNames:=map[string]bool{}
+	for _,dir:=range lookupCSVSearchDirs(){entries,e:=os.ReadDir(dir);if e!=nil{continue};for _,entry:=range entries{if entry.IsDir()||!strings.EqualFold(filepath.Ext(entry.Name()),".csv"){continue};name:=entry.Name();if strings.EqualFold(name,"GestionSO_Datos.csv")||seenNames[strings.ToLower(name)]{continue};seenNames[strings.ToLower(name)]=true;files=append(files,filepath.Join(dir,name))}}
+	return files
+}
+func loadLookupTables()([]lookupTable,error){
+	paths:=lookupCSVFiles();tables:=make([]lookupTable,0,len(paths))
+	for _,path:=range paths{data,e:=os.ReadFile(path);if e!=nil{log.Printf("[LOOKUP] no se pudo leer %q: %v",path,e);continue};name:=strings.TrimSuffix(filepath.Base(path),filepath.Ext(path));t,e:=parseLookupTable(data,name,path);if e!=nil{log.Printf("[LOOKUP] se omite %q: %v",path,e);continue};tables=append(tables,t);log.Printf("[LOOKUP] base=%q key=%q filas=%d source=%q",t.Name,t.KeyHeader,len(t.ByKey),t.Source)}
+	return tables,nil
+}
+func lookupColumnForKey(sh MemorySheet,keyHeader string)string{
+	want:=normalizeHeader(keyHeader);if want==""{return ""}
+	for _,c:=range sh.Columns{if normalizeHeader(c.Title)==want{return c.ID}}
+	return ""
+}
+func lookupColumnID(baseName,attributeHeader string,used map[string]int)string{
+	base:=normalizeHeader(baseName);if base==""{base="BASE"};attr:=normalizeHeader(attributeHeader);if attr==""{attr="COLUMNA"}
+	key:=fmt.Sprintf("LOOKUP:%s:%s",base,attr);used[key]++;if used[key]==1{return key};return fmt.Sprintf("%s_%d",key,used[key])
+}
+func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){
+	if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")}
+	m,_,e:=loadMasterCSV("");if e!=nil{return nil,e}
+	lookups,err:=loadLookupTables();if err!=nil{return nil,err}
+	ds:=&MemoryDataset{CSVRows:len(m.ByKey)}
+	addCSV:=func(t string,typ ValueType)string{x:=fmt.Sprintf("CSV:%s",normalizeHeader(t));c:=DatasetColumn{ID:x,Title:strings.TrimSpace(t),Source:"CSV",Type:typ,Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c);return x}
+	csvTypes:=csvHeaderTypes(m);csvIDs:=map[string]string{};csvJoinHeader:="";for _,h:=range m.Headers{if _,exists:=csvIDs[h];exists{continue};csvIDs[h]=addCSV(h,csvTypes[h]);if csvJoinHeader==""&&(normalizeHeader(h)=="CLAVE"||normalizeHeader(h)=="SKU"){csvJoinHeader=h}}
+	lookupIDs:=map[string]map[string]string{};lookupTypes:=map[string]map[string]ValueType{};for _,table:=range lookups{ids:=map[string]string{};types:=map[string]ValueType{};used:=map[string]int{};for _,h:=range table.Headers[1:]{id:=lookupColumnID(table.Name,h,used);ids[h]=id;types[h]=ValueText};lookupIDs[table.Name]=ids;lookupTypes[table.Name]=types;for _,h:=range table.Headers[1:]{c:=DatasetColumn{ID:ids[h],Title:strings.TrimSpace(h),Source:"LOOKUP",Type:types[h],Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c)}}
+	seenLines:=map[string]bool{};createdColumns:=map[string]bool{}
+	for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{
+		soID,itemID,joinID:="","","";mapID:=map[string]string{};usedIDs:=map[string]int{};explicitJoinMatched:=false
+		for _,c:=range sh.Columns{id:=uniqueNormalizedHeaderID(c.Title,usedIDs);if !createdColumns[id]{dc:=DatasetColumn{ID:id,Title:c.Title,Source:"XLSX",Type:c.Type,Width:c.Width,Visible:true};if strings.TrimSpace(c.Title)==""{dc.Title=fmt.Sprintf("C%d",c.Index+1)};if dc.Width<1{dc.Width=140};dc=applyConfiguredColumnType(dc);ds.Columns=append(ds.Columns,dc);createdColumns[id]=true};mapID[c.ID]=id;normalizedTitle:=normalizeHeader(c.Title);if strings.TrimSpace(s.JoinExcelColumn)!=""&&normalizedTitle==normalizeHeader(s.JoinExcelColumn){joinID=c.ID;explicitJoinMatched=true};if normalizedTitle=="ITEM"{itemID=c.ID}}
+		soID=findConfiguredSOColumn(sh,s.SOColumn);if !explicitJoinMatched{for _,synonym:=range []string{"CLAVE","SKU","CODIGO","COD"}{for _,c:=range sh.Columns{if normalizeHeader(c.Title)==synonym{joinID=c.ID;break}};if joinID!=""{break}}};if joinID==""{joinID=itemID}
 		joinExcelTitle:="";for _,c:=range sh.Columns{if c.ID==joinID{joinExcelTitle=c.Title;break}}
-		if soID==""{continue};sheetEnriched:=0;for _,row:=range sh.Rows{v,ok:=row.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue};lineKey:="";if itemID!=""{if item,ok:=row.Values[itemID];ok&&strings.TrimSpace(item.Raw)!=""{lineKey=normalizeJoinKey(v.Raw)+"\x1f"+normalizeJoinKey(item.Raw)}};if lineKey!=""{if seenLines[lineKey]{ds.DuplicateSO++;continue};seenLines[lineKey]=true};rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";if joinID!=""{if x,ok:=row.Values[joinID];ok{join=normalizeJoinKey(x.Raw)}};for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x}};if item,ok:=m.ByKey[join];ok{ds.Enriched++;sheetEnriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}};ds.Records=append(ds.Records,rec)};log.Printf("[JOIN] Excel=%q CSV=%q filas_match=%d Enriched=%d",joinExcelTitle,csvJoinHeader,sheetEnriched,ds.Enriched)}}
+		if soID==""{continue};sheetEnriched:=0
+		for _,row:=range sh.Rows{
+			v,ok:=row.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue}
+			lineKey:="";if itemID!=""{if item,ok:=row.Values[itemID];ok&&strings.TrimSpace(item.Raw)!=""{lineKey=normalizeJoinKey(v.Raw)+"\x1f"+normalizeJoinKey(item.Raw)}};if lineKey!=""{if seenLines[lineKey]{ds.DuplicateSO++;continue};seenLines[lineKey]=true}
+			rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";if joinID!=""{if x,ok:=row.Values[joinID];ok{join=normalizeJoinKey(x.Raw)}}
+			for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x}}
+			if item,ok:=m.ByKey[join];ok{ds.Enriched++;sheetEnriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}}
+			for _,table:=range lookups{keyID:=lookupColumnForKey(sh,table.KeyHeader);if keyID==""{continue};keyRaw:="";if x,ok:=row.Values[keyID];ok{keyRaw=x.Raw};match,ok:=table.ByKey[normalizeJoinKey(keyRaw)];if !ok{continue};for _,h:=range table.Headers[1:]{raw:=match[h];if raw==""{continue};id:=lookupIDs[table.Name][h];rec.Values[id]=makeMemoryValue(id,raw)}}
+			ds.Records=append(ds.Records,rec)
+		}
+		log.Printf("[JOIN] Excel=%q CSV=%q filas_match=%d Enriched=%d",joinExcelTitle,csvJoinHeader,sheetEnriched,ds.Enriched)
+	}}
 	if len(ds.Records)==0{return nil,fmt.Errorf("no se encontraron filas con SO: columna configurada N°%d y tampoco se detectó una cabecera SO válida",s.SOColumn)}
-	order:=make([]string,0,len(ds.Columns));for _,c:=range ds.Columns{order=append(order,c.ID)};s.ColumnOrder=order;s.VisibleColumns=order
-	if s.MaxColumns<len(ds.Columns){s.MaxColumns=len(ds.Columns)+50};ensureCalculatedDatasetColumns(ds,s);log.Printf("[JOIN] final: filas_csv=%d Enriched=%d",len(m.ByKey),ds.Enriched);return ds,nil}
+	order:=make([]string,0,len(ds.Columns));for _,c:=range ds.Columns{order=append(order,c.ID)};s.ColumnOrder=order;s.VisibleColumns=order;if s.MaxColumns<len(ds.Columns){s.MaxColumns=len(ds.Columns)+50};ensureCalculatedDatasetColumns(ds,s);log.Printf("[JOIN] final: filas_csv=%d Enriched=%d lookups=%d",len(m.ByKey),ds.Enriched,len(lookups));return ds,nil
+}
+
 func ensureCalculatedDatasetColumns(ds *MemoryDataset,s DatasetSettings){if ds==nil{return};ensure:=func(name string)DatasetColumn{for _,c:=range ds.Columns{if c.Source=="CALCULADA"&&strings.EqualFold(c.Title,name){return c}};c:=DatasetColumn{ID:fmt.Sprintf("D%03d",len(ds.Columns)+1),Title:name,Source:"CALCULADA",Type:ValueNumber,Width:150,Visible:true};ds.Columns=append(ds.Columns,c);return c};if strings.TrimSpace(s.FormulaTitle)!=""&&strings.TrimSpace(s.Formula)!=""{ensure(strings.TrimSpace(s.FormulaTitle))};for _,cc:=range s.CalculatedColumns{if strings.TrimSpace(cc.Name)!=""&&strings.TrimSpace(cc.Formula)!=""{ensure(strings.TrimSpace(cc.Name))}}}
 func(e *MemoryDataset)columnByTitle(t string)(DatasetColumn,bool){for _,c:=range e.Columns{if strings.EqualFold(strings.TrimSpace(c.Title),strings.TrimSpace(t))||strings.EqualFold(strings.TrimSpace(datasetColumnDisplayTitle(c)),strings.TrimSpace(t)){return c,true}};return DatasetColumn{},false}
 func evaluateFormula(expr string,r DatasetRecord,cols []DatasetColumn)(float64,bool){vals:=map[string]float64{};for _,c:=range cols{if v,ok:=r.Values[c.ID];ok&&(v.Type==ValueNumber||v.Type==ValueDate){n:=v.Number;title:=strings.ToLower(strings.TrimSpace(c.Title));vals[title]=n;vals[strings.ToLower(strings.TrimSpace(c.Source+":"+c.Title))]=n;if c.Source=="CSV"{vals["csv:"+title]=n}}};p:=&formulaParser{s:expr,values:vals};v,ok:=p.expr();p.skip();return v,ok&&p.pos==len(p.s)}
