@@ -1,4 +1,4 @@
-import { GetSettings } from '../wailsjs/go/main/App'
+import { GetSettings, SaveSettings } from '../wailsjs/go/main/App'
 
 type Settings = {
   subtotal_column?: string
@@ -14,6 +14,8 @@ type Settings = {
 let settings: Settings = {}
 let lastSignature = ''
 let refreshing = false
+let cachedVisualSettings:any = null
+let savingVisualSettings = false
 
 function parseNumber(value:string):number|null {
   let s=value.trim().replace(/[%$\s]/g,'')
@@ -73,7 +75,7 @@ function refreshFilteredSubtotals() {
   const subtotalRows:HTMLTableRowElement[]=[]
   const makeSubtotal=(groupValue:string,groupRows:Record<string,string>[],total=false)=>{
     const tr=document.createElement('tr'); tr.className='subtotal'+(total?' subtotal-total':'')
-    headers.forEach((h,index)=>{
+    headers.forEach(h=>{
       const td=document.createElement('td')
       let value=''
       if (h.id===groupId) value=total ? `TOTAL GENERAL · ${uniqueGroups.size} únicos` : groupValue
@@ -128,13 +130,41 @@ function refreshFilteredSubtotals() {
   }
 }
 
-void GetSettings().then(s=>{settings=s as Settings;refreshFilteredSubtotals()}).catch(()=>{})
+function applyVisualSettings(s:any){
+  cachedVisualSettings=s
+  const types={...(s.column_types??{})}
+  const font=Number(types.__visual_font_size)
+  const row=Number(types.__visual_row_height)
+  const wrap=document.getElementById('table-wrap')
+  const fontInput=document.getElementById('font-size') as HTMLInputElement|null
+  const rowInput=document.getElementById('row-height') as HTMLInputElement|null
+  if(Number.isFinite(font)&&font>=6&&font<=28){if(fontInput)fontInput.value=String(font);wrap?.style.setProperty('--grid-font',`${font}px`)}
+  if(Number.isFinite(row)&&row>=10&&row<=60){if(rowInput)rowInput.value=String(row);wrap?.style.setProperty('--grid-row-h',`${row}px`)}
+}
+
+async function saveVisualMinimums(){
+  if(savingVisualSettings)return
+  const fontInput=document.getElementById('font-size') as HTMLInputElement|null
+  const rowInput=document.getElementById('row-height') as HTMLInputElement|null
+  const font=Math.max(6,Math.min(28,Number(fontInput?.value)||14))
+  const row=Math.max(10,Math.min(60,Number(rowInput?.value)||28))
+  savingVisualSettings=true
+  try{
+    const s:any=await GetSettings()
+    s.column_types={...(s.column_types??{}),__visual_font_size:font,__visual_row_height:row}
+    await SaveSettings(s)
+    applyVisualSettings(s)
+  }finally{savingVisualSettings=false}
+}
+
+void GetSettings().then(s=>{settings=s as Settings;cachedVisualSettings=s;applyVisualSettings(s);refreshFilteredSubtotals()}).catch(()=>{})
 
 document.addEventListener('change',event=>{
   const target=event.target as HTMLElement|null
-  if (target?.id==='subtotal-group' || target?.matches('select[data-subtotal-id]')) {
+  if(target?.id==='subtotal-group' || target?.matches('select[data-subtotal-id]')) {
     void GetSettings().then(s=>{settings=s as Settings;lastSignature='';refreshFilteredSubtotals()}).catch(()=>{})
   }
+  if(target?.id==='font-size' || target?.id==='row-height') void saveVisualMinimums()
 })
 
 document.addEventListener('input',event=>{
@@ -143,6 +173,6 @@ document.addEventListener('input',event=>{
 
 const wrap=document.getElementById('table-wrap')
 if (wrap) {
-  const observer=new MutationObserver(()=>requestAnimationFrame(refreshFilteredSubtotals))
+  const observer=new MutationObserver(()=>requestAnimationFrame(()=>{refreshFilteredSubtotals();if(cachedVisualSettings)applyVisualSettings(cachedVisualSettings)}))
   observer.observe(wrap,{childList:true,subtree:true})
 }
