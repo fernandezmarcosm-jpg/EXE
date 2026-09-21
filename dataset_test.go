@@ -185,3 +185,19 @@ func TestLookupColumnForKeyUsesNormalizedHeader(t *testing.T) {
 	if got:=lookupColumnForKey(sh,"N° CLIENTE");got!="C1"{t.Fatalf("column=%q; want C1",got)}
 	if got:=lookupColumnForKey(sh,"PROVINCIA");got!=""{t.Fatalf("unexpected column=%q",got)}
 }
+
+func TestLookupEnrichmentByNumeroClienteNumericValue(t *testing.T) {
+	table:=lookupTable{Name:"Clientes",KeyHeader:"Nº CLIENTE",Headers:[]string{"Nº CLIENTE","ATRIBUTO"},ByKey:map[string]map[string]string{}}
+	table.ByKey[normalizeJoinKey("80003285")]=map[string]string{"Nº CLIENTE":"80003285","ATRIBUTO":"Cadena"}
+	sh:=MemorySheet{Columns:[]MemoryColumn{{ID:"CLIENTE",Title:"Nº CLIENTE",Index:0,Type:ValueNumber}}}
+	row:=MemoryRow{Values:map[string]MemoryValue{"CLIENTE":{ColumnID:"CLIENTE",Type:ValueNumber,Raw:"80003285.00",Number:80003285}}}
+	rec:=DatasetRecord{Values:map[string]MemoryValue{}}
+	ids:=map[string]map[string]string{"Clientes":{"ATRIBUTO":"LOOKUP:CLIENTES:ATRIBUTO"}}
+	if got:=applyLookupEnrichment(&rec,sh,row,[]lookupTable{table},ids);got!=1{t.Fatalf("lookup matches=%d; want 1",got)}
+	v,ok:=rec.Values["LOOKUP:CLIENTES:ATRIBUTO"];if !ok||v.Raw!="Cadena"{t.Fatalf("lookup value: ok=%v raw=%q",ok,v.Raw)}
+}
+
+func TestNormalizeJoinKeyLocaleNumbers(t *testing.T) {
+	cases:=map[string]string{"80003285":"80003285","80003285.00":"80003285","80003285,00":"80003285","23.961,00":"23961","23,961.00":"23961"}
+	for in,want:=range cases{if got:=normalizeJoinKey(in);got!=want{t.Fatalf("%q => %q; want %q",in,got,want)}}
+}
