@@ -232,8 +232,6 @@ func TestBuildMemoryDatasetJoinsPhysicalLookupNumeroClienteVariants(t *testing.T
 		if !ok || v.Raw != "Cadena" { t.Fatalf("lookup value: ok=%v raw=%q; want Cadena", ok, v.Raw) }
 	})
 }
-}
-
 func TestNormalizeJoinKeyLocaleNumbers(t *testing.T) {
 	cases:=map[string]string{"80003285":"80003285","80003285.00":"80003285","80003285,00":"80003285","23.961,00":"23961","23,961.00":"23961"}
 	for in,want:=range cases{if got:=normalizeJoinKey(in);got!=want{t.Fatalf("%q => %q; want %q",in,got,want)}}
