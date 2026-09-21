@@ -137,7 +137,7 @@ func formatDatasetDate(v MemoryValue)string{
 	raw:=strings.TrimSpace(v.Raw)
 	if v.Type==ValueDate && raw!="" { return raw }
 	if raw!="" {
-		if n,err:=strconv.ParseFloat(strings.ReplaceAll(strings.ReplaceAll(raw,".",""),",","."),64);err==nil&&n>=1&&n<100000 {
+		if n,err:=strconv.ParseFloat(strings.ReplaceAll(raw,",","."),64);err==nil&&n>=1&&n<100000 {
 			return time.Date(1899,12,30,0,0,0,0,time.UTC).Add(time.Duration(n*24)*time.Hour).Format("02/01/2006")
 		}
 		for _,layout:=range []string{"02/01/2006","2/1/2006","2006-01-02","2006/01/02","02-01-2006","2-1-2006","2006-01-02 15:04:05","02/01/2006 15:04:05"}{
