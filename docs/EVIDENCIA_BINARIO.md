@@ -105,3 +105,9 @@ No se presenta como recuperada ninguna lógica de negocio que no esté demostrad
 ## Binarios
 
 No se commitean `.exe` ni `.zip`. El ejecutable de entrega se publica exclusivamente como artifact de GitHub Actions.
+
+## Cruce multi-base CSV físico — 2026-09-21
+
+Los CSV auxiliares se colocan en la misma carpeta que GestionSO-V57.exe. El programa escanea esa carpeta al importar el XLSX; como fallback también revisa el directorio de trabajo. GestionSO_Datos.csv sigue siendo la base maestra de SKU y conserva su fallback embebido. Los CSV auxiliares no requieren cambios en el ejecutable: se agregan como archivos físicos .csv junto al binario.
+
+Cada auxiliar usa su primera columna como clave. El encabezado de esa clave debe corresponder al encabezado físico de una columna del XLSX; los alias de COLUMNAS no modifican la clave de cruce. Las claves numéricas se normalizan para tolerar valores como 80003285 frente a 80003285.00 y formatos con separadores es-AR. Los atributos resultantes se publican como columnas LOOKUP:<BASE>:<ATRIBUTO> y pueden mostrarse/ocultarse y recibir alias desde COLUMNAS.
