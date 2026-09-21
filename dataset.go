@@ -77,14 +77,14 @@ func normalizeJoinKey(v string)string{
 	s=strings.ReplaceAll(s," ","");s=strings.ReplaceAll(s,"\u00a0","")
 	comma:=strings.LastIndex(s,",");dot:=strings.LastIndex(s,".")
 	if comma>=0||dot>=0{
-		dec:=-1;if comma>dot{dec=comma}else{dec=dot}
-		frac:=len(s)-dec-1;integer:=strings.ReplaceAll(strings.ReplaceAll(s,",",""),".","")
-		if frac==0||frac<=2{
-			if n,e:=strconv.ParseFloat(strings.Replace(s[:dec]+"."+s[dec+1:],",","",-1),64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}
+		sep:=-1;frac:=0
+		if comma>=0&&dot>=0{if comma>dot{sep=comma}else{sep=dot};frac=len(s)-sep-1
+			if frac<=2{integer:=strings.ReplaceAll(strings.ReplaceAll(s[:sep],".",""),",","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}}
+		}else{
+			if comma>=0{sep=comma}else{sep=dot};frac=len(s)-sep-1
+			if frac<=2{integer:=strings.ReplaceAll(s[:sep],",","");integer=strings.ReplaceAll(integer,".","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}}
+			if frac==3{integer:=strings.ReplaceAll(s,",","");integer=strings.ReplaceAll(integer,".");if n,e:=strconv.ParseInt(integer,10,64);e==nil{return strconv.FormatInt(n,10)}}
 		}
-		if comma>=0&&dot<0&&frac==3{if n,e:=strconv.ParseInt(strings.ReplaceAll(s,",",""),10,64);e==nil{return strconv.FormatInt(n,10)}}
-		if dot>=0&&comma<0&&frac==3{if n,e:=strconv.ParseInt(strings.ReplaceAll(s,".",""),10,64);e==nil{return strconv.FormatInt(n,10)}}
-		_ = integer
 	}
 	return s
 }
