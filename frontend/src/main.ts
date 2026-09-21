@@ -83,19 +83,10 @@ function criterionMatches(c:Column, raw:string, criterion:FilterCriterion){
   return true
 }
 function columnHasActiveFilter(id:string){ return (state.filters[id]??'').trim()!=='' || Object.prototype.hasOwnProperty.call(state.valueFilters,id) || Object.prototype.hasOwnProperty.call(state.criteria,id) }
-function filteredRows(){
-  const rows=state.data?.rows ?? []
-  const activeText=Object.entries(state.filters).filter(([,v])=>v.trim()!=='')
-  const activeValues=Object.entries(state.valueFilters)
-  const activeCriteria=Object.entries(state.criteria)
-  if(!activeText.length&&!activeValues.length&&!activeCriteria.length)return rows
-  return rows.filter(row=>{
-    if(!activeText.every(([id,needle])=>(row[id]??'').toLocaleLowerCase().includes(needle.toLocaleLowerCase())))return false
-    if(!activeValues.every(([id,allowed])=>allowed.has(row[id]??'')))return false
-    if(!activeCriteria.every(([id,criterion])=>{ const c=state.data?.columns.find(col=>col.id===id); return !!c && criterionMatches(c,row[id]??'',criterion) }))return false
-    return true
-  })
-}
+function parseCriterionDate(value:string):number|null{const x=value.trim();let m=x.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);if(m)return Date.UTC(Number(m[3]),Number(m[2])-1,Number(m[1]));m=x.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/);if(m)return Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]));const t=Date.parse(x);return Number.isFinite(t)?t:null}
+function criterionMatches(c:Column,raw:string,f:FilterCriterion){const op=f.op;const date=isDateColumn(c),numeric=isNumericColumn(c);const a=date?parseCriterionDate(raw):numeric?parseCellNumber(raw):raw.trim().toLocaleLowerCase();const b=date?parseCriterionDate(f.value??''):numeric?parseCellNumber(f.value??''):(f.value??'').trim().toLocaleLowerCase();const b2=date?parseCriterionDate(f.value2??''):numeric?parseCellNumber(f.value2??''):(f.value2??'').trim().toLocaleLowerCase();if(op==='contains')return typeof a==='string'&&typeof b==='string'&&a.includes(b);if(a===null||b===null||a===undefined||b===undefined)return false;if(op==='eq')return a===b;if(op==='neq')return a!==b;if(op==='between')return b2!==null&&b2!==undefined&&a>=b&&a<=b2;if(op==='gt')return a>b;if(op==='lt')return a<b;if(op==='gte')return a>=b;if(op==='lte')return a<=b;return true}
+function columnHasActiveFilter(id:string){return (state.filters[id]??'').trim()!==''||Object.prototype.hasOwnProperty.call(state.valueFilters,id)||Object.prototype.hasOwnProperty.call(state.criteria,id)}
+function filteredRows(){const rows=state.data?.rows??[];const activeText=Object.entries(state.filters).filter(([,v])=>v.trim()!=='');const activeValues=Object.entries(state.valueFilters);const activeCriteria=Object.entries(state.criteria);if(!activeText.length&&!activeValues.length&&!activeCriteria.length)return rows;return rows.filter(row=>activeText.every(([id,n])=>(row[id]??'').toLocaleLowerCase().includes(n.toLocaleLowerCase()))&&activeValues.every(([id,a])=>a.has(row[id]??''))&&activeCriteria.every(([id,f])=>{const c=state.data?.columns.find(x=>x.id===id);return !!c&&criterionMatches(c,row[id]??'',f)}))}
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
 function columnWidth(id:string){ return Math.round(clamp(Number(state.visual.columnWidths[id] ?? 140),8,600)) }
@@ -165,7 +156,7 @@ function render(){
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => {
     const active=columnHasActiveFilter(c.id)
-    return `<th data-column-id="${escAttr(c.id)}" class="${active?'column-filtered':''}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
+    return `<th class="${active?'column-filtered':''}" data-column-id="${escAttr(c.id)}" class="${active?'column-filtered':''}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
   }).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
