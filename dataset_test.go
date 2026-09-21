@@ -167,3 +167,21 @@ func TestDatasetValueTextFormatsConfiguredDate(t *testing.T) {
 	}
 	for _,tc:=range cases{if got:=datasetValueText(c,tc.v);got!=tc.want{t.Fatalf("%s: got %q want %q",tc.name,got,tc.want)}}
 }
+func TestParseLookupTableSupportsSemicolonAndComma(t *testing.T) {
+	semi,err:=parseLookupTable([]byte("Nº CLIENTE;PROVINCIA;CIUDAD\n123;Buenos Aires;Campana\n"),"Clientes","clientes.csv");if err!=nil{t.Fatal(err)}
+	if semi.KeyHeader!="Nº CLIENTE"{t.Fatalf("key header=%q",semi.KeyHeader)};if semi.ByKey["123"]["PROVINCIA"]!="Buenos Aires"{t.Fatalf("semicolon lookup failed: %#v",semi.ByKey["123"])}
+	comma,err:=parseLookupTable([]byte("SDSRP2,GENERATOR,CITY\nA1,Gen1,Campana\n"),"Generadores","generadores.csv");if err!=nil{t.Fatal(err)}
+	if comma.ByKey["A1"]["CITY"]!="Campana"{t.Fatalf("comma lookup failed: %#v",comma.ByKey["A1"])}
+}
+
+func TestLookupColumnIDIsStableAndPrefixed(t *testing.T) {
+	used:=map[string]int{}
+	id1:=lookupColumnID("Clientes", "PROVINCIA", used);id2:=lookupColumnID("Clientes", "PROVINCIA", used)
+	if id1!="LOOKUP:CLIENTES:PROVINCIA"||id2!="LOOKUP:CLIENTES:PROVINCIA_2"{t.Fatalf("ids=%q,%q",id1,id2)}
+}
+
+func TestLookupColumnForKeyUsesNormalizedHeader(t *testing.T) {
+	sh:=MemorySheet{Columns:[]MemoryColumn{{ID:"C1",Title:"Nº CLIENTE",Index:0,Type:ValueText},{ID:"C2",Title:"CIUDAD",Index:1,Type:ValueText}}}
+	if got:=lookupColumnForKey(sh,"N° CLIENTE");got!="C1"{t.Fatalf("column=%q; want C1",got)}
+	if got:=lookupColumnForKey(sh,"PROVINCIA");got!=""{t.Fatalf("unexpected column=%q",got)}
+}
