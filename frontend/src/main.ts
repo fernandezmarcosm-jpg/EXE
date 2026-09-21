@@ -145,7 +145,7 @@ function render(){
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => {
     const active=Object.prototype.hasOwnProperty.call(state.valueFilters,c.id)
-    return `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
+    return `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
   }).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
