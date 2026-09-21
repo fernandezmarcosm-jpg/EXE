@@ -83,7 +83,7 @@ func normalizeJoinKey(v string)string{
 		}else{
 			if comma>=0{sep=comma}else{sep=dot};frac=len(s)-sep-1
 			if frac<=2{integer:=strings.ReplaceAll(s[:sep],",","");integer=strings.ReplaceAll(integer,".","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}}
-			if frac==3{integer:=strings.ReplaceAll(s,",","");integer=strings.ReplaceAll(integer,".");if n,e:=strconv.ParseInt(integer,10,64);e==nil{return strconv.FormatInt(n,10)}}
+			if frac==3{integer:=strings.ReplaceAll(s,",","");integer=strings.ReplaceAll(integer,".","");if n,e:=strconv.ParseInt(integer,10,64);e==nil{return strconv.FormatInt(n,10)}}
 		}
 	}
 	return s
