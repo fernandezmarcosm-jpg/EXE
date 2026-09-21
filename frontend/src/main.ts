@@ -10,10 +10,12 @@ type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<stri
 type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
 type SortState = { id:string; dir:'asc'|'desc' } | null
 
+type AppState = { data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; criteria:Record<string,FilterCriterion>; sort:SortState; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]} }
+
 let draggedColumnId = ''
 
-const state:{data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; criteria:Record<string,FilterCriterion>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
-  data:null, filters:{}, valueFilters:{}, criteria:{}, sort:null as SortState, columnsOpen:false, panelMode:'columns',
+const state:AppState = {
+  data:null, filters:{}, valueFilters:{}, criteria:{}, sort:null, columnsOpen:false, panelMode:'columns',
   visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
 }
 
