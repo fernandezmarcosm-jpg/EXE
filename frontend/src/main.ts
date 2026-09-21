@@ -9,8 +9,8 @@ type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<stri
 
 let draggedColumnId = ''
 
-const state:{data:Dataset|null; filters:Record<string,string>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
-  data:null, filters:{}, columnsOpen:false, panelMode:'columns',
+const state:{data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
+  data:null, filters:{}, valueFilters:{}, columnsOpen:false, panelMode:'columns',
   visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
 }
 
@@ -62,17 +62,63 @@ const panelTitle = panel.querySelector<HTMLHeadingElement>('.panel-head h2')!
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
 function filteredRows(){
   const rows = state.data?.rows ?? []
-  const active = Object.entries(state.filters).filter(([,v]) => v.trim() !== '')
-  if (!active.length) return rows
-  return rows.filter(row => active.every(([id,needle]) => (row[id] ?? '').toLocaleLowerCase().includes(needle.toLocaleLowerCase())))
+  const activeText = Object.entries(state.filters).filter(([,v]) => v.trim() !== '')
+  const activeValues = Object.entries(state.valueFilters)
+  if (!activeText.length && !activeValues.length) return rows
+  return rows.filter(row => {
+    if (!activeText.every(([id,needle]) => (row[id] ?? '').toLocaleLowerCase().includes(needle.toLocaleLowerCase()))) return false
+    return activeValues.every(([id,allowed]) => allowed.has(row[id] ?? ''))
+  })
 }
 
 function clamp(value:number,min:number,max:number){ return Math.max(min,Math.min(max,value)) }
 function columnWidth(id:string){ return Math.round(clamp(Number(state.visual.columnWidths[id] ?? 140),8,600)) }
 function isNumericColumn(c:Column){ return c.type.toLowerCase()==='number' || c.source==='CALCULADA' }
-function columnFormatKind(c:Column){ const t=state.visual.settings?.column_types?.[c.id]; if(t==='entero'||t==='decimal'||t==='porcentaje'||t==='moneda')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; if(state.visual.settings?.column_currency?.[c.id])return 'moneda'; return 'decimal' }
+function isDateColumn(c:Column){ const t=String(state.visual.settings?.column_types?.[c.id]??'').toLowerCase(); return c.type.toLowerCase()==='date' || t==='fecha' || t==='date' }
+function columnFormatKind(c:Column){ const t=String(state.visual.settings?.column_types?.[c.id]??'').toLowerCase(); if(t==='fecha'||t==='date')return 'fecha'; if(t==='entero'||t==='decimal'||t==='porcentaje'||t==='moneda')return t; if(state.visual.settings?.column_percent?.[c.id])return 'porcentaje'; if(state.visual.settings?.column_currency?.[c.id])return 'moneda'; return 'decimal' }
 function columnThousands(c:Column){ return !!state.visual.settings?.column_thousands?.[c.id] || columnFormatKind(c)==='moneda' }
 function parseCellNumber(value:string){ const s=value.trim().replace(/[%$\s]/g,'').replace(/\./g,'').replace(',', '.'); const n=Number(s); return Number.isFinite(n)?n:null }
+function closeValueFilterMenu(){ document.querySelector('.value-filter-menu')?.remove() }
+function openValueFilterMenu(id:string,anchor:HTMLButtonElement){
+  closeValueFilterMenu()
+  const values=[...new Set((state.data?.rows??[]).map(r=>r[id]??''))]
+  values.sort((a,b)=>a.localeCompare(b,'es',{numeric:true,sensitivity:'base'}))
+  let draft=new Set(state.valueFilters[id]??values)
+  const menu=document.createElement('div'); menu.className='value-filter-menu'
+  const rect=anchor.getBoundingClientRect()
+  menu.style.left=Math.min(rect.left,Math.max(8,window.innerWidth-300))+'px'
+  menu.style.top=Math.min(rect.bottom+4,Math.max(8,window.innerHeight-420))+'px'
+  menu.innerHTML='<input class="value-filter-search" placeholder="Buscar valor..."><div class="value-filter-actions"><button type="button" data-value-action="all">Seleccionar todo</button><button type="button" data-value-action="none">Limpiar</button></div><div class="value-filter-values"></div><div class="value-filter-footer"><button type="button" data-value-action="apply">Aplicar</button></div>'
+  document.body.appendChild(menu)
+  const list=menu.querySelector<HTMLDivElement>('.value-filter-values')!
+  const search=menu.querySelector<HTMLInputElement>('.value-filter-search')!
+  const renderValues=()=>{
+    const needle=search.value.toLocaleLowerCase()
+    list.innerHTML=values.filter(v=>(v||'(en blanco)').toLocaleLowerCase().includes(needle)).map((v,i)=>{
+      const label=v||'(en blanco)', checked=draft.has(v)
+      return '<label class="value-filter-option"><input type="checkbox" data-value-index="'+i+'" '+(checked?'checked':'')+'><span>'+esc(label)+'</span></label>'
+    }).join('')||'<div class="empty">Sin coincidencias.</div>'
+    list.querySelectorAll<HTMLInputElement>('input[data-value-index]').forEach(cb=>cb.addEventListener('change',()=>{
+      const v=values[Number(cb.dataset.valueIndex)]
+      if(cb.checked)draft.add(v);else draft.delete(v)
+    }))
+  }
+  renderValues()
+  search.addEventListener('input',renderValues)
+  menu.querySelector<HTMLButtonElement>('[data-value-action="all"]')!.addEventListener('click',()=>{draft=new Set(values);renderValues()})
+  menu.querySelector<HTMLButtonElement>('[data-value-action="none"]')!.addEventListener('click',()=>{draft=new Set();renderValues()})
+  menu.querySelector<HTMLButtonElement>('[data-value-action="apply"]')!.addEventListener('click',()=>{
+    if(draft.size===values.length){delete state.valueFilters[id]}else{state.valueFilters[id]=draft}
+    closeValueFilterMenu();render()
+  })
+}
+document.addEventListener('keydown',event=>{if(event.key==='Escape')closeValueFilterMenu()})
+document.addEventListener('mousedown',event=>{
+  const target=event.target as Element|null
+  if(target?.closest('.value-filter-menu')||target?.closest('.filter-menu-btn'))return
+  closeValueFilterMenu()
+})
+
 function cellMarkup(c:Column,value:string){ const bg=c.background||state.visual.settings?.column_background?.[c.id]||''; const sign=c.highlight_sign && isNumericColumn(c) ? parseCellNumber(value) : null; const cls=sign!==null?(sign<0?'cell-neg':sign>0?'cell-pos':''):''; const align=c.align||'left'; const styles=(bg?'background:'+escAttr(bg)+';':'')+'text-align:'+align+';'; return '<td class="'+cls+'" style="'+styles+'">'+esc(value)+'</td>' }
 
 async function persistVisualSettings(){
@@ -97,7 +143,10 @@ function render(){
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
   const tableWidth = cols.reduce((sum, c) => sum + columnWidth(c.id), 0)
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
-  const head = cols.map(c => `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title">${esc(c.title)}</div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`).join('')
+  const head = cols.map(c => {
+    const active=Object.prototype.hasOwnProperty.call(state.valueFilters,c.id)
+    return `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
+  }).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
   const displayRows = activeSubtotal ? (() => {
@@ -124,6 +173,12 @@ function render(){
     input.addEventListener('dragstart', event => event.stopPropagation())
     input.addEventListener('mousedown', event => event.stopPropagation())
     input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() })
+  })
+  tableWrap.querySelectorAll<HTMLButtonElement>('.filter-menu-btn').forEach(button => {
+    button.addEventListener('click',event => {
+      event.preventDefault(); event.stopPropagation()
+      openValueFilterMenu(button.dataset.valueFilter ?? '',button)
+    })
   })
   tableWrap.querySelectorAll<HTMLSpanElement>('.col-resizer').forEach(handle => {
     const id = handle.dataset.resizeId ?? ''
@@ -265,10 +320,10 @@ function renderColumnPanel(){
   }))
 
   columnList.querySelectorAll<HTMLDivElement>('.column-item').forEach((item,i)=>{
-    const c=state.data!.columns[i]; if(!isNumericColumn(c)) return
+    const c=state.data!.columns[i]; if(!isNumericColumn(c) && !isDateColumn(c)) return
     const controls=document.createElement('span'); controls.className='column-format-controls'
     const kind=columnFormatKind(c); const dec=Number(state.visual.settings?.column_decimals?.[c.id] ?? 2); const thousands=columnThousands(c); const sign=!!c.highlight_sign||!!state.visual.settings?.column_highlight_sign?.[c.id]
-    controls.innerHTML='<select data-format-index="'+i+'"><option value="entero">Entero</option><option value="decimal">Decimal</option><option value="porcentaje">Porcentaje</option><option value="moneda">Moneda ($)</option></select><input type="number" min="0" max="8" step="1" data-decimals-index="'+i+'" value="'+dec+'"><label><input type="checkbox" data-thousands-index="'+i+'" '+(thousands?'checked':'')+'> Miles</label><label><input type="checkbox" data-sign-index="'+i+'" '+(sign?'checked':'')+'> Color +/-</label>'
+    controls.innerHTML='<select data-format-index="'+i+'"><option value="entero">Entero</option><option value="decimal">Decimal</option><option value="porcentaje">Porcentaje</option><option value="moneda">Moneda ($)</option><option value="fecha">Fecha</option></select>'+(!isDateColumn(c)?'<input type="number" min="0" max="8" step="1" data-decimals-index="'+i+'" value="'+dec+'"><label><input type="checkbox" data-thousands-index="'+i+'" '+(thousands?'checked':'')+'> Miles</label><label><input type="checkbox" data-sign-index="'+i+'" '+(sign?'checked':'')+'> Color +/-</label>':'')
     item.appendChild(controls); const sel=controls.querySelector<HTMLSelectElement>('select')!; sel.value=kind
   })
   columnList.querySelectorAll<HTMLSelectElement>('select[data-align-index]').forEach(sel => sel.addEventListener('change', async () => {
@@ -279,8 +334,8 @@ function renderColumnPanel(){
   columnList.querySelectorAll<HTMLSelectElement>('select[data-align-index]').forEach((sel,i) => { sel.value = state.data!.columns[i].align || 'left' })
 
   columnList.querySelectorAll<HTMLSelectElement>('select[data-format-index]').forEach(sel=>sel.addEventListener('change',async()=>{
-    const i=Number(sel.dataset.formatIndex),c=state.data!.columns[i];let d=Number(columnList.querySelector<HTMLInputElement>('input[data-decimals-index="'+i+'"]')!.value)||0;if(sel.value==='entero')d=0
-    try{state.data=await SetColumnFormat(c.id,d,sel.value==='porcentaje',sel.value,!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]')!.checked) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};state.visual.settings.column_percent={...(state.visual.settings.column_percent??{}),[c.id]:sel.value==='porcentaje'};state.visual.settings.column_types={...(state.visual.settings.column_types??{}),[c.id]:sel.value};state.visual.settings.column_currency={...(state.visual.settings.column_currency??{}),[c.id]:sel.value==='moneda'};state.visual.settings.column_thousands={...(state.visual.settings.column_thousands??{}),[c.id]:sel.value==='moneda'||!!columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]')!.checked};render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error guardando formato: '+String(e)}
+    const i=Number(sel.dataset.formatIndex),c=state.data!.columns[i];const decInput=columnList.querySelector<HTMLInputElement>('input[data-decimals-index="'+i+'"]');const thousandsInput=columnList.querySelector<HTMLInputElement>('input[data-thousands-index="'+i+'"]');let d=Number(decInput?.value)||0;if(sel.value==='entero'||sel.value==='fecha')d=0
+    try{state.data=await SetColumnFormat(c.id,d,sel.value==='porcentaje',sel.value,!!thousandsInput?.checked) as Dataset;state.visual.settings.column_decimals={...(state.visual.settings.column_decimals??{}),[c.id]:d};state.visual.settings.column_percent={...(state.visual.settings.column_percent??{}),[c.id]:sel.value==='porcentaje'};state.visual.settings.column_types={...(state.visual.settings.column_types??{}),[c.id]:sel.value};state.visual.settings.column_currency={...(state.visual.settings.column_currency??{}),[c.id]:sel.value==='moneda'};state.visual.settings.column_thousands={...(state.visual.settings.column_thousands??{}),[c.id]:sel.value==='moneda'||!!thousandsInput?.checked};render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error guardando formato: '+String(e)}
   }))
   columnList.querySelectorAll<HTMLInputElement>('input[data-decimals-index]').forEach(inp=>inp.addEventListener('change',async()=>{
     const i=Number(inp.dataset.decimalsIndex),c=state.data!.columns[i],kind=columnFormatKind(c);let d=Math.max(0,Math.min(8,Number(inp.value)||0));if(kind==='entero')d=0;inp.value=String(d)
@@ -366,7 +421,7 @@ openBtn.addEventListener('click', async () => {
   try {
     const data = await ImportXLSX() as Dataset
     if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
-    state.data = data; state.filters = {}
+    state.data = data; state.filters = {}; state.valueFilters = {}
     status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s)`
     render()
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
@@ -384,7 +439,7 @@ byId<HTMLButtonElement>('none').addEventListener('click', async () => {
   if (!state.data) return
   state.data.columns.forEach(c=>c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
 })
-byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; render(); status.textContent='Filtros limpiados.' })
+byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; state.valueFilters={}; closeValueFilterMenu(); render(); status.textContent='Filtros limpiados.' })
 calcSave.addEventListener('click',async()=>{try{state.data=(state.calculated.editingOriginal?await UpdateCalculatedColumn(state.calculated.editingOriginal,calcName.value,calcFormula.value,calcPercent.checked):await AddCalculatedColumn(calcName.value,calcFormula.value,calcPercent.checked)) as Dataset;resetCalc();await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls();status.textContent='Campo calculado guardado.'}catch(e){status.textContent='Error guardando: '+String(e)}})
 calcCancel.addEventListener('click',resetCalc)
 subtotalGroup.addEventListener('change',saveSubtotals)
