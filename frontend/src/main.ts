@@ -6,11 +6,12 @@ type CalculatedColumn = { Name:string; Formula:string; Percent:boolean }
 type SubtotalRow = { group_value:string; group_count:number; values:Record<string,string>; total:boolean }
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
+type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
 
 let draggedColumnId = ''
 
-const state:{data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
-  data:null, filters:{}, valueFilters:{}, columnsOpen:false, panelMode:'columns',
+const state:{data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; criteria:Record<string,FilterCriterion>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
+  data:null, filters:{}, valueFilters:{}, criteria:{}, columnsOpen:false, panelMode:'columns',
   visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
 }
 
@@ -60,14 +61,38 @@ const subtotalSection = byId<HTMLElement>('subtotal-section')
 const panelTitle = panel.querySelector<HTMLHeadingElement>('.panel-head h2')!
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
+function criterionMatches(c:Column, raw:string, criterion:FilterCriterion){
+  const op=criterion.op
+  const raw2=criterion.value2??''
+  const numeric=isNumericColumn(c)
+  const date=isDateColumn(c)
+  const parseDate=(v:string):number|null=>{ const x=v.trim(); if(!x)return null; let m=x.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/); if(m)return Date.UTC(Number(m[3]),Number(m[2])-1,Number(m[1])); m=x.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/); if(m)return Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3])); const t=Date.parse(x); return Number.isFinite(t)?t:null }
+  const a=date?parseDate(raw):numeric?parseCellNumber(raw):raw.trim().toLocaleLowerCase()
+  const b=date?parseDate(criterion.value??''):numeric?parseCellNumber(criterion.value??')'):(criterion.value??'').trim().toLocaleLowerCase()
+  const b2=date?parseDate(raw2):numeric?parseCellNumber(raw2):raw2.trim().toLocaleLowerCase()
+  if(op==='contains') return typeof a==='string' && typeof b==='string' ? a.includes(b) : false
+  if(a===null || b===null || a===undefined || b===undefined) return false
+  if(op==='eq') return a===b
+  if(op==='neq') return a!==b
+  if(op==='between') return b2!==null && b2!==undefined && a>=b && a<=b2
+  if(op==='gt') return a>b
+  if(op==='lt') return a<b
+  if(op==='gte') return a>=b
+  if(op==='lte') return a<=b
+  return true
+}
+function columnHasActiveFilter(id:string){ return (state.filters[id]??'').trim()!=='' || Object.prototype.hasOwnProperty.call(state.valueFilters,id) || Object.prototype.hasOwnProperty.call(state.criteria,id) }
 function filteredRows(){
-  const rows = state.data?.rows ?? []
-  const activeText = Object.entries(state.filters).filter(([,v]) => v.trim() !== '')
-  const activeValues = Object.entries(state.valueFilters)
-  if (!activeText.length && !activeValues.length) return rows
-  return rows.filter(row => {
-    if (!activeText.every(([id,needle]) => (row[id] ?? '').toLocaleLowerCase().includes(needle.toLocaleLowerCase()))) return false
-    return activeValues.every(([id,allowed]) => allowed.has(row[id] ?? ''))
+  const rows=state.data?.rows ?? []
+  const activeText=Object.entries(state.filters).filter(([,v])=>v.trim()!=='')
+  const activeValues=Object.entries(state.valueFilters)
+  const activeCriteria=Object.entries(state.criteria)
+  if(!activeText.length&&!activeValues.length&&!activeCriteria.length)return rows
+  return rows.filter(row=>{
+    if(!activeText.every(([id,needle])=>(row[id]??'').toLocaleLowerCase().includes(needle.toLocaleLowerCase())))return false
+    if(!activeValues.every(([id,allowed])=>allowed.has(row[id]??'')))return false
+    if(!activeCriteria.every(([id,criterion])=>{ const c=state.data?.columns.find(col=>col.id===id); return !!c && criterionMatches(c,row[id]??'',criterion) }))return false
+    return true
   })
 }
 
@@ -81,37 +106,31 @@ function parseCellNumber(value:string){ const s=value.trim().replace(/[%$\s]/g,'
 function closeValueFilterMenu(){ document.querySelector('.value-filter-menu')?.remove() }
 function openValueFilterMenu(id:string,anchor:HTMLButtonElement){
   closeValueFilterMenu()
-  const values=[...new Set((state.data?.rows??[]).map(r=>r[id]??''))]
-  values.sort((a,b)=>a.localeCompare(b,'es',{numeric:true,sensitivity:'base'}))
+  const column=state.data?.columns.find(c=>c.id===id); if(!column)return
+  const values=[...new Set((state.data?.rows??[]).map(r=>r[id]??''))]; values.sort((a,b)=>a.localeCompare(b,'es',{numeric:true,sensitivity:'base'}))
   let draft=new Set(state.valueFilters[id]??values)
+  let criterionDraft:FilterCriterion={...(state.criteria[id]??{op:'contains',value:''})}
   const menu=document.createElement('div'); menu.className='value-filter-menu'
-  const rect=anchor.getBoundingClientRect()
-  menu.style.left=Math.min(rect.left,Math.max(8,window.innerWidth-300))+'px'
-  menu.style.top=Math.min(rect.bottom+4,Math.max(8,window.innerHeight-420))+'px'
-  menu.innerHTML='<input class="value-filter-search" placeholder="Buscar valor..."><div class="value-filter-actions"><button type="button" data-value-action="all">Seleccionar todo</button><button type="button" data-value-action="none">Limpiar</button></div><div class="value-filter-values"></div><div class="value-filter-footer"><button type="button" data-value-action="apply">Aplicar</button></div>'
+  const rect=anchor.getBoundingClientRect(); menu.style.left=Math.min(rect.left,Math.max(8,window.innerWidth-310))+'px'; menu.style.top=Math.min(rect.bottom+4,Math.max(8,window.innerHeight-500))+'px'
+  menu.innerHTML='<input class="value-filter-search" placeholder="Buscar valor..."><div class="value-filter-actions"><button type="button" data-value-action="all">Seleccionar todo</button><button type="button" data-value-action="none">Limpiar</button></div><div class="value-filter-values"></div><div class="filter-criteria"><div class="filter-criteria-title">Criterio</div><div class="filter-criteria-row"><select data-criterion-op><option value="contains">contiene</option><option value="eq">igual a (=)</option><option value="neq">distinto de (≠)</option><option value="gt">mayor que (&gt;)</option><option value="lt">menor que (&lt;)</option><option value="gte">mayor o igual (≥)</option><option value="lte">menor o igual (≤)</option><option value="between">entre</option></select><input data-criterion-value placeholder="Valor"><input data-criterion-value2 placeholder="Hasta" class="hidden"></div></div><div class="value-filter-footer"><button type="button" data-value-action="apply">Aplicar</button></div>'
   document.body.appendChild(menu)
-  const list=menu.querySelector<HTMLDivElement>('.value-filter-values')!
-  const search=menu.querySelector<HTMLInputElement>('.value-filter-search')!
-  const renderValues=()=>{
-    const needle=search.value.toLocaleLowerCase()
-    list.innerHTML=values.filter(v=>(v||'(en blanco)').toLocaleLowerCase().includes(needle)).map((v,i)=>{
-      const label=v||'(en blanco)', checked=draft.has(v)
-      return '<label class="value-filter-option"><input type="checkbox" data-value-index="'+i+'" '+(checked?'checked':'')+'><span>'+esc(label)+'</span></label>'
-    }).join('')||'<div class="empty">Sin coincidencias.</div>'
-    list.querySelectorAll<HTMLInputElement>('input[data-value-index]').forEach(cb=>cb.addEventListener('change',()=>{
-      const v=values[Number(cb.dataset.valueIndex)]
-      if(cb.checked)draft.add(v);else draft.delete(v)
-    }))
-  }
-  renderValues()
-  search.addEventListener('input',renderValues)
+  const list=menu.querySelector<HTMLDivElement>('.value-filter-values')!,search=menu.querySelector<HTMLInputElement>('.value-filter-search')!,op=menu.querySelector<HTMLSelectElement>('[data-criterion-op]')!,value=menu.querySelector<HTMLInputElement>('[data-criterion-value]')!,value2=menu.querySelector<HTMLInputElement>('[data-criterion-value2]')!
+  op.value=criterionDraft.op; value.value=criterionDraft.value??''; value2.value=criterionDraft.value2??''
+  const syncCriterionUI=()=>{ value2.classList.toggle('hidden',op.value!=='between'); value.type=isDateColumn(column)?'date':'text'; value2.type=isDateColumn(column)?'date':'text'; if(isDateColumn(column)){value.placeholder='';value2.placeholder=''}else{value.placeholder='Valor';value2.placeholder='Hasta'} }
+  syncCriterionUI(); op.addEventListener('change',syncCriterionUI)
+  const renderValues=()=>{ const needle=search.value.toLocaleLowerCase(); list.innerHTML=values.filter(v=>(v||'(en blanco)').toLocaleLowerCase().includes(needle)).map((v,i)=>{const label=v||'(en blanco)',checked=draft.has(v);return '<label class="value-filter-option"><input type="checkbox" data-value-index="'+i+'" '+(checked?'checked':'')+'><span>'+esc(label)+'</span></label>'}).join('')||'<div class="empty">Sin coincidencias.</div>'; list.querySelectorAll<HTMLInputElement>('input[data-value-index]').forEach(cb=>cb.addEventListener('change',()=>{const v=values[Number(cb.dataset.valueIndex)];if(cb.checked)draft.add(v);else draft.delete(v)})) }
+  renderValues(); search.addEventListener('input',renderValues)
   menu.querySelector<HTMLButtonElement>('[data-value-action="all"]')!.addEventListener('click',()=>{draft=new Set(values);renderValues()})
   menu.querySelector<HTMLButtonElement>('[data-value-action="none"]')!.addEventListener('click',()=>{draft=new Set();renderValues()})
   menu.querySelector<HTMLButtonElement>('[data-value-action="apply"]')!.addEventListener('click',()=>{
-    if(draft.size===values.length){delete state.valueFilters[id]}else{state.valueFilters[id]=draft}
+    if(draft.size===values.length)delete state.valueFilters[id];else state.valueFilters[id]=draft
+    const criterion:FilterCriterion={op:op.value as FilterCriterion['op'],value:value.value,value2:value2.value}
+    const needsSecond=criterion.op==='between'; const hasValue=criterion.value?.trim()!==''; const valid=hasValue && (!needsSecond || criterion.value2?.trim()!=='')
+    if(valid)state.criteria[id]=criterion;else delete state.criteria[id]
     closeValueFilterMenu();render()
   })
 }
+
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeValueFilterMenu()})
 document.addEventListener('mousedown',event=>{
   const target=event.target as Element|null
@@ -144,8 +163,8 @@ function render(){
   const tableWidth = cols.reduce((sum, c) => sum + columnWidth(c.id), 0)
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => {
-    const active=Object.prototype.hasOwnProperty.call(state.valueFilters,c.id)
-    return `<th data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
+    const active=columnHasActiveFilter(c.id)
+    return `<th data-column-id="${escAttr(c.id)}" class="${active?'column-filtered':''}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
   }).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
