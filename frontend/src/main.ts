@@ -7,6 +7,7 @@ type SubtotalRow = { group_value:string; group_count:number; values:Record<strin
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
+type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
 
 let draggedColumnId = ''
 
