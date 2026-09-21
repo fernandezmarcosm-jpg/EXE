@@ -1,6 +1,6 @@
 package main
 
-import("bytes";_ "embed";"encoding/csv";"encoding/json";"fmt";"log";"math";"os";"path/filepath";"strconv";"strings")
+import("bytes";_ "embed";"encoding/csv";"encoding/json";"fmt";"log";"math";"os";"path/filepath";"strconv";"strings";"time")
 
 //go:embed "acceso chatgpt/GestionSO_Datos.csv"
 var embeddedMasterCSV []byte
@@ -84,7 +84,7 @@ func datasetColumnDisplayTitle(c DatasetColumn)string{if t:=datasetSettingString
 func datasetColumnDecimals(c DatasetColumn)int{if d:=datasetSettingInt(appSettings.ColumnDecimals,c,appSettings.Decimals);d>=0&&d<=8{return d};return appSettings.Decimals}
 func datasetColumnIsPercent(c DatasetColumn)bool{if datasetSettingBool(appSettings.ColumnPercent,c){return true};return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"porcentaje")}
 func datasetColumnHighlightNegative(c DatasetColumn)bool{return datasetSettingBool(appSettings.HighlightNegative,c)}
-func datasetColumnCurrency(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnCurrency,c) || strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"moneda")}
+func datasetColumnCurrency(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnCurrency,c) || strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"moneda")}\nfunc datasetColumnIsDate(c DatasetColumn)bool{return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"fecha")}
 func datasetColumnThousands(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnThousands,c) || datasetColumnCurrency(c)}
 func datasetColumnHighlightSign(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnHighlightSign,c)}
 func datasetColumnBackground(c DatasetColumn)string{return strings.TrimSpace(appSettings.ColumnBackground[datasetColumnKey(c)])}
@@ -133,5 +133,18 @@ func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{
 	out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));out[len(out)-1].GroupCount=len(seenGroups);return out
 }
 
-func formatDatasetNumber(v float64,d int)string{if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
+func formatDatasetDate(v MemoryValue)string{
+	raw:=strings.TrimSpace(v.Raw)
+	if v.Type==ValueDate && raw!="" { return raw }
+	if raw!="" {
+		if n,err:=strconv.ParseFloat(strings.ReplaceAll(strings.ReplaceAll(raw,".",""),",","."),64);err==nil&&n>=1&&n<100000 {
+			return time.Date(1899,12,30,0,0,0,0,time.UTC).Add(time.Duration(n*24)*time.Hour).Format("02/01/2006")
+		}
+		for _,layout:=range []string{"02/01/2006","2/1/2006","2006-01-02","2006/01/02","02-01-2006","2-1-2006","2006-01-02 15:04:05","02/01/2006 15:04:05"}{
+			if t,err:=time.Parse(layout,raw);err==nil{return t.Format("02/01/2006")}
+		}
+	}
+	return raw
+}
+func formatDatasetNumber(v float64,d int){if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
 func formatDatasetNumberGrouped(v float64,d int)string{raw:=formatDatasetNumber(math.Abs(v),d);parts:=strings.SplitN(raw,".",2);intPart:=parts[0];for i:=len(intPart)-3;i>0;i-=3{intPart=intPart[:i]+"."+intPart[i:]};out:=intPart;if len(parts)==2{out+=","+parts[1]};if v<0{out="-"+out};return out}
