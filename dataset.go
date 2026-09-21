@@ -161,6 +161,11 @@ func lookupColumnID(baseName,attributeHeader string,used map[string]int)string{
 	base:=normalizeHeader(baseName);if base==""{base="BASE"};attr:=normalizeHeader(attributeHeader);if attr==""{attr="COLUMNA"}
 	key:=fmt.Sprintf("LOOKUP:%s:%s",base,attr);used[key]++;if used[key]==1{return key};return fmt.Sprintf("%s_%d",key,used[key])
 }
+func applyLookupEnrichment(rec *DatasetRecord,sh MemorySheet,row MemoryRow,lookups []lookupTable,lookupIDs map[string]map[string]string)int{
+	if rec==nil{return 0};matches:=0
+	for _,table:=range lookups{keyID:=lookupColumnForKey(sh,table.KeyHeader);if keyID==""{continue};keyRaw:="";if x,ok:=row.Values[keyID];ok{keyRaw=x.Raw};match,ok:=table.ByKey[normalizeJoinKey(keyRaw)];if !ok{continue};matches++;for _,h:=range table.Headers[1:]{raw:=match[h];if raw==""{continue};id:=lookupIDs[table.Name][h];rec.Values[id]=makeMemoryValue(id,raw)}}
+	return matches
+}
 func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){
 	if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")}
 	m,_,e:=loadMasterCSV("");if e!=nil{return nil,e}
@@ -182,7 +187,7 @@ func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error)
 			rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";if joinID!=""{if x,ok:=row.Values[joinID];ok{join=normalizeJoinKey(x.Raw)}}
 			for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x}}
 			if item,ok:=m.ByKey[join];ok{ds.Enriched++;sheetEnriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}}
-			for _,table:=range lookups{keyID:=lookupColumnForKey(sh,table.KeyHeader);if keyID==""{continue};keyRaw:="";if x,ok:=row.Values[keyID];ok{keyRaw=x.Raw};match,ok:=table.ByKey[normalizeJoinKey(keyRaw)];if !ok{continue};for _,h:=range table.Headers[1:]{raw:=match[h];if raw==""{continue};id:=lookupIDs[table.Name][h];rec.Values[id]=makeMemoryValue(id,raw)}}
+			applyLookupEnrichment(&rec,sh,row,lookups,lookupIDs)
 			ds.Records=append(ds.Records,rec)
 		}
 		log.Printf("[JOIN] Excel=%q CSV=%q filas_match=%d Enriched=%d",joinExcelTitle,csvJoinHeader,sheetEnriched,ds.Enriched)
