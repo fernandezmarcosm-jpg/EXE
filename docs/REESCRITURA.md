@@ -104,3 +104,9 @@ La validación automática confirmó compilación y tests. Queda como último pa
 - [x] Alineación por columna persistente (`left`/`center`/`right`) con default izquierdo para texto y derecho para numéricas/calculadas.
 
 - [x] Alias de título por columna persistente, sin modificar IDs ni claves internas; alias vacío restaura el título físico.
+
+## Cruce multi-base CSV físico — 2026-09-21
+
+La aplicación admite múltiples tablas CSV auxiliares físicas. Cada archivo .csv adicional encontrado junto al ejecutable (con fallback al directorio de trabajo) se interpreta como una base independiente: la primera columna es la clave y las columnas restantes son atributos. El encabezado de esa primera columna se compara contra el encabezado físico de una columna del XLSX importado; el alias configurado en COLUMNAS no participa del cruce. Se toleran variantes como Nº CLIENTE, N° CLIENTE, N CLIENTE, NRO CLIENTE y CLIENTE.
+
+Las claves se normalizan en ambos lados. Para valores numéricos se eliminan espacios y separadores de miles y se descartan decimales cero (80003285, 80003285.00 y 80003285,00 producen la misma clave; también se contemplan formatos es-AR como 23.961,00). Los atributos se agregan con IDs estables LOOKUP:<BASE>:<ATRIBUTO>, inicialmente ocultos y administrables desde COLUMNAS. GestionSO_Datos.csv conserva su esquema CSV:* y su fallback embebido.
