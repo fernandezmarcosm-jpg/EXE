@@ -52,7 +52,7 @@ function refreshFilteredSubtotals() {
   const headers=Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th')).map(th=>({id:th.dataset.columnId??'',title:th.querySelector('.th-title')?.textContent??''}))
   if (!headers.some(h=>h.id===groupId)) return
 
-  const dataRows=Array.from(table.querySelectorAll<HTMLTableSectionElement>('tbody tr')).filter(tr=>!tr.classList.contains('subtotal'))
+  const dataRows=Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr')).filter(tr=>!tr.classList.contains('subtotal'))
   const rows=dataRows.map(tr=>{
     const cells=Array.from(tr.cells)
     const values:Record<string,string>={}
