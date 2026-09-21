@@ -1,4 +1,5 @@
 import './style.css'
+import { parseNumber } from './ui_fixes'
 import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
@@ -7,11 +8,12 @@ type SubtotalRow = { group_value:string; group_count:number; values:Record<strin
 type Dataset = { columns:Column[]; rows:Record<string,string>[]; total_rows:number; duplicated:number; csv_rows:number; enriched:number; source_files:string[]; subtotals:SubtotalRow[] }
 type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<string,number>; settings:any }
 type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
+type SortState = { id:string; dir:'asc'|'desc' } | null
 
 let draggedColumnId = ''
 
 const state:{data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; criteria:Record<string,FilterCriterion>; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]}} = {
-  data:null, filters:{}, valueFilters:{}, criteria:{}, columnsOpen:false, panelMode:'columns',
+  data:null, filters:{}, valueFilters:{}, criteria:{}, sort:null as SortState, columnsOpen:false, panelMode:'columns',
   visual:{fontSize:14,rowHeight:28,columnWidths:{},settings:null}, calculated:{editingOriginal:'',list:[]}
 }
 
@@ -74,7 +76,7 @@ function columnFormatKind(c:Column){ const t=String(state.visual.settings?.colum
 function columnThousands(c:Column){ return !!state.visual.settings?.column_thousands?.[c.id] || columnFormatKind(c)==='moneda' }
 function parseCellNumber(value:string){ const s=value.trim().replace(/[%$\s]/g,'').replace(/\./g,'').replace(',', '.'); const n=Number(s); return Number.isFinite(n)?n:null }
 function closeValueFilterMenu(){ document.querySelector('.value-filter-menu')?.remove() }
-function openValueFilterMenu(id:string,anchor:HTMLButtonElement){closeValueFilterMenu();const c=state.data?.columns.find(x=>x.id===id);if(!c)return;const values=[...new Set((state.data?.rows??[]).map(r=>r[id]??''))];values.sort((x,y)=>x.localeCompare(y,'es',{numeric:true,sensitivity:'base'}));let draft=new Set(state.valueFilters[id]??values);const current=state.criteria[id];const menu=document.createElement('div');menu.className='value-filter-menu';const rect=anchor.getBoundingClientRect();menu.style.left=Math.min(rect.left,Math.max(8,window.innerWidth-310))+'px';menu.style.top=Math.min(rect.bottom+4,Math.max(8,window.innerHeight-500))+'px';menu.innerHTML='<input class="value-filter-search" placeholder="Buscar valor..."><div class="value-filter-actions"><button type="button" data-value-action="all">Seleccionar todo</button><button type="button" data-value-action="none">Limpiar</button></div><div class="value-filter-values"></div><div class="filter-criteria"><div class="filter-criteria-title">Criterio</div><div class="filter-criteria-row"><select data-criterion-op><option value="contains">contiene</option><option value="eq">igual a (=)</option><option value="neq">distinto de (≠)</option><option value="gt">mayor que (&gt;)</option><option value="lt">menor que (&lt;)</option><option value="gte">mayor o igual (≥)</option><option value="lte">menor o igual (≤)</option><option value="between">entre</option></select><input data-criterion-value placeholder="Valor"><input data-criterion-value2 placeholder="Hasta" class="hidden"></div></div><div class="value-filter-footer"><button type="button" data-value-action="apply">Aplicar</button></div>';document.body.appendChild(menu);const list=menu.querySelector<HTMLDivElement>('.value-filter-values')!,search=menu.querySelector<HTMLInputElement>('.value-filter-search')!,op=menu.querySelector<HTMLSelectElement>('[data-criterion-op]')!,v1=menu.querySelector<HTMLInputElement>('[data-criterion-value]')!,v2=menu.querySelector<HTMLInputElement>('[data-criterion-value2]')!;if(current){op.value=current.op;v1.value=current.value??'';v2.value=current.value2??''}const sync=()=>{v2.classList.toggle('hidden',op.value!=='between');v1.type=isDateColumn(c)?'date':'text';v2.type=isDateColumn(c)?'date':'text'};sync();op.addEventListener('change',sync);const renderValues=()=>{const n=search.value.toLocaleLowerCase();list.innerHTML=values.filter(v=>(v||'(en blanco)').toLocaleLowerCase().includes(n)).map((v,i)=>'<label class="value-filter-option"><input type="checkbox" data-value-index="'+i+'" '+(draft.has(v)?'checked':'')+'><span>'+esc(v||'(en blanco)')+'</span></label>').join('')||'<div class="empty">Sin coincidencias.</div>';list.querySelectorAll<HTMLInputElement>('input[data-value-index]').forEach(cb=>cb.addEventListener('change',()=>{const v=values[Number(cb.dataset.valueIndex)];if(cb.checked)draft.add(v);else draft.delete(v)}))};renderValues();search.addEventListener('input',renderValues);menu.querySelector('[data-value-action="all"]')!.addEventListener('click',()=>{draft=new Set(values);renderValues()});menu.querySelector('[data-value-action="none"]')!.addEventListener('click',()=>{draft=new Set();renderValues()});menu.querySelector('[data-value-action="apply"]')!.addEventListener('click',()=>{if(draft.size===values.length)delete state.valueFilters[id];else state.valueFilters[id]=draft;const f:FilterCriterion={op:op.value as FilterCriterion['op'],value:v1.value,value2:v2.value};if(f.value?.trim()&& (f.op!=='between'||f.value2?.trim()))state.criteria[id]=f;else delete state.criteria[id];closeValueFilterMenu();render()})}
+function openValueFilterMenu(id:string,anchor:HTMLButtonElement){closeValueFilterMenu();const c=state.data?.columns.find(x=>x.id===id);if(!c)return;const values=[...new Set((state.data?.rows??[]).map(r=>r[id]??''))];if(isNumericColumn(c)){const indexed=values.map((value,index)=>({value,index,number:parseNumber(value)}));indexed.sort((a,b)=>{if(a.number!==null&&b.number!==null)return a.number-b.number;if(a.number!==null)return -1;if(b.number!==null)return 1;return a.value.localeCompare(b.value,'es',{numeric:true,sensitivity:'base'})||a.index-b.index});values.splice(0,values.length,...indexed.map(x=>x.value))}else values.sort((x,y)=>x.localeCompare(y,'es',{numeric:true,sensitivity:'base'}));let draft=new Set(state.valueFilters[id]??values);const current=state.criteria[id];const menu=document.createElement('div');menu.className='value-filter-menu';const rect=anchor.getBoundingClientRect();menu.style.left=Math.min(rect.left,Math.max(8,window.innerWidth-310))+'px';menu.style.top=Math.min(rect.bottom+4,Math.max(8,window.innerHeight-500))+'px';menu.innerHTML='<input class="value-filter-search" placeholder="Buscar valor..."><div class="value-filter-actions"><button type="button" data-value-action="all">Seleccionar todo</button><button type="button" data-value-action="none">Limpiar</button></div><div class="value-filter-values"></div><div class="filter-criteria"><div class="filter-criteria-title">Criterio</div><div class="filter-criteria-row"><select data-criterion-op><option value="contains">contiene</option><option value="eq">igual a (=)</option><option value="neq">distinto de (≠)</option><option value="gt">mayor que (&gt;)</option><option value="lt">menor que (&lt;)</option><option value="gte">mayor o igual (≥)</option><option value="lte">menor o igual (≤)</option><option value="between">entre</option></select><input data-criterion-value placeholder="Valor"><input data-criterion-value2 placeholder="Hasta" class="hidden"></div></div><div class="value-filter-footer"><button type="button" data-value-action="apply">Aplicar</button></div>';document.body.appendChild(menu);const list=menu.querySelector<HTMLDivElement>('.value-filter-values')!,search=menu.querySelector<HTMLInputElement>('.value-filter-search')!,op=menu.querySelector<HTMLSelectElement>('[data-criterion-op]')!,v1=menu.querySelector<HTMLInputElement>('[data-criterion-value]')!,v2=menu.querySelector<HTMLInputElement>('[data-criterion-value2]')!;if(current){op.value=current.op;v1.value=current.value??'';v2.value=current.value2??''}const sync=()=>{v2.classList.toggle('hidden',op.value!=='between');v1.type=isDateColumn(c)?'date':'text';v2.type=isDateColumn(c)?'date':'text'};sync();op.addEventListener('change',sync);const renderValues=()=>{const n=search.value.toLocaleLowerCase();list.innerHTML=values.filter(v=>(v||'(en blanco)').toLocaleLowerCase().includes(n)).map((v,i)=>'<label class="value-filter-option"><input type="checkbox" data-value-index="'+i+'" '+(draft.has(v)?'checked':'')+'><span>'+esc(v||'(en blanco)')+'</span></label>').join('')||'<div class="empty">Sin coincidencias.</div>';list.querySelectorAll<HTMLInputElement>('input[data-value-index]').forEach(cb=>cb.addEventListener('change',()=>{const v=values[Number(cb.dataset.valueIndex)];if(cb.checked)draft.add(v);else draft.delete(v)}))};renderValues();search.addEventListener('input',renderValues);menu.querySelector('[data-value-action="all"]')!.addEventListener('click',()=>{draft=new Set(values);renderValues()});menu.querySelector('[data-value-action="none"]')!.addEventListener('click',()=>{draft=new Set();renderValues()});menu.querySelector('[data-value-action="apply"]')!.addEventListener('click',()=>{if(draft.size===values.length)delete state.valueFilters[id];else state.valueFilters[id]=draft;const f:FilterCriterion={op:op.value as FilterCriterion['op'],value:v1.value,value2:v2.value};if(f.value?.trim()&& (f.op!=='between'||f.value2?.trim()))state.criteria[id]=f;else delete state.criteria[id];closeValueFilterMenu();render()})}
 
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeValueFilterMenu()})
 document.addEventListener('mousedown',event=>{
@@ -100,16 +102,33 @@ function applyVisualSettings(){
   rowHeightInput.value = String(state.visual.rowHeight)
 }
 
+function sortedRows(rows:Record<string,string>[]){
+  if(!state.sort)return rows
+  const c=state.data?.columns.find(x=>x.id===state.sort!.id)
+  if(!c)return rows
+  const dir=state.sort.dir==='asc'?1:-1
+  return rows.map((row,index)=>({row,index,raw:row[c.id]??''})).sort((a,b)=>{
+    let av:number|string|null, bv:number|string|null
+    if(isDateColumn(c)){av=parseCriterionDate(a.raw);bv=parseCriterionDate(b.raw)}
+    else if(isNumericColumn(c)){av=parseNumber(a.raw);bv=parseNumber(b.raw)}
+    else {av=a.raw.trim().toLocaleLowerCase();bv=b.raw.trim().toLocaleLowerCase()}
+    if(av===null||av===''){if(bv===null||bv==='')return a.index-b.index;return 1}
+    if(bv===null||bv==='')return -1
+    const cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'es',{numeric:true,sensitivity:'base'})
+    return (cmp*dir)|| (a.index-b.index)
+  }).map(x=>x.row)
+}
+
 function render(){
   applyVisualSettings()
-  const cols = visibleColumns(), rows = filteredRows()
+  const cols = visibleColumns(), rows = sortedRows(filteredRows())
   if (!state.data) { tableWrap.innerHTML = '<div class="empty">No hay datos cargados.</div>'; return }
   if (!cols.length) { tableWrap.innerHTML = '<div class="empty">No hay columnas visibles.</div>'; return }
   const tableWidth = cols.reduce((sum, c) => sum + columnWidth(c.id), 0)
   const colgroup = cols.map(c => `<col style="width:${columnWidth(c.id)}px">`).join('')
   const head = cols.map(c => {
-    const active=columnHasActiveFilter(c.id)
-    return `<th class="${active?'column-filtered':''}" data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}</div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
+    const active=columnHasActiveFilter(c.id), sorted=state.sort?.id===c.id, arrow=sorted?(state.sort!.dir==='asc'?' ▲':' ▼'):''
+    return `<th class="${active?'column-filtered':''}${sorted?' column-sorted':''}" data-column-id="${escAttr(c.id)}" draggable="true" style="text-align:${c.align||'left'}"><div class="th-title-row"><div class="th-title">${esc(c.title)}<span class="sort-indicator" aria-hidden="true">${arrow}</span></div><button type="button" class="filter-menu-btn${active?' filter-active':''}" draggable="false" data-value-filter="${escAttr(c.id)}" title="Filtrar por valores">▾</button></div><input class="filter" data-filter="${escAttr(c.id)}" draggable="false" value="${escAttr(state.filters[c.id] ?? '')}" placeholder="Filtrar..."><span class="col-resizer" data-resize-id="${escAttr(c.id)}" draggable="false"></span></th>`
   }).join('')
   const groupId = state.visual.settings?.subtotal_column ?? ''
   const activeSubtotal = !!groupId && !!state.data.subtotals?.length
@@ -137,6 +156,17 @@ function render(){
     input.addEventListener('dragstart', event => event.stopPropagation())
     input.addEventListener('mousedown', event => event.stopPropagation())
     input.addEventListener('input', () => { state.filters[input.dataset.filter!] = input.value; renderBody() })
+  })
+  tableWrap.querySelectorAll<HTMLDivElement>('.th-title').forEach(title => {
+    title.addEventListener('click',event => {
+      event.preventDefault(); event.stopPropagation()
+      const th=title.closest<HTMLTableCellElement>('th[data-column-id]'); const id=th?.dataset.columnId
+      if(!id)return
+      if(state.sort?.id!==id)state.sort={id,dir:'asc'}
+      else if(state.sort.dir==='asc')state.sort={id,dir:'desc'}
+      else state.sort=null
+      render()
+    })
   })
   tableWrap.querySelectorAll<HTMLButtonElement>('.filter-menu-btn').forEach(button => {
     button.addEventListener('click',event => {
@@ -239,7 +269,7 @@ function render(){
 
 function renderBody(){
   if(!state.data)return
-  const cols=visibleColumns(), rows=filteredRows(), groupId=state.visual.settings?.subtotal_column??''
+  const cols=visibleColumns(), rows=sortedRows(filteredRows()), groupId=state.visual.settings?.subtotal_column??''
   const activeSubtotal=!!groupId&&!!state.data.subtotals?.length
   const displayRows=activeSubtotal?(()=>{const firstSeen=new Map<string,number>();rows.forEach((row,index)=>{const key=row[groupId]??'';if(!firstSeen.has(key))firstSeen.set(key,index)});return [...rows].map((row,index)=>({row,index,key:row[groupId]??''})).sort((a,b)=>(firstSeen.get(a.key)!-firstSeen.get(b.key)!)||(a.index-b.index))})():rows.map((row,index)=>({row,index,key:''}))
   const subtotalByGroup=new Map((state.data.subtotals??[]).filter(sr=>!sr.total).map(sr=>[sr.group_value,sr]))
@@ -385,7 +415,7 @@ openBtn.addEventListener('click', async () => {
   try {
     const data = await ImportXLSX() as Dataset
     if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
-    state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}
+    state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}; state.sort = null
     status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s)`
     render()
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
