@@ -73,6 +73,9 @@ func lineSortKey(l Line) string {
 	return strings.ToLower(l.Values[findFieldKey(l, "so", "factura", "cliente")])
 }
 
+// parseNumber acepta el formato es-AR: 1.234,56 -> 1234.56.
+// Cuando solo hay coma, se interpreta como separador decimal, que es el
+// formato usado por GestionSO_Datos.csv.
 func parseNumber(s string) (float64, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -89,12 +92,8 @@ func parseNumber(s string) (float64, bool) {
 			s = strings.ReplaceAll(s, ",", "")
 		}
 	} else if strings.Contains(s, ",") {
-		parts := strings.Split(s, ",")
-		if len(parts) == 2 && len(parts[1]) <= 2 {
-			s = strings.ReplaceAll(s, ",", ".")
-		} else {
-			s = strings.ReplaceAll(s, ",", "")
-		}
+		s = strings.ReplaceAll(s, ".", "")
+		s = strings.ReplaceAll(s, ",", ".")
 	}
 	if x, err := strconv.ParseFloat(s, 64); err == nil {
 		return x, true
