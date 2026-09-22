@@ -1,5 +1,5 @@
 import './style.css'
-import { parseNumber } from './ui_fixes'
+import { parseNumber } from './ui_fixes'\nimport { pivotReport, type ReportAgg } from './report_pivot'
 import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, LogFilePath, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
@@ -10,7 +10,7 @@ type VisualState = { fontSize:number; rowHeight:number; columnWidths:Record<stri
 type FilterCriterion = { op:'gt'|'lt'|'gte'|'lte'|'between'|'eq'|'neq'|'contains'; value?:string; value2?:string }
 type SortState = { id:string; dir:'asc'|'desc' } | null
 
-type AppState = { data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; criteria:Record<string,FilterCriterion>; sort:SortState; columnsOpen:boolean; panelMode:'columns'|'calculated'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]} }
+type AppState = { data:Dataset|null; filters:Record<string,string>; valueFilters:Record<string,Set<string>>; criteria:Record<string,FilterCriterion>; sort:SortState; columnsOpen:boolean; panelMode:'columns'|'calculated'|'report'; visual:VisualState; calculated:{editingOriginal:string;list:CalculatedColumn[]} }
 
 let draggedColumnId = ''
 
@@ -24,7 +24,7 @@ app.innerHTML = `
 <div class="shell">
   <header class="toolbar">
     <button id="open">ABRIR EXCEL</button>
-    <button id="columns">COLUMNAS</button><button id="calculated">CAMPOS CALCULADOS</button>
+    <button id="columns">COLUMNAS</button><button id="calculated">CAMPOS CALCULADOS</button><button id="report">REPORTE</button>
     <label class="visual-control">Fuente <input id="font-size" type="number" min="6" max="28" step="1"></label>
     <label class="visual-control">Fila <input id="row-height" type="number" min="10" max="60" step="1"></label>
     <div id="status" class="status">Seleccione uno o varios archivos XLSX.</div>
@@ -39,7 +39,7 @@ app.innerHTML = `
     <button id="all">MARCAR TODAS</button><button id="none">DESMARCAR TODAS</button><button id="clear">LIMPIAR FILTROS</button>
   </div>
   <div id="column-list" class="column-list"></div><section id="calculated-section" class="panel-section"><h3>CAMPOS CALCULADOS</h3><div class="calc-form"><input id="calc-name" placeholder="Nombre"><input id="calc-formula" placeholder="Fórmula"><label><input id="calc-percent" type="checkbox"> Porcentaje</label><div id="formula-tokens" class="formula-tokens"></div><div><button id="calc-save">AGREGAR</button><button id="calc-cancel" class="hidden">CANCELAR</button></div></div><div id="calc-list"></div></section><section id="subtotal-section" class="panel-section"><h3>SUBTOTALES</h3><label class="subtotal-control">Agrupar por <select id="subtotal-group"></select></label><div id="subtotal-fields"></div></section>
-</aside>`
+<section id="report-section" class="report-section hidden"><div class="report-help">El reporte usa las filas que quedan después de todos los filtros activos de la grilla.</div><label>FILAS (niveles)<select id="report-groups" multiple size="7"></select></label><label>MEDIDA<select id="report-measure"></select></label><label>OPERACIÓN<select id="report-agg"><option value="suma">Suma</option><option value="promedio">Promedio</option><option value="conteo">Conteo</option><option value="ponderado">Promedio ponderado</option></select></label><label id="report-weight-wrap" class="hidden">COLUMNA PESO<select id="report-weight"></select></label><div class="report-actions"><button id="report-generate">GENERAR</button><button id="report-clear">LIMPIAR</button></div><div id="report-result" class="report-result"></div></section></aside>`
 
 const byId = <T extends Element>(id:string) => document.getElementById(id) as unknown as T
 const openBtn = byId<HTMLButtonElement>('open')
@@ -61,7 +61,7 @@ const formulaTokens = byId<HTMLDivElement>('formula-tokens')
 const subtotalGroup = byId<HTMLSelectElement>('subtotal-group')
 const subtotalFields = byId<HTMLDivElement>('subtotal-fields')
 const calculatedSection = byId<HTMLElement>('calculated-section')
-const subtotalSection = byId<HTMLElement>('subtotal-section')
+const subtotalSection = byId<HTMLElement>('subtotal-section')\nconst reportSection = byId<HTMLElement>('report-section')\nconst reportGroups = byId<HTMLSelectElement>('report-groups')\nconst reportMeasure = byId<HTMLSelectElement>('report-measure')\nconst reportAgg = byId<HTMLSelectElement>('report-agg')\nconst reportWeightWrap = byId<HTMLElement>('report-weight-wrap')\nconst reportWeight = byId<HTMLSelectElement>('report-weight')\nconst reportResult = byId<HTMLDivElement>('report-result')
 const panelTitle = panel.querySelector<HTMLHeadingElement>('.panel-head h2')!
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
@@ -385,6 +385,79 @@ async function refreshCalculatedList(){state.calculated.list=await ListCalculate
 function renderCalculatedPanel(){formulaTokens.innerHTML=state.data?.columns.map(c=>{const token=c.source==='CSV'?'[CSV:'+c.title+']':'['+c.title+']';return '<button type="button" data-token="'+escAttr(token)+'">'+esc(token)+'</button>'}).join('')??'';formulaTokens.querySelectorAll<HTMLButtonElement>('button[data-token]').forEach(b=>b.addEventListener('click',()=>{calcFormula.value+=(calcFormula.value&&!/[-+*/( ]$/.test(calcFormula.value)?' ':'')+b.dataset.token;calcFormula.focus()}));calcList.innerHTML=state.calculated.list.map((c,i)=>'<div class="calc-row"><span><strong>'+esc(c.Name)+'</strong><small>'+esc(c.Formula)+(c.Percent?' · %':'')+'</small></span><span><button data-edit="'+i+'">Editar</button> <button data-delete="'+i+'">Eliminar</button></span></div>').join('')||'<div class="empty">No hay campos calculados.</div>';calcList.querySelectorAll<HTMLButtonElement>('button[data-edit]').forEach(b=>b.addEventListener('click',()=>{const c=state.calculated.list[Number(b.dataset.edit)];state.calculated.editingOriginal=c.Name;calcName.value=c.Name;calcFormula.value=c.Formula;calcPercent.checked=c.Percent;calcSave.textContent='GUARDAR';calcCancel.classList.remove('hidden')}));calcList.querySelectorAll<HTMLButtonElement>('button[data-delete]').forEach(b=>b.addEventListener('click',async()=>{const c=state.calculated.list[Number(b.dataset.delete)];if(!confirm('Eliminar "'+c.Name+'"?'))return;try{state.data=await DeleteCalculatedColumn(c.Name) as Dataset;await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error eliminando: '+String(e)}}))}
 function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=state.data.columns.map(c=>{const numeric=isNumericColumn(c);const isGroup=c.id===current;return '<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option>'+(!isGroup&&numeric?'<option value="suma">Suma</option><option value="promedio">Promedio</option>':'')+'<option value="conteo_unico">Contador (únicos)</option></select></label>'}).join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
 async function saveSubtotals(){const agg:Record<string,string>={};subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{if(s.value)agg[s.dataset.subtotalId!]=s.value});try{state.data=await SetSubtotals(subtotalGroup.value,agg) as Dataset;state.visual.settings.subtotal_column=subtotalGroup.value;state.visual.settings.subtotal_agg=agg;render()}catch(e){status.textContent='Error guardando subtotales: '+String(e)}}
+function renderReportSelectors(){if(!state.data)return;const cols=state.data.columns;const selected=[...reportGroups.selectedOptions].map(o=>o.value);const prevMeasure=reportMeasure.value;const prevWeight=reportWeight.value;reportGroups.innerHTML=cols.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');selected.forEach(id=>{const o=[...reportGroups.options].find(x=>x.value===id);if(o)o.selected=true});const numeric=cols.filter(isNumericColumn);reportMeasure.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');if(prevMeasure&&numeric.some(c=>c.id===prevMeasure))reportMeasure.value=prevMeasure;reportWeight.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');if(prevWeight&&numeric.some(c=>c.id===prevWeight))reportWeight.value=prevWeight;syncReportWeight();}
+function syncReportWeight(){reportWeightWrap.classList.toggle('hidden',reportAgg.value!=='ponderado')}
+function formatReportValue(id:string,value:number){const c=state.data?.columns.find(x=>x.id===id);if(!c)return String(value);const kind=columnFormatKind(c);const decimals=kind==='entero'?0:Number(state.visual.settings?.column_decimals?.[id]??2);const shown=kind==='porcentaje'?value*100:value;let out=shown.toLocaleString('es-AR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});if(kind==='moneda')out='state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
+async function setPanel(open:boolean, mode: 'columns'|'calculated'|'report' = state.panelMode){
+  state.columnsOpen=open; state.panelMode=mode
+  panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open)
+  if(!open)return
+  panelTitle.textContent=mode==='columns'?'Columnas':mode==='calculated'?'Campos calculados':'Reporte'
+  byId<HTMLDivElement>('column-list').classList.toggle('hidden',mode!=='columns')
+  byId<HTMLDivElement>('panel-actions').classList.toggle('hidden',mode!=='columns')
+  calculatedSection.classList.toggle('hidden',mode!=='calculated')
+  subtotalSection.classList.toggle('hidden',mode!=='columns')
+  if(mode==='columns'){renderColumnPanel();renderSubtotalControls()}
+  else {try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)}}
+}
+
+fontInput.addEventListener('change', async () => {
+  state.visual.fontSize = clamp(Number(fontInput.value) || 14,6,28)
+  applyVisualSettings(); render()
+  try { await persistVisualSettings(); status.textContent = 'Tamaño de fuente guardado.' }
+  catch (e) { status.textContent = `Error guardando fuente: ${String(e)}` }
+})
+
+rowHeightInput.addEventListener('change', async () => {
+  state.visual.rowHeight = clamp(Number(rowHeightInput.value) || 28,10,60)
+  applyVisualSettings(); render()
+  try { await persistVisualSettings(); status.textContent = 'Alto de fila guardado.' }
+  catch (e) { status.textContent = `Error guardando alto de fila: ${String(e)}` }
+})
+
+openBtn.addEventListener('click', async () => {
+  openBtn.disabled = true; status.textContent = 'Importando Excel...'
+  try {
+    const data = await ImportXLSX() as Dataset
+    if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
+    state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}; state.sort = null
+    const logPath = await LogFilePath()
+    status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s) · Log: ${logPath}`
+    render()
+  } catch (e) { status.textContent = `ERROR: ${String(e)}` }
+  finally { openBtn.disabled = false }
+})
+byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true,'columns'))
+byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))\nbyId<HTMLButtonElement>('report').addEventListener('click', () => setPanel(true,'report'))\nreportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})\nreportGroups.addEventListener('change',renderReport)\nreportMeasure.addEventListener('change',renderReport)\nreportWeight.addEventListener('change',renderReport)\nbyId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)\nbyId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{reportGroups.selectedIndex=-1;reportResult.innerHTML='';})
+byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
+backdrop.addEventListener('click', () => setPanel(false))
+byId<HTMLButtonElement>('all').addEventListener('click', async () => {
+  if (!state.data) return
+  state.data.columns.forEach(c=>c.visible=true); render(); renderColumnPanel(); await SetVisibleColumns(state.data.columns.map(c=>c.id))
+})
+byId<HTMLButtonElement>('none').addEventListener('click', async () => {
+  if (!state.data) return
+  state.data.columns.forEach(c=>c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
+})
+byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; state.valueFilters={}; state.criteria={}; closeValueFilterMenu(); render(); status.textContent='Filtros limpiados.' })
+calcSave.addEventListener('click',async()=>{try{state.data=(state.calculated.editingOriginal?await UpdateCalculatedColumn(state.calculated.editingOriginal,calcName.value,calcFormula.value,calcPercent.checked):await AddCalculatedColumn(calcName.value,calcFormula.value,calcPercent.checked)) as Dataset;resetCalc();await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls();status.textContent='Campo calculado guardado.'}catch(e){status.textContent='Error guardando: '+String(e)}})
+calcCancel.addEventListener('click',resetCalc)
+subtotalGroup.addEventListener('change',saveSubtotals)
+
+void GetSettings().then((settings:any) => {
+  state.visual.settings = settings
+  state.visual.fontSize = clamp(Number(settings.font_size) || 14,6,28)
+  state.visual.rowHeight = clamp(Number(settings.row_height) || 28,10,60)
+  state.visual.columnWidths = {...(settings.column_widths ?? {})}
+  state.visual.settings = {...settings,column_decimals:{...(settings.column_decimals??{})},column_percent:{...(settings.column_percent??{})},column_types:{...(settings.column_types??{})},subtotal_agg:{...(settings.subtotal_agg??{})}}
+  applyVisualSettings()
+  render()
+}).catch(() => render())
+
+function esc(v:string){ return v.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;') }
+function escAttr(v:string){ return esc(v) }
++out;if(kind==='porcentaje')out+='%';return out}
+function renderReport(){if(!state.data)return;const groupBy=[...reportGroups.selectedOptions].map(o=>o.value);const measureID=reportMeasure.value;const agg=reportAgg.value as ReportAgg;const weightID=reportWeight.value;if(!measureID){reportResult.innerHTML='<div class="empty">Seleccione una medida.</div>';return}if(agg==='ponderado'&&(!weightID||weightID===measureID)){reportResult.innerHTML='<div class="empty">Seleccione una columna peso distinta de la medida.</div>';return}const result=pivotReport(filteredRows(),groupBy,measureID,agg,weightID);const headers=groupBy.map(id=>state.data!.columns.find(c=>c.id===id)?.title??id);const rows=result.groups.map(g=>'<tr>'+g.labels.map(v=>'<td>'+esc(v||'(en blanco)')+'</td>').join('')+'<td>'+esc(formatReportValue(measureID,g.value))+'</td><td>'+g.count+'</td></tr>').join('');reportResult.innerHTML='<div class="report-meta">'+result.groups.length+' grupo(s) · '+filteredRows().length+' fila(s) filtrada(s)</div><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'<th>'+esc(state.data!.columns.find(c=>c.id===measureID)?.title??measureID)+'</th><th>Filas</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr>'+groupBy.map((_,i)=>'<th>'+ (i===0?'TOTAL GENERAL':'') +'</th>').join('')+'<th>'+esc(formatReportValue(measureID,result.total))+'</th><th>'+result.totalCount+'</th></tr></tfoot></table>'}
 function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
 async function setPanel(open:boolean, mode: 'columns'|'calculated' = state.panelMode){
   state.columnsOpen=open; state.panelMode=mode
