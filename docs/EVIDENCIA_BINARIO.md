@@ -111,3 +111,10 @@ No se commitean `.exe` ni `.zip`. El ejecutable de entrega se publica exclusivam
 Los CSV auxiliares se colocan en la misma carpeta que GestionSO-V57.exe. El programa escanea esa carpeta al importar el XLSX; como fallback también revisa el directorio de trabajo. GestionSO_Datos.csv sigue siendo la base maestra de SKU y conserva su fallback embebido. Los CSV auxiliares no requieren cambios en el ejecutable: se agregan como archivos físicos .csv junto al binario.
 
 Cada auxiliar usa su primera columna como clave. El encabezado de esa clave debe corresponder al encabezado físico de una columna del XLSX; los alias de COLUMNAS no modifican la clave de cruce. Las claves numéricas se normalizan para tolerar valores como 80003285 frente a 80003285.00 y formatos con separadores es-AR. Los atributos resultantes se publican como columnas LOOKUP:<BASE>:<ATRIBUTO> y pueden mostrarse/ocultarse y recibir alias desde COLUMNAS.
+
+
+## CSV auxiliares de rango — 2026-09-22
+
+Los CSV auxiliares de rango son archivos físicos colocados junto a GestionSO-V57.exe, igual que las bases auxiliares de coincidencia exacta. No se incorporan al ejecutable: el programa los detecta en la carpeta del binario y, como fallback, en el directorio de trabajo.
+
+Convención: primera columna DESDE, segunda HASTA, tercera el header físico de la fecha del XLSX y desde la cuarta las columnas de atributos. Se aceptan fechas dd/mm/aaaa, ISO y seriales de Excel. El rango incluye DESDE y HASTA.
