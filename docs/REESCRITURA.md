@@ -111,7 +111,6 @@ La aplicación admite múltiples tablas CSV auxiliares físicas. Cada archivo .c
 
 Las claves se normalizan en ambos lados. Para valores numéricos se eliminan espacios y separadores de miles y se descartan decimales cero (80003285, 80003285.00 y 80003285,00 producen la misma clave; también se contemplan formatos es-AR como 23.961,00). Los atributos se agregan con IDs estables LOOKUP:<BASE>:<ATRIBUTO>, inicialmente ocultos y administrables desde COLUMNAS. GestionSO_Datos.csv conserva su esquema CSV:* y su fallback embebido.
 
-
 ### Convención definitiva de archivos lookup auxiliares
 
 - Los CSV auxiliares deben colocarse junto al `.exe`; si no están allí, también se busca en el directorio de trabajo (cwd).
@@ -120,3 +119,11 @@ Las claves se normalizan en ambos lados. Para valores numéricos se eliminan esp
 - El encabezado de la primera columna debe coincidir con el **header físico** de una columna del XLSX importado. El alias configurado en `COLUMNAS` no participa del cruce. Se toleran las variantes de numeración de cliente documentadas por los tests, como `N CLIENTE`, `NRO CLIENTE` y `Nº CLIENTE`.
 - Las claves se normalizan en ambos lados, incluyendo valores numéricos con decimales cero y separadores de miles.
 - Las columnas generadas tienen IDs `LOOKUP:<BASE>:<ATRIBUTO>`, se crean **ocultas** inicialmente y deben activarse desde el panel `COLUMNAS` para mostrarlas en la grilla.
+
+### Fix directo de valores y diagnóstico
+
+- El cruce real está implementado directamente en `dataset.go`; no depende de scripts que modifiquen el código durante CI.
+- La coincidencia de encabezados prioriza primero `normalizeHeader` exacto y solo después las variantes equivalentes (`Nº CLIENTE`, `N CLIENTE`, `NRO CLIENTE`, etc.).
+- `normalizeJoinKey` canonicaliza claves numéricas para que `80003285`, `80003285.00`, `80003285,00` y `80.003.285` puedan coincidir sin alterar claves alfanuméricas.
+- El diagnóstico `[LOOKUP-DBG]` registra una vez por base el encabezado de la base, la columna XLSX seleccionada, algunas claves normalizadas del CSV y el primer valor crudo/normalizado observado en el XLSX.
+- `lookup_value_test.go` cubre el caso `Nº CLIENTE;ATRIBUTO` con `80003285.00` y el caso con separadores de miles.
