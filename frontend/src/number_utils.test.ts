@@ -1,4 +1,4 @@
-import { parseNumber } from './number_utils'
+import { parseNumber } from './number_utils.ts'
 
 function assertEqual(actual:number|null,expected:number,message:string){
   if(actual!==expected) throw new Error(`${message}: got ${actual}, want ${expected}`)
