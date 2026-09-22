@@ -1,5 +1,6 @@
 import './style.css'
-import { parseNumber } from './ui_fixes'\nimport { pivotReport, type ReportAgg } from './report_pivot'
+import { parseNumber } from './ui_fixes'
+import { pivotReport, type ReportAgg } from './report_pivot'
 import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, LogFilePath, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
@@ -61,7 +62,14 @@ const formulaTokens = byId<HTMLDivElement>('formula-tokens')
 const subtotalGroup = byId<HTMLSelectElement>('subtotal-group')
 const subtotalFields = byId<HTMLDivElement>('subtotal-fields')
 const calculatedSection = byId<HTMLElement>('calculated-section')
-const subtotalSection = byId<HTMLElement>('subtotal-section')\nconst reportSection = byId<HTMLElement>('report-section')\nconst reportGroups = byId<HTMLSelectElement>('report-groups')\nconst reportMeasure = byId<HTMLSelectElement>('report-measure')\nconst reportAgg = byId<HTMLSelectElement>('report-agg')\nconst reportWeightWrap = byId<HTMLElement>('report-weight-wrap')\nconst reportWeight = byId<HTMLSelectElement>('report-weight')\nconst reportResult = byId<HTMLDivElement>('report-result')
+const subtotalSection = byId<HTMLElement>('subtotal-section')
+const reportSection = byId<HTMLElement>('report-section')
+const reportGroups = byId<HTMLSelectElement>('report-groups')
+const reportMeasure = byId<HTMLSelectElement>('report-measure')
+const reportAgg = byId<HTMLSelectElement>('report-agg')
+const reportWeightWrap = byId<HTMLElement>('report-weight-wrap')
+const reportWeight = byId<HTMLSelectElement>('report-weight')
+const reportResult = byId<HTMLDivElement>('report-result')
 const panelTitle = panel.querySelector<HTMLHeadingElement>('.panel-head h2')!
 
 function visibleColumns(){ return state.data?.columns.filter(c => c.visible) ?? [] }
@@ -397,8 +405,10 @@ async function setPanel(open:boolean, mode: 'columns'|'calculated'|'report' = st
   byId<HTMLDivElement>('panel-actions').classList.toggle('hidden',mode!=='columns')
   calculatedSection.classList.toggle('hidden',mode!=='calculated')
   subtotalSection.classList.toggle('hidden',mode!=='columns')
+  reportSection.classList.toggle('hidden',mode!=='report')
   if(mode==='columns'){renderColumnPanel();renderSubtotalControls()}
-  else {try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)}}
+  else if(mode==='calculated'){try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)}}
+  else {renderReportSelectors();renderReport()}
 }
 
 fontInput.addEventListener('change', async () => {
@@ -428,7 +438,9 @@ openBtn.addEventListener('click', async () => {
   finally { openBtn.disabled = false }
 })
 byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true,'columns'))
-byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))\nbyId<HTMLButtonElement>('report').addEventListener('click', () => setPanel(true,'report'))\nreportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})\nreportGroups.addEventListener('change',renderReport)\nreportMeasure.addEventListener('change',renderReport)\nreportWeight.addEventListener('change',renderReport)\nbyId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)\nbyId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{reportGroups.selectedIndex=-1;reportResult.innerHTML='';})
+byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))
+byId<HTMLButtonElement>('report').addEventListener('click', () => setPanel(true,'report'))
+reportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})\nreportGroups.addEventListener('change',renderReport)\nreportMeasure.addEventListener('change',renderReport)\nreportWeight.addEventListener('change',renderReport)\nbyId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)\nbyId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{reportGroups.selectedIndex=-1;reportResult.innerHTML='';})
 byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
 backdrop.addEventListener('click', () => setPanel(false))
 byId<HTMLButtonElement>('all').addEventListener('click', async () => {
