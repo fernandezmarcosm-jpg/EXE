@@ -145,3 +145,12 @@ La política de datos establece que MemoryValue.Raw es el valor canónico de tra
 - **Filtros y subtotales:** consumen MemoryValue.Number para operaciones numéricas y Raw para identidad/texto; el formateo visible queda separado de la representación canónica. Esto evita que una diferencia de formato visual vuelva a alterar un cruce, filtro o cálculo.
 
 Los tests cubren notación científica, separadores ,/. , miles, fechas, porcentajes y el enriquecimiento end-to-end de un valor XLSX científico contra una clave CSV convencional.
+
+
+## Cruce por rango de fechas en CSV auxiliares — 2026-09-22
+
+Los CSV auxiliares también pueden representar rangos de vigencia. Se detectan cuando las dos primeras columnas se llaman **DESDE/HASTA** o **FECHA DESDE/FECHA HASTA**. La **tercera columna es el header físico de la fecha del XLSX** contra la que se evalúa el rango; las columnas desde la cuarta en adelante son atributos enriquecidos.
+
+Las fechas de DESDE/HASTA y de la fila XLSX aceptan ISO (yyyy-mm-dd, con hora opcional), dd/mm/aaaa, variantes equivalentes con / o -, y serial numérico de Excel. El intervalo es inclusivo en ambos extremos. Si existen rangos superpuestos, se utiliza el primero después de ordenar por fecha DESDE ascendente.
+
+Ejemplo: DESDE;HASTA;FECHA;EJERCICIO con 01/01/2026;31/12/2026;FECHA;Ejercicio 2026 cruza contra la columna física FECHA del XLSX. La base conserva el modo exacto anterior cuando no tiene encabezados DESDE/HASTA.
