@@ -1,5 +1,6 @@
 import { parseNumber } from './number_utils'
 export { parseNumber } from './number_utils'
+import { GetSettings, SaveSettings } from '../wailsjs/go/main/App'
 
 type Settings = {
   subtotal_column?: string

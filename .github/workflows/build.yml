@@ -47,6 +47,9 @@ jobs:
       - name: Frontend report pivot tests
         run: node --experimental-strip-types frontend/src/report_pivot.test.ts
 
+      - name: Frontend signed number tests
+        run: node --experimental-strip-types frontend/src/number_utils.test.ts
+
       - name: Regenerate Wails bindings
         shell: pwsh
         run: wails generate module
