@@ -71,8 +71,34 @@ func TestMakeMemoryValuePreservesNegativeLocaleAndAccountingSign(t *testing.T) {
 }
 
 func TestMemoryDatasetKeepsAllItemsForSameSO(t *testing.T){s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{makeTestDoc([3]string{"100","1","ACE0001"},[3]string{"100","2","ACE0002"},[3]string{"100","3","ACE0003"})},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=3||m.DuplicateSO!=0{t.Fatalf("records=%d duplicates=%d; want 3,0",len(m.Records),m.DuplicateSO)}}
-func TestMemoryDatasetDeduplicatesExactSOItemLine(t *testing.T){s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{makeTestDoc([3]string{"100","1","ACE0001"},[3]string{"100","1","ACE0001"},[3]string{"100","2","ACE0002"})},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=2||m.DuplicateSO!=1{t.Fatalf("records=%d duplicates=%d; want 2,1",len(m.Records),m.DuplicateSO)}}
+func TestMemoryDatasetDeduplicatesExactSOItemLine(t *testing.T){
+	s:=defaultDatasetSettings();s.SOColumn=1
+	m,err:=BuildMemoryDataset([]*xlsxDoc{makeTestDoc([3]string{"100","1","ACE0001"},[3]string{"100","1","ACE0001"},[3]string{"100","2","ACE0002"})},s);if err!=nil{t.Fatal(err)}
+	if len(m.Records)!=2||m.DuplicateSO!=1{t.Fatalf("records=%d duplicates=%d; want 2,1",len(m.Records),m.DuplicateSO)}
+}
+func TestMemoryDatasetDoesNotDeduplicateSameSOItemWhenAnotherColumnDiffers(t *testing.T){
+	d:=&xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText},{ID:"CANTIDAD",Title:"CANTIDAD",Index:2,Type:ValueNumber}},Rows:[]MemoryRow{
+		{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM":{Raw:"1",Type:ValueText},"CANTIDAD":makeMemoryValue("CANTIDAD","10")}},
+		{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM":{Raw:"1",Type:ValueText},"CANTIDAD":makeMemoryValue("CANTIDAD","20")}},
+	}}}}}
+	s:=defaultDatasetSettings();s.SOColumn=1
+	m,err:=BuildMemoryDataset([]*xlsxDoc{d},s);if err!=nil{t.Fatal(err)}
+	if len(m.Records)!=2||m.DuplicateSO!=0{t.Fatalf("records=%d duplicates=%d; want 2,0",len(m.Records),m.DuplicateSO)}
+}
 func TestMemoryDatasetDoesNotDeduplicateBySOWhenITEMIsMissing(t *testing.T){d:=&xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText}}},{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText}}}}}}}};s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{d},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=2||m.DuplicateSO!=0{t.Fatalf("records=%d duplicates=%d; want 2,0",len(m.Records),m.DuplicateSO)}}
+func TestBuildMemoryDatasetPreservesRepeatedSOItemQuantitiesAndSum(t *testing.T){
+	d:=&xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText},{ID:"CANTIDAD",Title:"CANTIDAD",Index:2,Type:ValueNumber},{ID:"KG",Title:"KG",Index:3,Type:ValueNumber}},Rows:[]MemoryRow{
+		{Values:map[string]MemoryValue{"SO":{Raw:"500",Type:ValueText},"ITEM":{Raw:"A",Type:ValueText},"CANTIDAD":makeMemoryValue("CANTIDAD","10"),"KG":makeMemoryValue("KG","100")}},
+		{Values:map[string]MemoryValue{"SO":{Raw:"500",Type:ValueText},"ITEM":{Raw:"A",Type:ValueText},"CANTIDAD":makeMemoryValue("CANTIDAD","20"),"KG":makeMemoryValue("KG","200")}},
+		{Values:map[string]MemoryValue{"SO":{Raw:"500",Type:ValueText},"ITEM":{Raw:"A",Type:ValueText},"CANTIDAD":makeMemoryValue("CANTIDAD","30"),"KG":makeMemoryValue("KG","300")}},
+	}}}}}
+	s:=defaultDatasetSettings();s.SOColumn=1
+	m,err:=BuildMemoryDataset([]*xlsxDoc{d},s);if err!=nil{t.Fatal(err)}
+	if len(m.Records)!=3||m.DuplicateSO!=0{t.Fatalf("records=%d duplicates=%d; want 3,0",len(m.Records),m.DuplicateSO)}
+	var qtySum,kgSum float64
+	for _,r:=range m.Records{qtySum+=r.Values["CANTIDAD"].Number;kgSum+=r.Values["KG"].Number}
+	if qtySum!=60||kgSum!=600{t.Fatalf("sums cantidad=%v kg=%v; want 60,600",qtySum,kgSum)}
+}
 func TestEmbeddedMasterCSVIsAvailable(t *testing.T){m,_,err:=loadMasterCSV("");if err!=nil{t.Fatal(err)};if len(m.ByKey)==0{t.Fatal("embedded CSV master is empty")};if _,ok:=m.ByKey["ACE0001"];!ok{t.Fatal("expected ACE0001 in embedded master")}}
 func TestMemoryDatasetReusesHeadersAcrossFilesAndStacksRows(t *testing.T){s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{makeTestDoc([3]string{"100","1","ACE0001"}),makeTestDoc([3]string{"200","2","ACE0002"})},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=2{t.Fatalf("records=%d; want 2",len(m.Records))};ids:=map[string]int{};for _,c:=range m.Columns{if c.Source=="XLSX"{ids[c.ID]++}};for _,id:=range []string{"SO","ITEM","SKU"}{if ids[id]!=1{t.Fatalf("column %q count=%d; want 1",id,ids[id])}};if ids["SO_2"]!=0||ids["ITEM_2"]!=0||ids["SKU_2"]!=0{t.Fatal("headers from the second file must not create _2 columns")};if _,ok:=m.Records[0].Values["ITEM"];!ok{t.Fatal("first row missing ITEM value")};if _,ok:=m.Records[1].Values["ITEM"];!ok{t.Fatal("second row missing shared ITEM value")}}
 func TestBuildMemoryDatasetPreservesPhysicalDuplicates(t *testing.T){d:=&xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM1",Title:"ITEM",Index:1,Type:ValueText},{ID:"ITEM2",Title:"ITEM",Index:2,Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText},"ITEM1":{Raw:"A",Type:ValueText},"ITEM2":{Raw:"B",Type:ValueText}}}}}}}};s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{d},s);if err!=nil{t.Fatal(err)};ids:=map[string]int{};for _,c:=range m.Columns{if c.Source=="XLSX"{ids[c.ID]++}};if ids["ITEM"]!=1||ids["ITEM_2"]!=1{t.Fatalf("physical duplicate IDs: ITEM=%d ITEM_2=%d; want 1,1",ids["ITEM"],ids["ITEM_2"]) };if _,ok:=m.Records[0].Values["ITEM"];!ok{t.Fatal("missing first physical ITEM value")};if _,ok:=m.Records[0].Values["ITEM_2"];!ok{t.Fatal("missing second physical ITEM value")}}
@@ -390,7 +416,7 @@ func TestLookupRangeByDateInclusive(t *testing.T) {
 	table, err := parseLookupTable(csvData, "Ejercicio", "Ejercicio.csv")
 	if err != nil { t.Fatal(err) }
 	if !table.IsRange || table.DateKeyHeader != "FECHA" || len(table.Ranges) != 1 { t.Fatalf("range table: %+v", table) }
-	sh := MemorySheet{Columns: []MemoryColumn{{ID:"FECHA",Title:"FECHA",Index:0,Type:ValueDate}}}
+	sh := MemorySheet{Columns: []MemoryColumn{{ID:"FECHA",Title:"FECHA",Index:0,Type:ValueDate}}
 	ids := map[string]map[string]string{"Ejercicio":{"EJERCICIO":"LOOKUP:EJERCICIO:EJERCICIO"}}
 	for _, tc := range []struct{raw,want string}{{"01/01/2026","Ejercicio 2026"},{"31/12/2026","Ejercicio 2026"},{"31/12/2026 23:59:59","Ejercicio 2026"},{"31/12/2025",""}} {
 		rec := DatasetRecord{Values: map[string]MemoryValue{}}
