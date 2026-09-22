@@ -7,6 +7,7 @@ function assertEqual(actual:number|null,expected:number,message:string){
 assertEqual(parseNumber('-16'),-16,'-16')
 assertEqual(parseNumber('-16,00'),-16,'-16,00')
 assertEqual(parseNumber('-1.234,56'),-1234.56,'-1.234,56')
+assertEqual(parseNumber('($1.234,56)'),-1234.56,'accounting negative')
 
 const cantidad=parseNumber('-16')
 const kg=parseNumber('96')
