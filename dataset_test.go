@@ -162,7 +162,7 @@ func TestDatasetValueTextFormatsConfiguredDate(t *testing.T) {
 	appSettings.ColumnTypes["FECHA"]="fecha"
 	c:=DatasetColumn{ID:"FECHA",Title:"FECHA",Source:"XLSX",Type:ValueText}
 	cases:=[]struct{name string;v MemoryValue;want string}{
-		{"date type",MemoryValue{ColumnID:"FECHA",Type:ValueDate,Raw:"2026-09-21"},"2026-09-21"},
+		{"date type",MemoryValue{ColumnID:"FECHA",Type:ValueDate,Raw:"2026-09-21"},"21/09/2026"},
 		{"excel serial",MemoryValue{ColumnID:"FECHA",Type:ValueNumber,Number:45921,Raw:"45921"},"21/09/2025"},
 		{"text",MemoryValue{ColumnID:"FECHA",Type:ValueText,Raw:"21/09/2026"},"21/09/2026"},
 		{"invalid",MemoryValue{ColumnID:"FECHA",Type:ValueText,Raw:"sin fecha"},"sin fecha"},
