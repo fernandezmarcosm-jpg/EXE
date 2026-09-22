@@ -132,3 +132,16 @@ Las claves se normalizan en ambos lados. Para valores numéricos se eliminan esp
 ## Log físico de diagnóstico — 2026-09-22
 
 La aplicación escribe el diagnóstico en `GestionSO_log.txt`, junto al ejecutable cuando `os.Executable()` está disponible; como fallback usa el directorio de trabajo y finalmente `%TEMP%`. El archivo se abre en modo append y permanece abierto durante la sesión. Cada inicio registra timestamp, versión/SHA de compilación y ruta del log. Los mensajes `[LOOKUP]` muestran carga y resolución de headers; `[LOOKUP-DBG]` muestra claves crudas y normalizadas y el resultado del match; `[JOIN]` resume filas y enriquecimientos. La barra de estado muestra la ruta absoluta mediante `LogFilePath()` después de importar.
+
+
+## Normalización canónica central de valores — 2026-09-22
+
+La política de datos establece que MemoryValue.Raw es el valor canónico de trabajo y no una copia de la representación visual de Excel/CSV. La normalización ocurre al crear el MemoryValue mediante makeMemoryValue; cuando un valor es numérico y Number es válido, Raw se guarda con strconv.FormatFloat(..., 'f', -1, 64). Así se eliminan notación científica, separadores regionales y ceros sobrantes. Los valores no numéricos conservan su texto recortado.
+
+- **Número / entero / moneda / porcentaje / decimal:** Type=ValueNumber, Number contiene el float64 y Raw contiene el número canónico sin formato de presentación. Moneda, porcentaje, separador de miles y cantidad de decimales se aplican únicamente en datasetValueText; no modifican Raw.
+- **Fecha:** Type=ValueDate y Raw se guarda en ISO (2006-01-02 o 2006-01-02 15:04:05). Las fechas detectadas por el estilo de Excel se canonizan en decorateXLSXDates; una columna configurada como fecha también pasa por canonicalizeMemoryValue. formatDatasetDate convierte ese valor interno a la presentación visible.
+- **Texto:** Type=ValueText y Raw conserva el contenido textual recortado; no se aplican conversiones numéricas.
+- **LOOKUP / join:** las claves XLSX y CSV pasan por normalizeJoinKey, con fallback strconv.ParseFloat para notación científica. Por lo tanto 8.0003285E7, 80003285, 80003285.00 y 80.003.285 convergen en la misma clave cuando representan el mismo entero.
+- **Filtros y subtotales:** consumen MemoryValue.Number para operaciones numéricas y Raw para identidad/texto; el formateo visible queda separado de la representación canónica. Esto evita que una diferencia de formato visual vuelva a alterar un cruce, filtro o cálculo.
+
+Los tests cubren notación científica, separadores ,/. , miles, fechas, porcentajes y el enriquecimiento end-to-end de un valor XLSX científico contra una clave CSV convencional.
