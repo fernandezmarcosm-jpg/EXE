@@ -1,4 +1,5 @@
-import { GetSettings, SaveSettings } from '../wailsjs/go/main/App'
+import { parseNumber } from './number_utils'
+export { parseNumber } from './number_utils'
 
 type Settings = {
   subtotal_column?: string
@@ -16,19 +17,6 @@ let lastSignature = ''
 let refreshing = false
 let cachedVisualSettings:any = null
 let savingVisualSettings = false
-
-export function parseNumber(value:string):number|null {
-  let s=value.trim().replace(/[%$\s]/g,'')
-  if (!s) return null
-  if (s.includes(',') && s.includes('.')) {
-    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s=s.replace(/\./g,'').replace(',','.')
-    else s=s.replace(/,/g,'')
-  } else if (s.includes(',')) {
-    s=s.replace(/\./g,'').replace(',','.')
-  }
-  const n=Number(s)
-  return Number.isFinite(n)?n:null
-}
 
 function formatNumber(columnId:string,value:number):string {
   const kind=settings.column_types?.[columnId] ?? (settings.column_percent?.[columnId]?'porcentaje':settings.column_currency?.[columnId]?'moneda':'decimal')

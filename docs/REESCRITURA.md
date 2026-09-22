@@ -178,4 +178,4 @@ La medida y la columna peso no quedan fijadas a una columna física: ambas son c
 
 ## Fórmulas y campos calculados — 2026-09-22
 
-El motor de fórmulas preserva el signo de los valores numéricos de las columnas. `evaluateFormula` toma `MemoryValue.Number` directamente, por lo que un valor negativo de origen participa con su signo en multiplicaciones, divisiones, sumas y restas. El parser también admite el operador menos unario delante de columnas, valores y expresiones.
+El motor de fórmulas preserva el signo de los valores numéricos de las columnas. `evaluateFormula` toma `MemoryValue.Number` directamente, por lo que un valor negativo de origen participa con su signo en multiplicaciones, divisiones, sumas y restas. El parser también admite el operador menos unario delante de columnas, valores y expresiones. En frontend, el parseo numérico está centralizado y conserva el signo explícito (incluido formato contable entre paréntesis); las celdas y subtotales reutilizan ese parser. Los campos calculados que muestra la grilla consumen el dataset calculado por backend, evitando un segundo evaluador de fórmulas en el cliente.
