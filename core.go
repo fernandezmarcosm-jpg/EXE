@@ -483,10 +483,13 @@ func inferValueType(raw string) ValueType {
 
 func makeMemoryValue(columnID, raw string) MemoryValue {
 	t := inferValueType(raw)
-	v := MemoryValue{ColumnID: columnID, Raw: raw, Type: t}
+	v := MemoryValue{ColumnID: columnID, Raw: strings.TrimSpace(raw), Type: t}
 	if t == ValueNumber {
 		if n, ok := parseNumber(raw); ok {
 			v.Number = n
+			// Raw numerico canonico: nunca conserva notacion cientifica,
+			// separadores locales ni ceros sobrantes.
+			v.Raw = strconv.FormatFloat(n, 'f', -1, 64)
 		}
 	}
 	return v
