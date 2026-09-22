@@ -42,6 +42,44 @@ func datasetColumnHighlightSign(c DatasetColumn)bool{return datasetSettingBool(a
 func datasetColumnBackground(c DatasetColumn)string{return strings.TrimSpace(appSettings.ColumnBackground[datasetColumnKey(c)])}
 func datasetColumnAlign(c DatasetColumn)string{if v:=strings.ToLower(strings.TrimSpace(appSettings.ColumnAlign[datasetColumnKey(c)]));v=="left"||v=="center"||v=="right"{return v};if c.Type==ValueNumber||c.Source=="CALCULADA"{return "right"};return "left"}
 func parseConfiguredType(v string)ValueType{switch strings.ToLower(strings.TrimSpace(v)){case "entero","integer":return ValueNumber;case "decimal","number","numero":return ValueNumber;case "fecha","date":return ValueDate;case "porcentaje","percent":return ValueNumber};return ValueEmpty}
+// canonicalDateRaw convierte fechas de entrada a una representacion interna
+// estable. La presentacion (dd/mm/aaaa) se aplica solamente al mostrar.
+func canonicalDateRaw(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" { return "" }
+	if n, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64); err == nil && n >= 1 && n < 100000 {
+		return excelSerialDate(n, false).Format("2006-01-02")
+	}
+	for _, layout := range []string{
+		"2006-01-02 15:04:05", "2006-01-02T15:04:05",
+		"2006-01-02", "02/01/2006", "2/1/2006",
+		"2006/01/02", "02-01-2006", "2-1-2006",
+		"02/01/2006 15:04:05",
+	} {
+		if t, err := time.Parse(layout, raw); err == nil {
+			if strings.Contains(layout, "15:04:05") || strings.Contains(raw, "T") {
+				return t.Format("2006-01-02 15:04:05")
+			}
+			return t.Format("2006-01-02")
+		}
+	}
+	return raw
+}
+func canonicalizeMemoryValue(v MemoryValue, typ ValueType) MemoryValue {
+	v.Type = typ
+	if typ == ValueNumber {
+		if n, ok := parseNumber(v.Raw); ok {
+			v.Number = n
+			v.Raw = strconv.FormatFloat(n, 'f', -1, 64)
+		}
+	} else if typ == ValueDate {
+		v.Raw = canonicalDateRaw(v.Raw)
+		if n, err := strconv.ParseFloat(strings.ReplaceAll(v.Raw, ",", "."), 64); err == nil {
+			v.Number = n
+		}
+	}
+	return v
+}
 func applyConfiguredColumnType(c DatasetColumn)DatasetColumn{t:=parseConfiguredType(datasetSettingString(appSettings.ColumnTypes,c));if t!=ValueEmpty{c.Type=t};return c}
 func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");n:=normalizeHeader(h[i]);if n=="CLAVE"||n=="SKU"{if ki<0{ki=i}}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE/SKU")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(row[i])}};m.ByKey[k]=v};return m,source,nil}
 func csvHeaderTypes(m *csvMaster)map[string]ValueType{out:=map[string]ValueType{};if m==nil{return out};for _,h:=range m.Headers{out[h]=ValueText};for _,row:=range m.ByKey{for h,raw:=range row{if raw==""{continue};t:=inferValueType(raw);if t==ValueNumber{out[h]=ValueNumber}}};return out}
