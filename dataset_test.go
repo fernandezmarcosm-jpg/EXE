@@ -149,7 +149,7 @@ func TestLookupRangeByDateInclusive(t *testing.T) {
 		row := MemoryRow{Values: map[string]MemoryValue{"FECHA":{ColumnID:"FECHA",Raw:tc.raw,Type:ValueDate}}}
 		got := applyLookupEnrichment(&rec,sh,row,[]lookupTable{table},ids)
 		v := rec.Values["LOOKUP:EJERCICIO:EJERCICIO"].Raw
-		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
+		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,got,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
 	}
 }
 
@@ -197,6 +197,6 @@ func TestLookupRangeBoundariesAreInclusiveWithTime(t *testing.T) {
 		row := MemoryRow{Values: map[string]MemoryValue{"FECFACTURA":{ColumnID:"FECFACTURA",Raw:tc.raw,Type:ValueDate}}}
 		got := applyLookupEnrichment(&rec,sh,row,[]lookupTable{table},ids)
 		v := rec.Values["LOOKUP:EJERCICIOBORDE:EJERCICIO"].Raw
-		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
+		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,got,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
 	}
 }
