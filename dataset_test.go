@@ -327,3 +327,19 @@ func TestCanonicalConfiguredTypes(t *testing.T) {
 		t.Fatalf("decimal canonical raw=%q number=%v; want 23961", decimal.Raw, decimal.Number)
 	}
 }
+
+func TestLookupRangeByDateInclusive(t *testing.T) {
+	csvData := []byte("DESDE;HASTA;FECHA;EJERCICIO\n01/01/2026;31/12/2026;FECHA;Ejercicio 2026\n")
+	table, err := parseLookupTable(csvData, "Ejercicio", "Ejercicio.csv")
+	if err != nil { t.Fatal(err) }
+	if !table.IsRange || table.DateKeyHeader != "FECHA" || len(table.Ranges) != 1 { t.Fatalf("range table: %+v", table) }
+	sh := MemorySheet{Columns: []MemoryColumn{{ID:"FECHA",Title:"FECHA",Index:0,Type:ValueDate}}}
+	ids := map[string]map[string]string{"Ejercicio":{"EJERCICIO":"LOOKUP:EJERCICIO:EJERCICIO"}}
+	for _, tc := range []struct{raw,want string}{{"01/01/2026","Ejercicio 2026"},{"31/12/2026","Ejercicio 2026"},{"31/12/2025",""}} {
+		rec := DatasetRecord{Values: map[string]MemoryValue{}}
+		row := MemoryRow{Values: map[string]MemoryValue{"FECHA":{ColumnID:"FECHA",Raw:tc.raw,Type:ValueDate}}}
+		got := applyLookupEnrichment(&rec,sh,row,[]lookupTable{table},ids)
+		v := rec.Values["LOOKUP:EJERCICIO:EJERCICIO"].Raw
+		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,got,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
+	}
+}
