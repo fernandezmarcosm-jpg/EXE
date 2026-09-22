@@ -73,3 +73,7 @@ export function SetVisibleColumns(arg1) {
 export function UpdateCalculatedColumn(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['UpdateCalculatedColumn'](arg1, arg2, arg3, arg4);
 }
+
+export function LogFilePath() {
+  return window['go']['main']['App']['LogFilePath']();
+}
