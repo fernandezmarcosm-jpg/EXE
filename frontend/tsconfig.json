@@ -10,5 +10,5 @@
     "types": ["vite/client"]
   },
   "include": ["src"],
-  "exclude": ["src/report_pivot.test.ts"]
+  "exclude": ["src/report_pivot.test.ts", "src/number_utils.test.ts"]
 }
