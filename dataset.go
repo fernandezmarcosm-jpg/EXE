@@ -21,7 +21,60 @@ type DatasetRecord struct{SO string;Values map[string]MemoryValue}
 type LookupSummary struct{Name string `json:"name"`;KeyHeader string `json:"key_header"`;Rows int `json:"rows"`;MatchedColumns int `json:"matched_columns"`;EnrichedRows int `json:"enriched_rows"`}
 type MemoryDataset struct{Columns []DatasetColumn;Records []DatasetRecord;CSVRows,Enriched,DuplicateSO int;SourceFiles []string;LookupDiagnostics []LookupSummary `json:"lookup_diagnostics"`}
 type csvMaster struct{Headers []string;ByKey map[string]map[string]string}
-func normalizeJoinKey(v string)string{s:=strings.TrimSpace(strings.ToUpper(v));if s==""{return ""};s=strings.ReplaceAll(s," ","");s=strings.ReplaceAll(s,"\u00a0","");numeric:=true;for _,r:=range s{if !(r>='0'&&r<='9')&&r!='.'&&r!=','&&r!='-'&&r!='+'{numeric=false;break}};if !numeric{if n,e:=strconv.ParseFloat(s,64);e==nil{if math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)};return strconv.FormatFloat(n,'f',-1,64)}};return s};sign:="";body:=s;if strings.HasPrefix(body,"-")||strings.HasPrefix(body,"+"){sign=body[:1];body=body[1:]};if body==""{return s};lastComma:=strings.LastIndex(body,",");lastDot:=strings.LastIndex(body,".");decimalPos:=-1;if lastComma>=0||lastDot>=0{last:=lastComma;if lastDot>last{last=lastDot};fracLen:=len(body)-last-1;if lastComma>=0&&lastDot>=0{if fracLen>0&&fracLen<=2{decimalPos=last}}else{count:=strings.Count(body,",")+strings.Count(body,".");if fracLen>0&&fracLen<=2{decimalPos=last}else if count==1&&fracLen==3&&len(body[:last])<=3{decimalPos=-1}else if count>1{decimalPos=-1}}};if decimalPos>=0{integer:=body[:decimalPos];fraction:=body[decimalPos+1:];integer=strings.ReplaceAll(integer,".","");integer=strings.ReplaceAll(integer,",","");fraction=strings.ReplaceAll(fraction,".","");fraction=strings.ReplaceAll(fraction,",","");if fraction==""{return sign+integer};n,e:=strconv.ParseFloat(integer+"."+fraction,64);if e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}};digits:=strings.ReplaceAll(body,".","");digits=strings.ReplaceAll(digits,",","");if digits!=""{if n,e:=strconv.ParseInt(sign+digits,10,64);e==nil{return strconv.FormatInt(n,10)}};if n,e:=strconv.ParseFloat(s,64);e==nil{if math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)};return strconv.FormatFloat(n,'f',-1,64)};return s}
+func normalizeJoinKey(v string) string {
+	s := strings.TrimSpace(strings.ToUpper(v))
+	if s == "" { return "" }
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "\u00a0", "")
+	// Scientific notation is handled first because E is not a separator.
+	if n, err := strconv.ParseFloat(s, 64); err == nil && strings.ContainsAny(s, "E") {
+		if math.Trunc(n) == n { return strconv.FormatInt(int64(n), 10) }
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	}
+	numeric := true
+	for _, r := range s {
+		if !(r >= '0' && r <= '9') && r != '.' && r != ',' && r != '-' && r != '+' { numeric = false; break }
+	}
+	if !numeric { return s }
+	sign, body := "", s
+	if strings.HasPrefix(body, "-") || strings.HasPrefix(body, "+") { sign, body = body[:1], body[1:] }
+	if body == "" { return s }
+	lastComma, lastDot := strings.LastIndex(body, ","), strings.LastIndex(body, ".")
+	decimalPos := -1
+	if lastComma >= 0 || lastDot >= 0 {
+		last := lastComma
+		if lastDot > last { last = lastDot }
+		fracLen := len(body) - last - 1
+		if lastComma >= 0 && lastDot >= 0 {
+			if fracLen > 0 && fracLen <= 2 { decimalPos = last }
+		} else {
+			count := strings.Count(body, ",") + strings.Count(body, ".")
+			if fracLen > 0 && fracLen <= 2 { decimalPos = last
+			} else if count == 1 && fracLen == 3 && len(body[:last]) <= 3 {
+				decimalPos = -1
+			} else if count > 1 { decimalPos = -1 }
+		}
+	}
+	if decimalPos >= 0 {
+		integer := strings.NewReplacer(".", "", ",", "").Replace(body[:decimalPos])
+		fraction := strings.NewReplacer(".", "", ",", "").Replace(body[decimalPos+1:])
+		if fraction == "" { return sign + integer }
+		if n, err := strconv.ParseFloat(integer+"."+fraction, 64); err == nil {
+			if math.Trunc(n) == n { return strconv.FormatInt(int64(n), 10) }
+			return strconv.FormatFloat(n, 'f', -1, 64)
+		}
+	}
+	digits := strings.NewReplacer(".", "", ",", "").Replace(body)
+	if digits != "" {
+		if n, err := strconv.ParseInt(sign+digits, 10, 64); err == nil { return strconv.FormatInt(n, 10) }
+	}
+	if n, err := strconv.ParseFloat(s, 64); err == nil {
+		if math.Trunc(n) == n { return strconv.FormatInt(int64(n), 10) }
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	}
+	return s
+}
+
 func normalizeHeader(s string)string{s=strings.TrimSpace(s);s=strings.ReplaceAll(s,"Nº","N");s=strings.ReplaceAll(s,"N°","N");s=strings.ReplaceAll(s,"º","o");s=strings.ReplaceAll(s,"°","o");s=strings.ToUpper(s);s=strings.Join(strings.Fields(s)," ");return s}
 func lookupHeaderEquivalent(s string)string{n:=normalizeHeader(s);n=strings.TrimSpace(n);for _,prefix:=range []string{"NRO ","Nº ","N° ","N "}{if strings.HasPrefix(n,prefix){return strings.TrimSpace(n[len(prefix):])}};return n}
 func lookupHeadersMatch(a,b string)bool{aN,bN:=normalizeHeader(a),normalizeHeader(b);if aN==bN{return true};return lookupHeaderEquivalent(aN)==lookupHeaderEquivalent(bN)}
