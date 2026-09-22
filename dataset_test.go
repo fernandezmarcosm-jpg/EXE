@@ -21,6 +21,55 @@ func TestEvaluateFormulaPreservesNegativeValues(t *testing.T) {
 	if got,ok:=evaluateFormula("-[CANTIDAD]",r,cols); !ok || got != 210 { t.Fatalf("unary minus=%v ok=%v; want 210,true",got,ok) }
 }
 func makeTestDoc(rows ...[3]string)*xlsxDoc{columns:=[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText},{ID:"ITEM",Title:"ITEM",Index:1,Type:ValueText},{ID:"SKU",Title:"SKU",Index:2,Type:ValueText}};memoryRows:=make([]MemoryRow,0,len(rows));for _,x:=range rows{memoryRows=append(memoryRows,MemoryRow{Values:map[string]MemoryValue{"SO":{Raw:x[0],Type:ValueText},"ITEM":{Raw:x[1],Type:ValueText},"SKU":{Raw:x[2],Type:ValueText}}})};return &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:columns,Rows:memoryRows}}}}}
+func TestBuildMemoryDatasetCalculatedColumnPreservesNegativeSignEndToEnd(t *testing.T) {
+	old := appSettings
+	defer func() { appSettings = old }()
+	appSettings = defaultDatasetSettings()
+	appSettings.CalculatedColumns = []CalculatedColumn{{Name:"TN",Formula:"[CANTIDAD]*[KG]"}}
+
+	d := &xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{
+		Columns: []MemoryColumn{
+			{ID:"SO",Title:"SO",Index:0,Type:ValueText},
+			{ID:"CANTIDAD",Title:"CANTIDAD",Index:1,Type:ValueNumber},
+			{ID:"KG",Title:"KG",Index:2,Type:ValueNumber},
+		},
+		Rows: []MemoryRow{{Values: map[string]MemoryValue{
+			"SO": {ColumnID:"SO",Raw:"100",Type:ValueText},
+			"CANTIDAD": makeMemoryValue("CANTIDAD","-105"),
+			"KG": makeMemoryValue("KG","630"),
+		}}},
+	}}}}
+	s := defaultDatasetSettings()
+	s.SOColumn = 1
+	ds, err := BuildMemoryDataset([]*xlsxDoc{d}, s)
+	if err != nil { t.Fatal(err) }
+	applyDatasetFormula(ds, appSettings)
+
+	c, ok := ds.columnByTitle("TN")
+	if !ok { t.Fatal("calculated TN column not created") }
+	v, ok := ds.Records[0].Values[c.ID]
+	if !ok { t.Fatal("calculated TN value missing") }
+	if v.Number != -66150 { t.Fatalf("TN.Number=%v; want -66150", v.Number) }
+	if got := datasetValueText(c, v); !strings.HasPrefix(strings.TrimSpace(got), "-") {
+		t.Fatalf("TN display=%q; want negative sign", got)
+	}
+}
+
+func TestMakeMemoryValuePreservesNegativeLocaleAndAccountingSign(t *testing.T) {
+	for _, raw := range []string{"-105,00", "(105)"} {
+		v := makeMemoryValue("CANTIDAD", raw)
+		if v.Type != ValueNumber || v.Number >= 0 {
+			t.Fatalf("%q => type=%v number=%v; want numeric negative", raw, v.Type, v.Number)
+		}
+		if raw == "-105,00" && v.Number != -105 {
+			t.Fatalf("%q => number=%v; want -105", raw, v.Number)
+		}
+		if raw == "(105)" && v.Number != -105 {
+			t.Fatalf("%q => number=%v; want -105", raw, v.Number)
+		}
+	}
+}
+
 func TestMemoryDatasetKeepsAllItemsForSameSO(t *testing.T){s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{makeTestDoc([3]string{"100","1","ACE0001"},[3]string{"100","2","ACE0002"},[3]string{"100","3","ACE0003"})},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=3||m.DuplicateSO!=0{t.Fatalf("records=%d duplicates=%d; want 3,0",len(m.Records),m.DuplicateSO)}}
 func TestMemoryDatasetDeduplicatesExactSOItemLine(t *testing.T){s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{makeTestDoc([3]string{"100","1","ACE0001"},[3]string{"100","1","ACE0001"},[3]string{"100","2","ACE0002"})},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=2||m.DuplicateSO!=1{t.Fatalf("records=%d duplicates=%d; want 2,1",len(m.Records),m.DuplicateSO)}}
 func TestMemoryDatasetDoesNotDeduplicateBySOWhenITEMIsMissing(t *testing.T){d:=&xlsxDoc{Memory:&MemoryWorkbook{Sheets:[]MemorySheet{{Columns:[]MemoryColumn{{ID:"SO",Title:"SO",Index:0,Type:ValueText}},Rows:[]MemoryRow{{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText}}},{Values:map[string]MemoryValue{"SO":{Raw:"100",Type:ValueText}}}}}}}};s:=defaultDatasetSettings();s.SOColumn=1;m,err:=BuildMemoryDataset([]*xlsxDoc{d},s);if err!=nil{t.Fatal(err)};if len(m.Records)!=2||m.DuplicateSO!=0{t.Fatalf("records=%d duplicates=%d; want 2,0",len(m.Records),m.DuplicateSO)}}
