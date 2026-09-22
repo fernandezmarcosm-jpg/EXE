@@ -178,4 +178,23 @@ La medida y la columna peso no quedan fijadas a una columna física: ambas son c
 
 ## Fórmulas y campos calculados — 2026-09-22
 
-El motor de fórmulas preserva el signo de los valores numéricos de las columnas. `evaluateFormula` toma `MemoryValue.Number` directamente, por lo que un valor negativo de origen participa con su signo en multiplicaciones, divisiones, sumas y restas. El parser también admite el operador menos unario delante de columnas, valores y expresiones. En frontend, el parseo numérico está centralizado y conserva el signo explícito (incluido formato contable entre paréntesis); las celdas y subtotales reutilizan ese parser. Los campos calculados que muestra la grilla consumen el dataset calculado por backend, evitando un segundo evaluador de fórmulas en el cliente.
+El motor de fórmulas preserva el signo de los valores numéricos de las columnas. `evaluateFormula` toma `MemoryValue.Number` directamente, por lo que un valor negativo de origen participa con su signo en multiplicaciones, divisiones, sumas y restas. El parser también admite el operador menos unario delante de columnas, valores y expresiones.
+
+### Diagnóstico de pérdida de signo
+
+- El binario imprime al arrancar una marca `[BUILD]` con el marcador `2026-09-22-calc-sign-diagnostic` y la hora real de ejecución. Esto permite distinguir el EXE instrumentado de uno anterior.
+- `applyDatasetFormula` registra como máximo las primeras 5 filas no cero por campo calculado, mostrando para cada referencia su `MemoryValue.Raw`, `Number` y `Type`, además del resultado calculado.
+- `evaluateFormula` registra `[CALC-WARN]` cuando dos columnas numéricas distintas comparten el mismo título en minúsculas y la segunda pisa la clave de la primera.
+- El diagnóstico se escribe en `GestionSO_log.txt` junto al ejecutable (con fallback al directorio de trabajo), limitado a 40 líneas por proceso y truncado si el archivo existente supera 1 MiB, para evitar repetir el problema del log masivo.
+- Las celdas calculadas de la grilla consumen el string generado por `datasetDTO` en backend. No existe un segundo evaluador de fórmulas en `frontend/src/main.ts`.
+
+### Variantes de signo soportadas
+
+`parseNumber` conserva el signo para:
+- signo inicial ASCII: `-210`;
+- signo inicial Unicode U+2212: `−210`;
+- signo final: `210-`;
+- formato contable entre paréntesis: `(210)`;
+- signo positivo inicial o final: `+210` / `210+`.
+
+El formateo visible se aplica después sobre `MemoryValue.Number`, por lo que no cambia el signo utilizado por el cálculo.
