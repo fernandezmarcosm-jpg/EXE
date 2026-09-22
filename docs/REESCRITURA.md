@@ -127,3 +127,8 @@ Las claves se normalizan en ambos lados. Para valores numéricos se eliminan esp
 - `normalizeJoinKey` canonicaliza claves numéricas para que `80003285`, `80003285.00`, `80003285,00` y `80.003.285` puedan coincidir sin alterar claves alfanuméricas.
 - El diagnóstico `[LOOKUP-DBG]` registra una vez por base el encabezado de la base, la columna XLSX seleccionada, algunas claves normalizadas del CSV y el primer valor crudo/normalizado observado en el XLSX.
 - `lookup_value_test.go` cubre el caso `Nº CLIENTE;ATRIBUTO` con `80003285.00` y el caso con separadores de miles.
+
+
+## Log físico de diagnóstico — 2026-09-22
+
+La aplicación escribe el diagnóstico en `GestionSO_log.txt`, junto al ejecutable cuando `os.Executable()` está disponible; como fallback usa el directorio de trabajo y finalmente `%TEMP%`. El archivo se abre en modo append y permanece abierto durante la sesión. Cada inicio registra timestamp, versión/SHA de compilación y ruta del log. Los mensajes `[LOOKUP]` muestran carga y resolución de headers; `[LOOKUP-DBG]` muestra claves crudas y normalizadas y el resultado del match; `[JOIN]` resume filas y enriquecimientos. La barra de estado muestra la ruta absoluta mediante `LogFilePath()` después de importar.
