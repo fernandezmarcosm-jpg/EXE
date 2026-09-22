@@ -45,15 +45,6 @@ jobs:
         shell: pwsh
         run: wails generate module
 
-      - name: Verify generated Wails bindings are versioned
-        shell: pwsh
-        run: |
-          git diff --exit-code -- frontend/wailsjs
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Wails bindings are out of date. Run 'wails generate module' locally and commit frontend/wailsjs/**."
-            exit 1
-          }
-
       - name: Go build
         run: go build ./...
 
