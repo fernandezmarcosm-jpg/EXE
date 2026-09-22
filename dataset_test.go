@@ -335,7 +335,7 @@ func TestLookupRangeByDateInclusive(t *testing.T) {
 	if !table.IsRange || table.DateKeyHeader != "FECHA" || len(table.Ranges) != 1 { t.Fatalf("range table: %+v", table) }
 	sh := MemorySheet{Columns: []MemoryColumn{{ID:"FECHA",Title:"FECHA",Index:0,Type:ValueDate}}}
 	ids := map[string]map[string]string{"Ejercicio":{"EJERCICIO":"LOOKUP:EJERCICIO:EJERCICIO"}}
-	for _, tc := range []struct{raw,want string}{{"01/01/2026","Ejercicio 2026"},{"31/12/2026","Ejercicio 2026"},{"31/12/2025",""}} {
+	for _, tc := range []struct{raw,want string}{{"01/01/2026","Ejercicio 2026"},{"31/12/2026","Ejercicio 2026"},{"31/12/2026 23:59:59","Ejercicio 2026"},{"31/12/2025",""}} {
 		rec := DatasetRecord{Values: map[string]MemoryValue{}}
 		row := MemoryRow{Values: map[string]MemoryValue{"FECHA":{ColumnID:"FECHA",Raw:tc.raw,Type:ValueDate}}}
 		got := applyLookupEnrichment(&rec,sh,row,[]lookupTable{table},ids)
@@ -374,4 +374,20 @@ func TestBuildMemoryDatasetLookupRangeFiscalYear(t *testing.T) {
 		if !ok || v.Raw != tc.want { t.Fatalf("SO %s lookup: ok=%v raw=%q; want %q", tc.so, ok, v.Raw, tc.want) }
 	}
 	if len(m.LookupDiagnostics) != 1 || m.LookupDiagnostics[0].EnrichedRows != 2 { t.Fatalf("range diagnostics=%+v; want 2 enriched rows", m.LookupDiagnostics) }
+}
+
+func TestLookupRangeBoundariesAreInclusiveWithTime(t *testing.T) {
+	csvData := []byte("DESDE;HASTA;FECFACTURA;EJERCICIO\n12/09/2026;13/09/2026;;PRUEBA1\n")
+	table, err := parseLookupTable(csvData, "EjercicioBorde", "EjercicioBorde.csv")
+	if err != nil { t.Fatal(err) }
+	sh := MemorySheet{Columns: []MemoryColumn{{ID:"FECFACTURA", Title:"FECFACTURA", Index:0, Type:ValueDate}}}
+	ids := map[string]map[string]string{"EjercicioBorde":{"EJERCICIO":"LOOKUP:EJERCICIOBORDE:EJERCICIO"}}
+	cases := []struct{raw,want string}{{"12/09/2026","PRUEBA1"},{"13/09/2026","PRUEBA1"},{"13/09/2026 23:59:59","PRUEBA1"},{"11/09/2026",""}}
+	for _, tc := range cases {
+		rec := DatasetRecord{Values: map[string]MemoryValue{}}
+		row := MemoryRow{Values: map[string]MemoryValue{"FECFACTURA":{ColumnID:"FECFACTURA",Raw:tc.raw,Type:ValueDate}}}
+		got := applyLookupEnrichment(&rec,sh,row,[]lookupTable{table},ids)
+		v := rec.Values["LOOKUP:EJERCICIOBORDE:EJERCICIO"].Raw
+		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,got,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
+	}
 }
