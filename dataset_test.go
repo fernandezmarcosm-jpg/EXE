@@ -343,3 +343,35 @@ func TestLookupRangeByDateInclusive(t *testing.T) {
 		if tc.want == "" { if got != 0 || v != "" { t.Fatalf("date %q: matches=%d value=%q; want no match",tc.raw,got,v) } } else if got != 1 || v != tc.want { t.Fatalf("date %q: matches=%d value=%q; want %q",tc.raw,got,v,tc.want) }
 	}
 }
+
+func TestBuildMemoryDatasetLookupRangeFiscalYear(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil { t.Fatal(err) }
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(dir); err != nil { t.Fatal(err) }
+	csvData := "DESDE;HASTA;FECFACTURA;EJERCICIO\\n01/07/2024;30/06/2025;FECFACTURA;Ejercicio 2025\\n01/07/2025;30/06/2026;FECFACTURA;Ejercicio 2026\\n"
+	if err := os.WriteFile(filepath.Join(dir, "Ejercicio.csv"), []byte(csvData), 0644); err != nil { t.Fatal(err) }
+	doc := &xlsxDoc{Memory: &MemoryWorkbook{Sheets: []MemorySheet{{
+		Columns: []MemoryColumn{
+			{ID:"SO", Title:"SO", Index:0, Type:ValueText},
+			{ID:"FECFACTURA", Title:"FECFACTURA", Index:1, Type:ValueDate},
+		},
+		Rows: []MemoryRow{
+			{Values:map[string]MemoryValue{"SO":{ColumnID:"SO",Raw:"100",Type:ValueText},"FECFACTURA":{ColumnID:"FECFACTURA",Raw:"13/09/2026",Type:ValueDate}}},
+			{Values:map[string]MemoryValue{"SO":{ColumnID:"SO",Raw:"101",Type:ValueText},"FECFACTURA":{ColumnID:"FECFACTURA",Raw:"15/03/2025",Type:ValueDate}}},
+		},
+	}}}}
+	s := defaultDatasetSettings(); s.SOColumn = 1
+	m, err := BuildMemoryDataset([]*xlsxDoc{doc}, s)
+	if err != nil { t.Fatal(err) }
+	if len(m.Records) != 2 { t.Fatalf("records=%d; want 2", len(m.Records)) }
+	for _, tc := range []struct{so, want string}{{"100","Ejercicio 2026"},{"101","Ejercicio 2025"}} {
+		var found *DatasetRecord
+		for i := range m.Records { if m.Records[i].SO == tc.so { found = &m.Records[i]; break } }
+		if found == nil { t.Fatalf("SO %s not found", tc.so) }
+		v, ok := found.Values["LOOKUP:EJERCICIO:EJERCICIO"]
+		if !ok || v.Raw != tc.want { t.Fatalf("SO %s lookup: ok=%v raw=%q; want %q", tc.so, ok, v.Raw, tc.want) }
+	}
+	if len(m.LookupDiagnostics) != 1 || m.LookupDiagnostics[0].EnrichedRows != 2 { t.Fatalf("range diagnostics=%+v; want 2 enriched rows", m.LookupDiagnostics) }
+}
