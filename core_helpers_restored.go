@@ -86,17 +86,40 @@ func parseNumber(s string) (float64, bool) {
 	if accountingNegative {
 		s = strings.TrimSpace(s[1 : len(s)-1])
 	}
+	s = strings.ReplaceAll(s, "−", "-")
 	s = strings.ReplaceAll(s, "$", "")
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, "'", "")
+
+	negative := accountingNegative
+	if strings.HasPrefix(s, "-") {
+		negative = true
+		s = s[1:]
+	} else if strings.HasPrefix(s, "+") {
+		s = s[1:]
+	}
+	if strings.HasSuffix(s, "-") {
+		negative = true
+		s = strings.TrimSpace(s[:len(s)-1])
+	} else if strings.HasSuffix(s, "+") {
+		s = strings.TrimSpace(s[:len(s)-1])
+	}
+	if s == "" {
+		return 0, false
+	}
+	signed := func(x float64) float64 {
+		if negative {
+			return -math.Abs(x)
+		}
+		return math.Abs(x)
+	}
 
 	// La notación científica debe resolverse antes de aplicar heurísticas
 	// locales: el separador decimal puede ser un punto y la E no es un
 	// separador de miles.
 	if strings.ContainsAny(s, "eE") {
 		if x, err := strconv.ParseFloat(s, 64); err == nil {
-			if accountingNegative { x = -math.Abs(x) }
-			return x, true
+			return signed(x), true
 		}
 		return 0, false
 	}
@@ -110,8 +133,7 @@ func parseNumber(s string) (float64, bool) {
 			s = strings.ReplaceAll(s, ",", "")
 		}
 		if x, err := strconv.ParseFloat(s, 64); err == nil {
-			if accountingNegative { x = -math.Abs(x) }
-			return x, true
+			return signed(x), true
 		}
 		return 0, false
 	}
@@ -122,14 +144,12 @@ func parseNumber(s string) (float64, bool) {
 		parts := strings.Split(s, ",")
 		if len(parts) > 2 && allThousandGroups(parts) {
 			if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
-				if accountingNegative { x = -math.Abs(x) }
-				return x, true
+				return signed(x), true
 			}
 		}
 		s = strings.ReplaceAll(s, ",", ".")
 		if x, err := strconv.ParseFloat(s, 64); err == nil {
-			if accountingNegative { x = -math.Abs(x) }
-			return x, true
+			return signed(x), true
 		}
 		return 0, false
 	}
@@ -140,19 +160,16 @@ func parseNumber(s string) (float64, bool) {
 	parts := strings.Split(s, ".")
 	if len(parts) > 2 && allThousandGroups(parts) {
 		if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
-			if accountingNegative { x = -math.Abs(x) }
-			return x, true
+			return signed(x), true
 		}
 	}
 	if len(parts) == 2 && len(parts[1]) == 3 && len(parts[0]) > 0 && len(parts[0]) <= 3 {
 		if x, err := strconv.ParseFloat(parts[0]+parts[1], 64); err == nil {
-			if accountingNegative { x = -math.Abs(x) }
-			return x, true
+			return signed(x), true
 		}
 	}
 	if x, err := strconv.ParseFloat(s, 64); err == nil {
-		if accountingNegative { x = -math.Abs(x) }
-		return x, true
+		return signed(x), true
 	}
 	return 0, false
 }
