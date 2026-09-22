@@ -37,3 +37,5 @@ export function SetSubtotals(arg1:string,arg2:Record<string, string>):Promise<ma
 export function SetVisibleColumns(arg1:Array<string>):Promise<void>;
 
 export function UpdateCalculatedColumn(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<main.DatasetDTO>;
+
+export function LogFilePath():Promise<string>;
