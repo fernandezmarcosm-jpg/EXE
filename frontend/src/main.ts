@@ -1,7 +1,7 @@
 import './style.css'
 import { parseNumber } from './ui_fixes'
 import { pivotReport, type ReportAgg } from './report_pivot'
-import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, LogFilePath, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
+import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
 type CalculatedColumn = { Name:string; Formula:string; Percent:boolean }
@@ -435,6 +435,8 @@ function renderReport(){
   const body=result.groups.map(g=>'<tr>'+g.labels.map(v=>'<td>'+esc(v||'(en blanco)')+'</td>').join('')+'<td>'+esc(formatReportValue(measureID,g.value))+'</td><td>'+g.count+'</td></tr>').join('');
   reportResult.innerHTML='<div class="report-meta">'+result.groups.length+' grupo(s) · '+rows.length+' fila(s) filtrada(s)</div><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'<th>'+esc(state.data!.columns.find(c=>c.id===measureID)?.title??measureID)+'</th><th>Filas</th></tr></thead><tbody>'+body+'</tbody><tfoot><tr>'+groupBy.map((_,i)=>'<th>'+(i===0?'TOTAL GENERAL':'')+'</th>').join('')+'<th>'+esc(formatReportValue(measureID,result.total))+'</th><th>'+result.totalCount+'</th></tr></tfoot></table>';
 }
+function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
+
 async function setPanel(open:boolean, mode: 'columns'|'calculated'|'report' = state.panelMode){
   state.columnsOpen=open; state.panelMode=mode
   panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open)
@@ -470,8 +472,7 @@ openBtn.addEventListener('click', async () => {
     const data = await ImportXLSX() as Dataset
     if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
     state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}; state.sort = null
-    const logPath = await LogFilePath()
-    status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s) · Log: ${logPath}`
+    status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s)`
     render()
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
   finally { openBtn.disabled = false }
