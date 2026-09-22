@@ -479,78 +479,12 @@ openBtn.addEventListener('click', async () => {
 byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true,'columns'))
 byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))
 byId<HTMLButtonElement>('report').addEventListener('click', () => setPanel(true,'report'))
-reportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})\nreportGroups.addEventListener('change',renderReport)\nreportMeasure.addEventListener('change',renderReport)\nreportWeight.addEventListener('change',renderReport)\nbyId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)\nbyId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{reportGroups.selectedIndex=-1;reportResult.innerHTML='';})
-byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
-backdrop.addEventListener('click', () => setPanel(false))
-byId<HTMLButtonElement>('all').addEventListener('click', async () => {
-  if (!state.data) return
-  state.data.columns.forEach(c=>c.visible=true); render(); renderColumnPanel(); await SetVisibleColumns(state.data.columns.map(c=>c.id))
-})
-byId<HTMLButtonElement>('none').addEventListener('click', async () => {
-  if (!state.data) return
-  state.data.columns.forEach(c=>c.visible=false); render(); renderColumnPanel(); await SetVisibleColumns([])
-})
-byId<HTMLButtonElement>('clear').addEventListener('click', () => { state.filters={}; state.valueFilters={}; state.criteria={}; closeValueFilterMenu(); render(); status.textContent='Filtros limpiados.' })
-calcSave.addEventListener('click',async()=>{try{state.data=(state.calculated.editingOriginal?await UpdateCalculatedColumn(state.calculated.editingOriginal,calcName.value,calcFormula.value,calcPercent.checked):await AddCalculatedColumn(calcName.value,calcFormula.value,calcPercent.checked)) as Dataset;resetCalc();await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls();status.textContent='Campo calculado guardado.'}catch(e){status.textContent='Error guardando: '+String(e)}})
-calcCancel.addEventListener('click',resetCalc)
-subtotalGroup.addEventListener('change',saveSubtotals)
-
-void GetSettings().then((settings:any) => {
-  state.visual.settings = settings
-  state.visual.fontSize = clamp(Number(settings.font_size) || 14,6,28)
-  state.visual.rowHeight = clamp(Number(settings.row_height) || 28,10,60)
-  state.visual.columnWidths = {...(settings.column_widths ?? {})}
-  state.visual.settings = {...settings,column_decimals:{...(settings.column_decimals??{})},column_percent:{...(settings.column_percent??{})},column_types:{...(settings.column_types??{})},subtotal_agg:{...(settings.subtotal_agg??{})}}
-  applyVisualSettings()
-  render()
-}).catch(() => render())
-
-function esc(v:string){ return v.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;') }
-function escAttr(v:string){ return esc(v) }
-+out;if(kind==='porcentaje')out+='%';return out}
-function renderReport(){if(!state.data)return;const groupBy=[...reportGroups.selectedOptions].map(o=>o.value);const measureID=reportMeasure.value;const agg=reportAgg.value as ReportAgg;const weightID=reportWeight.value;if(!measureID){reportResult.innerHTML='<div class="empty">Seleccione una medida.</div>';return}if(agg==='ponderado'&&(!weightID||weightID===measureID)){reportResult.innerHTML='<div class="empty">Seleccione una columna peso distinta de la medida.</div>';return}const result=pivotReport(filteredRows(),groupBy,measureID,agg,weightID);const headers=groupBy.map(id=>state.data!.columns.find(c=>c.id===id)?.title??id);const rows=result.groups.map(g=>'<tr>'+g.labels.map(v=>'<td>'+esc(v||'(en blanco)')+'</td>').join('')+'<td>'+esc(formatReportValue(measureID,g.value))+'</td><td>'+g.count+'</td></tr>').join('');reportResult.innerHTML='<div class="report-meta">'+result.groups.length+' grupo(s) · '+filteredRows().length+' fila(s) filtrada(s)</div><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'<th>'+esc(state.data!.columns.find(c=>c.id===measureID)?.title??measureID)+'</th><th>Filas</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr>'+groupBy.map((_,i)=>'<th>'+ (i===0?'TOTAL GENERAL':'') +'</th>').join('')+'<th>'+esc(formatReportValue(measureID,result.total))+'</th><th>'+result.totalCount+'</th></tr></tfoot></table>'}
-function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
-async function setPanel(open:boolean, mode: 'columns'|'calculated' = state.panelMode){
-  state.columnsOpen=open; state.panelMode=mode
-  panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open)
-  if(!open)return
-  panelTitle.textContent=mode==='columns'?'Columnas':'Campos calculados'
-  byId<HTMLDivElement>('column-list').classList.toggle('hidden',mode!=='columns')
-  byId<HTMLDivElement>('panel-actions').classList.toggle('hidden',mode!=='columns')
-  calculatedSection.classList.toggle('hidden',mode!=='calculated')
-  subtotalSection.classList.toggle('hidden',mode!=='columns')
-  if(mode==='columns'){renderColumnPanel();renderSubtotalControls()}
-  else {try{await refreshCalculatedList()}catch(e){status.textContent='Error leyendo calculados: '+String(e)}}
-}
-
-fontInput.addEventListener('change', async () => {
-  state.visual.fontSize = clamp(Number(fontInput.value) || 14,6,28)
-  applyVisualSettings(); render()
-  try { await persistVisualSettings(); status.textContent = 'Tamaño de fuente guardado.' }
-  catch (e) { status.textContent = `Error guardando fuente: ${String(e)}` }
-})
-
-rowHeightInput.addEventListener('change', async () => {
-  state.visual.rowHeight = clamp(Number(rowHeightInput.value) || 28,10,60)
-  applyVisualSettings(); render()
-  try { await persistVisualSettings(); status.textContent = 'Alto de fila guardado.' }
-  catch (e) { status.textContent = `Error guardando alto de fila: ${String(e)}` }
-})
-
-openBtn.addEventListener('click', async () => {
-  openBtn.disabled = true; status.textContent = 'Importando Excel...'
-  try {
-    const data = await ImportXLSX() as Dataset
-    if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
-    state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}; state.sort = null
-    const logPath = await LogFilePath()
-    status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s) · Log: ${logPath}`
-    render()
-  } catch (e) { status.textContent = `ERROR: ${String(e)}` }
-  finally { openBtn.disabled = false }
-})
-byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true,'columns'))
-byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))
+reportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})
+reportGroups.addEventListener('change',renderReport)
+reportMeasure.addEventListener('change',renderReport)
+reportWeight.addEventListener('change',renderReport)
+byId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)
+byId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{[...reportGroups.options].forEach(o=>o.selected=false);reportResult.innerHTML=''})
 byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
 backdrop.addEventListener('click', () => setPanel(false))
 byId<HTMLButtonElement>('all').addEventListener('click', async () => {
