@@ -50,8 +50,7 @@ func normalizeJoinKey(v string) string {
 		} else {
 			count := strings.Count(body, ",") + strings.Count(body, ".")
 			if fracLen > 0 && fracLen <= 2 { decimalPos = last
-			} else if count == 1 && fracLen == 3 && len(body[:last]) <= 3 {
-				decimalPos = -1
+			} else if count == 1 && fracLen == 3 && len(body[:last]) <= 3 { decimalPos = -1
 			} else if count > 1 { decimalPos = -1 }
 		}
 	}
@@ -65,13 +64,8 @@ func normalizeJoinKey(v string) string {
 		}
 	}
 	digits := strings.NewReplacer(".", "", ",", "").Replace(body)
-	if digits != "" {
-		if n, err := strconv.ParseInt(sign+digits, 10, 64); err == nil { return strconv.FormatInt(n, 10) }
-	}
-	if n, err := strconv.ParseFloat(s, 64); err == nil {
-		if math.Trunc(n) == n { return strconv.FormatInt(int64(n), 10) }
-		return strconv.FormatFloat(n, 'f', -1, 64)
-	}
+	if digits != "" { if n, err := strconv.ParseInt(sign+digits, 10, 64); err == nil { return strconv.FormatInt(n, 10) } }
+	if n, err := strconv.ParseFloat(s, 64); err == nil { if math.Trunc(n) == n { return strconv.FormatInt(int64(n), 10) }; return strconv.FormatFloat(n, 'f', -1, 64) }
 	return s
 }
 
@@ -100,41 +94,15 @@ func parseConfiguredType(v string)ValueType{switch strings.ToLower(strings.TrimS
 func canonicalDateRaw(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" { return "" }
-	if n, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64); err == nil && n >= 1 && n < 100000 {
-		return excelSerialDate(n, false).Format("2006-01-02")
-	}
-	for _, layout := range []string{
-		"2006-01-02 15:04:05", "2006-01-02T15:04:05",
-		"2006-01-02", "02/01/2006", "2/1/2006",
-		"2006/01/02", "02-01-2006", "2-1-2006",
-		"02/01/2006 15:04:05",
-	} {
-		if t, err := time.Parse(layout, raw); err == nil {
-			if strings.Contains(layout, "15:04:05") || strings.Contains(raw, "T") {
-				return t.Format("2006-01-02 15:04:05")
-			}
-			return t.Format("2006-01-02")
-		}
+	if n, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64); err == nil && n >= 1 && n < 100000 { return excelSerialDate(n, false).Format("2006-01-02") }
+	for _, layout := range []string{"2006-01-02 15:04:05","2006-01-02T15:04:05","2006-01-02","02/01/2006","2/1/2006","2006/01/02","02-01-2006","2-1-2006","02/01/2006 15:04:05"} {
+		if t, err := time.Parse(layout, raw); err == nil { if strings.Contains(layout, "15:04:05") || strings.Contains(raw, "T") { return t.Format("2006-01-02 15:04:05") }; return t.Format("2006-01-02") }
 	}
 	return raw
 }
-func canonicalizeMemoryValue(v MemoryValue, typ ValueType) MemoryValue {
-	v.Type = typ
-	if typ == ValueNumber {
-		if n, ok := parseNumber(v.Raw); ok {
-			v.Number = n
-			v.Raw = strconv.FormatFloat(n, 'f', -1, 64)
-		}
-	} else if typ == ValueDate {
-		v.Raw = canonicalDateRaw(v.Raw)
-		if n, err := strconv.ParseFloat(strings.ReplaceAll(v.Raw, ",", "."), 64); err == nil {
-			v.Number = n
-		}
-	}
-	return v
-}
+func canonicalizeMemoryValue(v MemoryValue, typ ValueType) MemoryValue {v.Type=typ;if typ==ValueNumber{if n,ok:=parseNumber(v.Raw);ok{v.Number=n;v.Raw=strconv.FormatFloat(n,'f',-1,64)}}else if typ==ValueDate{v.Raw=canonicalDateRaw(v.Raw);if n,err:=strconv.ParseFloat(strings.ReplaceAll(v.Raw,",","."),64);err==nil{v.Number=n}};return v}
 func applyConfiguredColumnType(c DatasetColumn)DatasetColumn{t:=parseConfiguredType(datasetSettingString(appSettings.ColumnTypes,c));if t!=ValueEmpty{c.Type=t};return c}
-func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");n:=normalizeHeader(h[i]);if n=="CLAVE"||n=="SKU"{if ki<0{ki=i}}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE/SKU")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(row[i])}};m.ByKey[k]=v};return m,source,nil}
+func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");n:=normalizeHeader(h[i]);if n=="CLAVE"||n=="SKU"{if ki<0{ki=i}}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE/SKU")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(x)}};_ = v};return m,source,nil}
 func csvHeaderTypes(m *csvMaster)map[string]ValueType{out:=map[string]ValueType{};if m==nil{return out};for _,h:=range m.Headers{out[h]=ValueText};for _,row:=range m.ByKey{for h,raw:=range row{if raw==""{continue};t:=inferValueType(raw);if t==ValueNumber{out[h]=ValueNumber}}};return out}
 func findConfiguredSOColumn(sh MemorySheet,configured int)string{if configured>0{for _,c:=range sh.Columns{if c.Index==configured-1{return c.ID}}};for _,c:=range sh.Columns{n:=normalizeHeader(c.Title);switch n{case "SO","NRO SO","N SO","NUMERO SO","NÚMERO SO","ORDEN DE VENTA","ORDENVENTA","SALES ORDER":return c.ID}};return ""}
 type lookupRange struct{From time.Time;To time.Time;Values map[string]string}
@@ -143,24 +111,12 @@ func lookupCSVSeparator(data []byte)rune{line:=strings.SplitN(strings.TrimPrefix
 func isLookupRangeHeader(s string)bool{switch normalizeHeader(s){case "DESDE","HASTA","FECHA DESDE","FECHA HASTA":return true};return false}
 func lookupDateOnly(t time.Time) time.Time{return time.Date(t.Year(),t.Month(),t.Day(),0,0,0,0,t.Location())}
 func lookupRangeContains(r lookupRange,date time.Time)bool{from:=lookupDateOnly(r.From);to:=lookupDateOnly(r.To);date=lookupDateOnly(date);return !date.Before(from)&&!date.After(to)}
-func parseDatasetDate(raw string)(time.Time,bool){
-	raw=strings.TrimSpace(raw)
-	if raw==""{return time.Time{},false}
-	// El componente horario no participa del cruce: extraer primero la parte de fecha.
-	// Esto cubre tanto "13/9/2026 16:00:00" como variantes ISO con espacio o T.
-	datePart:=strings.Fields(strings.ReplaceAll(raw,"T"," "))
-	if len(datePart)>0{rawDate:=datePart[0];for _,layout:=range []string{"2006-01-02","02/01/2006","2/1/2006","2006/01/02","02-01-2006","2-1-2006"}{if t,e:=time.Parse(layout,rawDate);e==nil{return lookupDateOnly(t),true}}}
-	// Mantener los layouts con hora como fallback para entradas ya soportadas.
-	for _,layout:=range []string{"2006-01-02 15:04:05","2006-01-02T15:04:05","02/01/2006 15:04:05","2/1/2006 15:04:05"}{if t,e:=time.Parse(layout,raw);e==nil{return lookupDateOnly(t),true}}
-	// Camino de serial de Excel, incluyendo seriales con fraccion de hora.
-	if n,ok:=parseNumber(raw);ok&&n>=1&&n<100000{return lookupDateOnly(excelSerialDate(n,false)),true}
-	return time.Time{},false
-}
+func parseDatasetDate(raw string)(time.Time,bool){raw=strings.TrimSpace(raw);if raw==""{return time.Time{},false};datePart:=strings.Fields(strings.ReplaceAll(raw,"T"," "));if len(datePart)>0{rawDate:=datePart[0];for _,layout:=range []string{"2006-01-02","02/01/2006","2/1/2006","2006/01/02","02-01-2006","2-1-2006"}{if t,e:=time.Parse(layout,rawDate);e==nil{return lookupDateOnly(t),true}}};for _,layout:=range []string{"2006-01-02 15:04:05","2006-01-02T15:04:05","02/01/2006 15:04:05","2/1/2006 15:04:05"}{if t,e:=time.Parse(layout,raw);e==nil{return lookupDateOnly(t),true}};if n,ok:=parseNumber(raw);ok&&n>=1&&n<100000{return lookupDateOnly(excelSerialDate(n,false)),true};return time.Time{},false}
 func parseLookupTable(data []byte,name,source string)(lookupTable,error){r:=csv.NewReader(bytes.NewReader(data));r.Comma=lookupCSVSeparator(data);r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return lookupTable{},e};if len(rows)==0{return lookupTable{},fmt.Errorf("CSV %q vacío",name)};h:=make([]string,len(rows[0]));for i,x:=range rows[0]{h[i]=strings.TrimSpace(strings.TrimPrefix(x,"\ufeff"))};if len(h)==0||strings.TrimSpace(h[0])==""{return lookupTable{},fmt.Errorf("CSV %q sin columna clave",name)};t:=lookupTable{Name:name,KeyHeader:h[0],Headers:h,ByKey:map[string]map[string]string{},Source:source,Rows:make([]map[string]string,0,len(rows)-1)};isRange:=len(h)>=3&&isLookupRangeHeader(h[0])&&isLookupRangeHeader(h[1]);if isRange{if strings.EqualFold(normalizeHeader(h[0]),"HASTA")&&strings.EqualFold(normalizeHeader(h[1]),"DESDE"){return lookupTable{},fmt.Errorf("CSV %q con rango invertido: HASTA antes de DESDE",name)};if strings.TrimSpace(h[2])==""{return lookupTable{},fmt.Errorf("CSV %q de rango sin columna de fecha XLSX",name)};t.IsRange=true;t.DateKeyHeader=h[2];t.KeyHeader=h[2];t.Ranges=make([]lookupRange,0,len(rows)-1);for _,row:=range rows[1:]{if len(row)<3{continue};v:=map[string]string{};for i,header:=range h{if i<len(row){v[header]=strings.TrimSpace(row[i])}};t.Rows=append(t.Rows,v);from,okFrom:=parseDatasetDate(row[0]);to,okTo:=parseDatasetDate(row[1]);if !okFrom||!okTo{continue};if to.Before(from){continue};attrs:=map[string]string{};for i:=3;i<len(h);i++{if i<len(row){attrs[h[i]]=strings.TrimSpace(row[i])}};t.Ranges=append(t.Ranges,lookupRange{From:from,To:to,Values:attrs})};sort.SliceStable(t.Ranges,func(i,j int)bool{return t.Ranges[i].From.Before(t.Ranges[j].From)});return t,nil};for _,row:=range rows[1:]{if len(row)==0{continue};v:=map[string]string{};for i,header:=range h{if i<len(row){v[header]=strings.TrimSpace(row[i])}};t.Rows=append(t.Rows,v);k:=normalizeJoinKey(row[0]);if k==""{continue};t.ByKey[k]=v};return t,nil}
 func reindexLookupTable(t lookupTable,keyHeader string)lookupTable{out:=t;out.KeyHeader=keyHeader;out.ByKey=map[string]map[string]string{};for _,row:=range t.Rows{k:=normalizeJoinKey(row[keyHeader]);if k!=""{out.ByKey[k]=row}};return out}
 func lookupCSVSearchDirs()[]string{dirs:=make([]string,0,2);seen:=map[string]bool{};add:=func(d string){d=strings.TrimSpace(d);if d==""{return};d=filepath.Clean(d);if seen[d]{return};if st,e:=os.Stat(d);e==nil&&st.IsDir(){seen[d]=true;dirs=append(dirs,d)}};if x,e:=os.Executable();e==nil{add(filepath.Dir(x))};if d,e:=os.Getwd();e==nil{add(d)};return dirs}
 func lookupCSVFiles()[]string{files:=[]string{};seenNames:=map[string]bool{};for _,dir:=range lookupCSVSearchDirs(){entries,e:=os.ReadDir(dir);if e!=nil{continue};for _,entry:=range entries{if entry.IsDir()||!strings.EqualFold(filepath.Ext(entry.Name()),".csv"){continue};name:=entry.Name();if strings.EqualFold(name,"GestionSO_Datos.csv")||seenNames[strings.ToLower(name)]{continue};seenNames[strings.ToLower(name)]=true;files=append(files,filepath.Join(dir,name))}};return files}
-func loadLookupTables()([]lookupTable,error){paths:=lookupCSVFiles();tables:=make([]lookupTable,0,len(paths));for _,path:=range paths{data,e:=os.ReadFile(path);if e!=nil{continue};name:=strings.TrimSuffix(filepath.Base(path),filepath.Ext(path));t,e:=parseLookupTable(data,name,path);if e!=nil{continue};tables=append(tables,t);if t.IsRange{continue};};return tables,nil}
+func loadLookupTables()([]lookupTable,error){paths:=lookupCSVFiles();tables:=make([]lookupTable,0,len(paths));for _,path:=range paths{data,e:=os.ReadFile(path);if e!=nil{continue};name:=strings.TrimSuffix(filepath.Base(path),filepath.Ext(path));t,e:=parseLookupTable(data,name,path);if e!=nil{continue};tables=append(tables,t)};return tables,nil}
 func lookupColumnForKey(sh MemorySheet,keyHeader string)string{if strings.TrimSpace(keyHeader)==""{return ""};target:=normalizeHeader(keyHeader);for _,c:=range sh.Columns{if normalizeHeader(c.Title)==target{return c.ID}};for _,c:=range sh.Columns{if lookupHeadersMatch(c.Title,keyHeader){return c.ID}};return ""}
 func lookupKeyHeaderForDocs(t lookupTable,docs []*xlsxDoc)string{for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{for _,header:=range t.Headers{for _,c:=range sh.Columns{if lookupHeadersMatch(c.Title,header){return header}}}}};if len(t.Headers)>0{return t.Headers[0]};return ""}
 func lookupColumnID(baseName,attributeHeader string,used map[string]int)string{base:=normalizeHeader(baseName);if base==""{base="BASE"};attr:=normalizeHeader(attributeHeader);if attr==""{attr="COLUMNA"};key:=fmt.Sprintf("LOOKUP:%s:%s",base,attr);used[key]++;if used[key]==1{return key};return fmt.Sprintf("%s_%d",key,used[key])}
@@ -173,7 +129,7 @@ func evaluateFormula(expr string,r DatasetRecord,cols []DatasetColumn)(float64,b
 type formulaParser struct{s string;values map[string]float64;pos int};func(p *formulaParser)skip(){for p.pos<len(p.s)&&(p.s[p.pos]==' '||p.s[p.pos]=='\t'){p.pos++}};func(p *formulaParser)expr()(float64,bool){a,ok:=p.term();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='+'&&o!='-'{return a,true};p.pos++;b,ok:=p.term();if !ok{return 0,false};if o=='+'{a+=b}else{a-=b}}};func(p *formulaParser)term()(float64,bool){a,ok:=p.factor();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='*'&&o!='/'{return a,true};p.pos++;b,ok:=p.factor();if !ok{return 0,false};if o=='*'{a*=b}else{if b==0{return 0,false};a/=b}}};func(p *formulaParser)factor()(float64,bool){p.skip();if p.pos>=len(p.s){return 0,false};if p.s[p.pos]=='(' {p.pos++;v,ok:=p.expr();p.skip();if p.pos>=len(p.s)||p.s[p.pos]!=')'{return 0,false};p.pos++;return v,ok};st:=p.pos;if p.s[p.pos]=='['{if e:=strings.IndexByte(p.s[st:],']');e>=0{e+=st;key:=strings.ToLower(strings.TrimSpace(p.s[st+1:e]));p.pos=e+1;v,ok:=p.values[key];return v,ok}};for p.pos<len(p.s)&&((p.s[p.pos]>='0'&&p.s[p.pos]<='9')||p.s[p.pos]=='.'||p.s[p.pos]==','){p.pos++};if p.pos>st{v,e:=strconv.ParseFloat(strings.ReplaceAll(p.s[st:p.pos],",","."),64);return v,e==nil};return 0,false}
 func applyDatasetFormula(ds *MemoryDataset,s DatasetSettings){if ds==nil{return};ensureCalculatedDatasetColumns(ds,s);if s.ColumnPercent==nil{s.ColumnPercent=map[string]bool{}};if s.ColumnTypes==nil{s.ColumnTypes=map[string]string{}};for _,cc:=range s.CalculatedColumns{if c,ok:=ds.columnByTitle(cc.Name);ok{s.ColumnPercent[c.ID]=cc.Percent;if cc.Percent{s.ColumnTypes[c.ID]="porcentaje"}}};if s.Formula!=""&&s.FormulaTitle!=""{if c,ok:=ds.columnByTitle(s.FormulaTitle);ok{for i:=range ds.Records{if v,ok:=evaluateFormula(s.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,datasetColumnDecimals(c))}}}}};for _,cc:=range s.CalculatedColumns{c,ok:=ds.columnByTitle(cc.Name);if !ok{continue};for i:=range ds.Records{if v,ok:=evaluateFormula(cc.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,datasetColumnDecimals(c))}}}}}
 type SubtotalRow struct{GroupValue string `json:"group_value"`;GroupCount int `json:"group_count"`;Values map[string]string `json:"values"`;Total bool `json:"total"`}
-func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{if ds==nil||strings.TrimSpace(appSettings.SubtotalColumn)==""||len(appSettings.SubtotalAgg)==0{return nil};group,ok:=ds.columnByTitle(appSettings.SubtotalColumn);if !ok{for _,c:=range ds.Columns{if c.ID==appSettings.SubtotalColumn{group=c;ok=true;break}}};if !ok{return nil};type accum struct{sum map[string]float64;count map[string]int;unique map[string]map[string]struct{}};groups:=map[string]*accum{};order:=[]string{};seenGroups:=map[string]struct{}{};total:=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};for _,r:=range ds.Records{gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if strings.TrimSpace(gv)!=""{if _,seen:=seenGroups[gv];!seen{seenGroups[gv]=struct{}{}}};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]struct{}{}};order=append(order,gv)};g:=groups[gv];for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};for _,c:=range ds.Columns{if c.ID!=id{continue};v,has:=r.Values[id];if agg=="conteo_unico"{raw:=strings.TrimSpace(v.Raw);if has&&raw!=""{if g.unique[id]==nil{g.unique[id]=map[string]struct{}{}};if total.unique[id]==nil{total.unique[id]=map[string]struct{}{}};g.unique[id][raw]=struct{}{};total.unique[id][raw]=struct{}{}};break};if has&&v.Type==ValueNumber{g.sum[id]+=v.Number;g.count[id]++;total.sum[id]+=v.Number;total.count[id]++};break}}};makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};if agg=="conteo_unico"{vals[id]=strconv.Itoa(len(a.unique[id]));continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}};out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));out[len(out)-1].GroupCount=len(seenGroups);return out}
+func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{if ds==nil||strings.TrimSpace(appSettings.SubtotalColumn)==""||len(appSettings.SubtotalAgg)==0{return nil};group,ok:=ds.columnByTitle(appSettings.SubtotalColumn);if !ok{for _,c:=range ds.Columns{if c.ID==appSettings.SubtotalColumn{group=c;ok=true;break}}};if !ok{return nil};type accum struct{sum map[string]float64;count map[string]int;unique map[string]map[string]struct{}};groups:=map[string]*accum{};order:=[]string{};seenGroups:=map[string]struct{}{};total:=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};for _,r:=range ds.Records{gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if strings.TrimSpace(gv)!=""{if _,seen:=seenGroups[gv];!seen{seenGroups[gv]=struct{}{}}};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};order=append(order,gv)};g:=groups[gv];for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};for _,c:=range ds.Columns{if c.ID!=id{continue};v,has:=r.Values[id];if agg=="conteo_unico"{raw:=strings.TrimSpace(v.Raw);if has&&raw!=""{if g.unique[id]==nil{g.unique[id]=map[string]struct{}{}};if total.unique[id]==nil{total.unique[id]=map[string]struct{}{}};g.unique[id][raw]=struct{}{};total.unique[id][raw]=struct{}{}};break};if has&&v.Type==ValueNumber{g.sum[id]+=v.Number;g.count[id]++;total.sum[id]+=v.Number;total.count[id]++};break}}};makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};if agg=="conteo_unico"{vals[id]=strconv.Itoa(len(a.unique[id]));continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}};out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));out[len(out)-1].GroupCount=len(seenGroups);return out}
 func formatDatasetDate(v MemoryValue)string{raw:=strings.TrimSpace(v.Raw);if raw==""{return ""};for _,layout:=range []string{"2006-01-02 15:04:05","2006-01-02T15:04:05","2006-01-02","02/01/2006","2/1/2006","2006/01/02","02-01-2006","2-1-2006","02/01/2006 15:04:05"}{if t,err:=time.Parse(layout,raw);err==nil{return t.Format("02/01/2006")}};if n,err:=strconv.ParseFloat(strings.ReplaceAll(raw,",","."),64);err==nil&&n>=1&&n<100000{return time.Date(1899,12,30,0,0,0,0,time.UTC).Add(time.Duration(n*24)*time.Hour).Format("02/01/2006")};return raw}
 func formatDatasetNumber(v float64,d int)string{if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
 func formatDatasetNumberGrouped(v float64,d int)string{raw:=formatDatasetNumber(math.Abs(v),d);parts:=strings.SplitN(raw,".",2);intPart:=parts[0];for i:=len(intPart)-3;i>0;i-=3{intPart=intPart[:i]+"."+intPart[i:]};out:=intPart;if len(parts)==2{out+=","+parts[1]};if v<0{out="-"+out};return out}
