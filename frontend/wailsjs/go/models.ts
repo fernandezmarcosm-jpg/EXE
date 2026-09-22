@@ -29,17 +29,37 @@ export namespace main {
 	    static createFrom(source: any = {}) {
 	        return new ColumnDTO(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.title = source["title"];
-	        this.source = source["source"];
-	        this.type = source["type"];
-	        this.visible = source["visible"];
-	        this.highlight_sign = source["highlight_sign"];
-	        this.background = source["background"];
-	        this.align = source["align"];
+        this.source = source["source"];
+        this.type = source["type"];
+        this.visible = source["visible"];
+        this.highlight_sign = source["highlight_sign"];
+        this.background = source["background"];
+        this.align = source["align"];
+    }
+	}
+	export class LookupSummary {
+	    name: string;
+	    key_header: string;
+	    rows: number;
+	    matched_columns: number;
+	    enriched_rows: number;
+
+	    static createFrom(source: any = {}) {
+	        return new LookupSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.key_header = source["key_header"];
+	        this.rows = source["rows"];
+	        this.matched_columns = source["matched_columns"];
+	        this.enriched_rows = source["enriched_rows"];
 	    }
 	}
 	export class SubtotalRow {
@@ -68,12 +88,13 @@ export namespace main {
 	    csv_rows: number;
 	    enriched: number;
 	    source_files: string[];
+	    lookup_diagnostics: LookupSummary[];
 	    subtotals: SubtotalRow[];
 	
 	    static createFrom(source: any = {}) {
 	        return new DatasetDTO(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.columns = this.convertValues(source["columns"], ColumnDTO);
@@ -83,9 +104,10 @@ export namespace main {
 	        this.csv_rows = source["csv_rows"];
 	        this.enriched = source["enriched"];
 	        this.source_files = source["source_files"];
+	        this.lookup_diagnostics = this.convertValues(source["lookup_diagnostics"], LookupSummary);
 	        this.subtotals = this.convertValues(source["subtotals"], SubtotalRow);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -122,7 +144,7 @@ export namespace main {
 	    column_decimals: Record<string, number>;
 	    subtotal_columns: string[];
 	    column_percent: Record<string, boolean>;
-	    column_currency: Record<string, boolean>;
+	    column_currency: Record<string, boolean;
 	    column_thousands: Record<string, boolean>;
 	    highlight_negative: Record<string, boolean>;
 	    column_highlight_sign: Record<string, boolean>;
@@ -131,11 +153,11 @@ export namespace main {
 	    column_types: Record<string, string>;
 	    calculated_columns: CalculatedColumn[];
 	    subtotal_agg: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DatasetSettings(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.decimals = source["decimals"];
@@ -165,7 +187,7 @@ export namespace main {
 	        this.calculated_columns = this.convertValues(source["calculated_columns"], CalculatedColumn);
 	        this.subtotal_agg = source["subtotal_agg"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -186,4 +208,3 @@ export namespace main {
 	}
 
 }
-
