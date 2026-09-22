@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -12,7 +13,10 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+const buildMarker = "2026-09-22-calc-sign-diagnostic"
+
 func main() {
+	log.Printf("[BUILD] marker=%s built=%s", buildMarker, time.Now().Format(time.RFC3339Nano))
 	app := NewApp()
 	err := wails.Run(&options.App{
 		Title: "GestionSO V57",
