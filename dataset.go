@@ -8,96 +8,23 @@ var embeddedMasterCSV []byte
 type CalculatedColumn struct{Name string; Formula string; Percent bool}
 type DatasetSettings struct{Decimals int `json:"decimals"`;FontSize int `json:"font_size"`;RowHeight int `json:"row_height"`;ColumnWidths map[string]int `json:"column_widths"`;SOColumn int `json:"so_column"`;JoinExcelColumn string `json:"join_excel_column"`;FormulaTitle string `json:"formula_title"`;Formula string `json:"formula"`;SubtotalColumn string `json:"subtotal_column"`;SubtotalEnabled bool `json:"subtotal_enabled"`;ColumnTitles map[string]string `json:"column_titles"`;ColumnOrder []string `json:"column_order"`;MaxColumns int `json:"max_columns"`;VisibleColumns []string `json:"visible_columns"`;ColumnDecimals map[string]int `json:"column_decimals"`;SubtotalColumns []string `json:"subtotal_columns"`;ColumnPercent map[string]bool `json:"column_percent"`;ColumnCurrency map[string]bool `json:"column_currency"`;ColumnThousands map[string]bool `json:"column_thousands"`;HighlightNegative map[string]bool `json:"highlight_negative"`;ColumnHighlightSign map[string]bool `json:"column_highlight_sign"`;ColumnBackground map[string]string `json:"column_background"`;ColumnAlign map[string]string `json:"column_align"`;ColumnTypes map[string]string `json:"column_types"`;CalculatedColumns []CalculatedColumn `json:"calculated_columns"`;SubtotalAgg map[string]string `json:"subtotal_agg"`}
 func defaultDatasetSettings()DatasetSettings{return DatasetSettings{Decimals:2,FontSize:10,RowHeight:28,ColumnWidths:map[string]int{},SOColumn:5,JoinExcelColumn:"CLAVE",FormulaTitle:"CALCULADA",Formula:"",SubtotalEnabled:false,ColumnTitles:map[string]string{},ColumnOrder:[]string{},MaxColumns:500,VisibleColumns:[]string{},ColumnDecimals:map[string]int{},ColumnPercent:map[string]bool{},ColumnCurrency:map[string]bool{},ColumnThousands:map[string]bool{},HighlightNegative:map[string]bool{},ColumnHighlightSign:map[string]bool{},ColumnBackground:map[string]string{},ColumnAlign:map[string]string{},ColumnTypes:map[string]string{},CalculatedColumns:[]CalculatedColumn{},SubtotalAgg:map[string]string{}}}
-func datasetSettingsPortablePath()string{
-	if x,e:=os.Executable();e==nil&&strings.TrimSpace(x)!=""{
-		return filepath.Join(filepath.Dir(x),"dataset.txt")
-	}
-	if d,e:=os.Getwd();e==nil&&strings.TrimSpace(d)!=""{
-		return filepath.Join(d,"dataset.txt")
-	}
-	return ""
-}
-func datasetSettingsFallbackPath()string{
-	if d,e:=os.UserConfigDir();e==nil&&strings.TrimSpace(d)!=""{
-		return filepath.Join(d,"GestionSO V57","dataset.txt")
-	}
-	return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")
-}
-func datasetSettingsPaths()[]string{
-	paths:=make([]string,0,2)
-	add:=func(p string){if strings.TrimSpace(p)==""{return};for _,x:=range paths{if filepath.Clean(x)==filepath.Clean(p){return}};paths=append(paths,p)}
-	add(datasetSettingsPortablePath())
-	add(datasetSettingsFallbackPath())
-	return paths
-}
-func datasetSettingsPath()string{
-	paths:=datasetSettingsPaths()
-	if len(paths)>0{return paths[0]}
-	return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")
-}
-func loadDatasetSettings()DatasetSettings{
-	s:=defaultDatasetSettings()
-	for _,p:=range datasetSettingsPaths(){
-		b,e:=os.ReadFile(p)
-		if e!=nil{continue}
-		if json.Unmarshal(b,&s)==nil{
-			datasetSettingsNormalize(&s)
-			return s
-		}
-	}
-	return s
-}
+func datasetSettingsPortablePath()string{if x,e:=os.Executable();e==nil&&strings.TrimSpace(x)!=""{return filepath.Join(filepath.Dir(x),"dataset.txt")};if d,e:=os.Getwd();e==nil&&strings.TrimSpace(d)!=""{return filepath.Join(d,"dataset.txt")};return ""}
+func datasetSettingsFallbackPath()string{if d,e:=os.UserConfigDir();e==nil&&strings.TrimSpace(d)!=""{return filepath.Join(d,"GestionSO V57","dataset.txt")};return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")}
+func datasetSettingsPaths()[]string{paths:=make([]string,0,2);add:=func(p string){if strings.TrimSpace(p)==""{return};for _,x:=range paths{if filepath.Clean(x)==filepath.Clean(p){return}};paths=append(paths,p)};add(datasetSettingsPortablePath());add(datasetSettingsFallbackPath());return paths}
+func datasetSettingsPath()string{paths:=datasetSettingsPaths();if len(paths)>0{return paths[0]};return filepath.Join(os.TempDir(),"GestionSO-V57-dataset.txt")}
+func loadDatasetSettings()DatasetSettings{s:=defaultDatasetSettings();for _,p:=range datasetSettingsPaths(){b,e:=os.ReadFile(p);if e!=nil{continue};if json.Unmarshal(b,&s)==nil{datasetSettingsNormalize(&s);return s}};return s}
 func datasetSettingsNormalize(s *DatasetSettings){if s.Decimals<0||s.Decimals>8{s.Decimals=2};if s.FontSize<=0{s.FontSize=14};if s.FontSize<6{s.FontSize=6};if s.FontSize>28{s.FontSize=28};if s.RowHeight<10||s.RowHeight>60{s.RowHeight=28};if s.ColumnWidths==nil{s.ColumnWidths=map[string]int{}};if s.SOColumn<1||s.SOColumn>1024{s.SOColumn=5};if s.MaxColumns<1||s.MaxColumns>100{s.MaxColumns=20};if s.ColumnTitles==nil{s.ColumnTitles=map[string]string{}};if s.ColumnDecimals==nil{s.ColumnDecimals=map[string]int{}};if s.ColumnPercent==nil{s.ColumnPercent=map[string]bool{}};if s.ColumnCurrency==nil{s.ColumnCurrency=map[string]bool{}};if s.ColumnThousands==nil{s.ColumnThousands=map[string]bool{}};if s.ColumnHighlightSign==nil{s.ColumnHighlightSign=map[string]bool{}};if s.ColumnBackground==nil{s.ColumnBackground=map[string]string{}};if s.ColumnAlign==nil{s.ColumnAlign=map[string]string{}};for id,v:=range s.ColumnAlign{v=strings.ToLower(strings.TrimSpace(v));if v!="left"&&v!="center"&&v!="right"{delete(s.ColumnAlign,id)}else{s.ColumnAlign[id]=v}};if s.HighlightNegative==nil{s.HighlightNegative=map[string]bool{}};if s.ColumnTypes==nil{s.ColumnTypes=map[string]string{}};if s.SubtotalAgg==nil{s.SubtotalAgg=map[string]string{}}}
-func saveDatasetSettings(s DatasetSettings)error{
-	datasetSettingsNormalize(&s)
-	if viewDataset!=nil{
-		keys:=make([]string,0,len(viewDataset.Columns))
-		for _,c:=range viewDataset.Columns{if c.Visible{keys=append(keys,datasetColumnKey(c))}}
-		if len(keys)==0{keys=[]string{"__NONE__"}}
-		s.VisibleColumns=keys
-	}
-	b,e:=json.MarshalIndent(s,"","  ")
-	if e!=nil{return e}
-	paths:=datasetSettingsPaths()
-	var lastErr error
-	for _,p:=range paths{
-		if e:=os.MkdirAll(filepath.Dir(p),0755);e!=nil{lastErr=e;continue}
-		if e:=os.WriteFile(p,b,0644);e==nil{return nil}else{lastErr=e}
-	}
-	if lastErr!=nil{return lastErr}
-	return fmt.Errorf("no hay una ruta disponible para guardar dataset.txt")
-}
+func saveDatasetSettings(s DatasetSettings)error{datasetSettingsNormalize(&s);if viewDataset!=nil{keys:=make([]string,0,len(viewDataset.Columns));for _,c:=range viewDataset.Columns{if c.Visible{keys=append(keys,datasetColumnKey(c))}};if len(keys)==0{keys=[]string{"__NONE__"}};s.VisibleColumns=keys};b,e:=json.MarshalIndent(s,"","  ");if e!=nil{return e};paths:=datasetSettingsPaths();var lastErr error;for _,p:=range paths{if e:=os.MkdirAll(filepath.Dir(p),0755);e!=nil{lastErr=e;continue};if e:=os.WriteFile(p,b,0644);e==nil{return nil}else{lastErr=e}};if lastErr!=nil{return lastErr};return fmt.Errorf("no hay una ruta disponible para guardar dataset.txt")}
 
 type DatasetColumn struct{ID,Title,Source string;Type ValueType;Width int;Visible bool}
 type DatasetRecord struct{SO string;Values map[string]MemoryValue}
-type MemoryDataset struct{Columns []DatasetColumn;Records []DatasetRecord;CSVRows,Enriched,DuplicateSO int;SourceFiles []string}
+type LookupSummary struct{Name string `json:"name"`;KeyHeader string `json:"key_header"`;Rows int `json:"rows"`;MatchedColumns int `json:"matched_columns"`;EnrichedRows int `json:"enriched_rows"`}
+type MemoryDataset struct{Columns []DatasetColumn;Records []DatasetRecord;CSVRows,Enriched,DuplicateSO int;SourceFiles []string;LookupDiagnostics []LookupSummary `json:"lookup_diagnostics"`}
 type csvMaster struct{Headers []string;ByKey map[string]map[string]string}
-func normalizeJoinKey(v string)string{
-	s:=strings.TrimSpace(strings.ToUpper(v));if s==""{return ""}
-	s=strings.ReplaceAll(s," ","");s=strings.ReplaceAll(s,"\u00a0","")
-	comma:=strings.LastIndex(s,",");dot:=strings.LastIndex(s,".")
-	if comma>=0||dot>=0{
-		sep:=-1;frac:=0
-		if comma>=0&&dot>=0{if comma>dot{sep=comma}else{sep=dot};frac=len(s)-sep-1
-			if frac<=2{integer:=strings.ReplaceAll(strings.ReplaceAll(s[:sep],".",""),",","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}}
-		}else{
-			if comma>=0{sep=comma}else{sep=dot};frac=len(s)-sep-1
-			if frac<=2{integer:=strings.ReplaceAll(s[:sep],",","");integer=strings.ReplaceAll(integer,".","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}}
-			if frac==3{integer:=strings.ReplaceAll(s,",","");integer=strings.ReplaceAll(integer,".","");if n,e:=strconv.ParseInt(integer,10,64);e==nil{return strconv.FormatInt(n,10)}}
-		}
-	}
-	return s
-}
-func normalizeHeader(s string) string{s=strings.TrimSpace(s);s=strings.ReplaceAll(s,"Nº","N");s=strings.ReplaceAll(s,"N°","N");s=strings.ReplaceAll(s,"º","o");s=strings.ReplaceAll(s,"°","o");s=strings.ToUpper(s);s=strings.Join(strings.Fields(s)," ");return s}
-func lookupHeaderEquivalent(s string)string{
-	n:=normalizeHeader(s);n=strings.TrimSpace(n)
-	for _,prefix:=range []string{"NRO ","Nº ","N° ","N "} {if strings.HasPrefix(n,prefix){return strings.TrimSpace(n[len(prefix):])}}
-	return n
-}
-func lookupHeadersMatch(a,b string)bool{
-	aN,bN:=normalizeHeader(a),normalizeHeader(b);if aN==bN{return true}
-	return lookupHeaderEquivalent(aN)==lookupHeaderEquivalent(bN)
-}
+func normalizeJoinKey(v string)string{s:=strings.TrimSpace(strings.ToUpper(v));if s==""{return ""};s=strings.ReplaceAll(s," ","");s=strings.ReplaceAll(s,"\u00a0","");comma:=strings.LastIndex(s,",");dot:=strings.LastIndex(s,".");if comma>=0||dot>=0{sep:=-1;frac:=0;if comma>=0&&dot>=0{if comma>dot{sep=comma}else{sep=dot};frac=len(s)-sep-1;if frac<=2{integer:=strings.ReplaceAll(strings.ReplaceAll(s[:sep],".",""),",","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}}}else{if comma>=0{sep=comma}else{sep=dot};frac=len(s)-sep-1;if frac<=2{integer:=strings.ReplaceAll(s[:sep],",","");integer=strings.ReplaceAll(integer,".","");fraction:=s[sep+1:];if n,e:=strconv.ParseFloat(integer+"."+fraction,64);e==nil&&math.Trunc(n)==n{return strconv.FormatInt(int64(n),10)}};if frac==3{integer:=strings.ReplaceAll(s,",","");integer=strings.ReplaceAll(integer,".","");if n,e:=strconv.ParseInt(integer,10,64);e==nil{return strconv.FormatInt(n,10)}}}};return s}
+func normalizeHeader(s string)string{s=strings.TrimSpace(s);s=strings.ReplaceAll(s,"Nº","N");s=strings.ReplaceAll(s,"N°","N");s=strings.ReplaceAll(s,"º","o");s=strings.ReplaceAll(s,"°","o");s=strings.ToUpper(s);s=strings.Join(strings.Fields(s)," ");return s}
+func lookupHeaderEquivalent(s string)string{n:=normalizeHeader(s);n=strings.TrimSpace(n);for _,prefix:=range []string{"NRO ","Nº ","N° ","N "}{if strings.HasPrefix(n,prefix){return strings.TrimSpace(n[len(prefix):])}};return n}
+func lookupHeadersMatch(a,b string)bool{aN,bN:=normalizeHeader(a),normalizeHeader(b);if aN==bN{return true};return lookupHeaderEquivalent(aN)==lookupHeaderEquivalent(bN)}
 func uniqueNormalizedHeaderID(title string,used map[string]int)string{base:=normalizeHeader(title);if base==""{base="COLUMNA"};used[base]++;if used[base]==1{return base};return fmt.Sprintf("%s_%d",base,used[base])}
 func datasetColumnKey(c DatasetColumn)string{return c.ID}
 func legacyDatasetColumnKey(c DatasetColumn)string{return c.Source+"|"+c.Title}
@@ -108,9 +35,9 @@ func datasetColumnDisplayTitle(c DatasetColumn)string{if t:=datasetSettingString
 func datasetColumnDecimals(c DatasetColumn)int{if d:=datasetSettingInt(appSettings.ColumnDecimals,c,appSettings.Decimals);d>=0&&d<=8{return d};return appSettings.Decimals}
 func datasetColumnIsPercent(c DatasetColumn)bool{if datasetSettingBool(appSettings.ColumnPercent,c){return true};return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"porcentaje")}
 func datasetColumnHighlightNegative(c DatasetColumn)bool{return datasetSettingBool(appSettings.HighlightNegative,c)}
-func datasetColumnCurrency(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnCurrency,c) || strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"moneda")}
+func datasetColumnCurrency(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnCurrency,c)||strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"moneda")}
 func datasetColumnIsDate(c DatasetColumn)bool{return strings.EqualFold(strings.TrimSpace(datasetSettingString(appSettings.ColumnTypes,c)),"fecha")}
-func datasetColumnThousands(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnThousands,c) || datasetColumnCurrency(c)}
+func datasetColumnThousands(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnThousands,c)||datasetColumnCurrency(c)}
 func datasetColumnHighlightSign(c DatasetColumn)bool{return datasetSettingBool(appSettings.ColumnHighlightSign,c)}
 func datasetColumnBackground(c DatasetColumn)string{return strings.TrimSpace(appSettings.ColumnBackground[datasetColumnKey(c)])}
 func datasetColumnAlign(c DatasetColumn)string{if v:=strings.ToLower(strings.TrimSpace(appSettings.ColumnAlign[datasetColumnKey(c)]));v=="left"||v=="center"||v=="right"{return v};if c.Type==ValueNumber||c.Source=="CALCULADA"{return "right"};return "left"}
@@ -119,125 +46,26 @@ func applyConfiguredColumnType(c DatasetColumn)DatasetColumn{t:=parseConfiguredT
 func loadMasterCSV(path string)(*csvMaster,string,error){data:=embeddedMasterCSV;source:="CSV maestro integrado: GestionSO_Datos.csv";if path!=""{if b,e:=os.ReadFile(path);e==nil{data=b;source=path}}else{var cs []string;if x,e:=os.Executable();e==nil{cs=append(cs,filepath.Join(filepath.Dir(x),"GestionSO_Datos.csv"))};if x,e:=os.Getwd();e==nil{cs=append(cs,filepath.Join(x,"GestionSO_Datos.csv"),filepath.Join(x,"acceso chatgpt","GestionSO_Datos.csv"))};for _,p:=range cs{if b,e:=os.ReadFile(p);e==nil{data=b;source=p;break}}};r:=csv.NewReader(bytes.NewReader(data));r.Comma=';';r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return nil,source,e};if len(rows)==0{return nil,source,fmt.Errorf("CSV maestro vacío")};h:=make([]string,len(rows[0]));ki:=-1;for i,x:=range rows[0]{h[i]=strings.TrimPrefix(x,"\ufeff");n:=normalizeHeader(h[i]);if n=="CLAVE"||n=="SKU"{if ki<0{ki=i}}};if ki<0{return nil,source,fmt.Errorf("CSV maestro sin columna CLAVE/SKU")};m:=&csvMaster{Headers:h,ByKey:map[string]map[string]string{}};for _,row:=range rows[1:]{if ki>=len(row){continue};k:=normalizeJoinKey(row[ki]);if k==""{continue};v:=map[string]string{};for i,x:=range h{if i<len(row){v[x]=strings.TrimSpace(row[i])}};m.ByKey[k]=v};return m,source,nil}
 func csvHeaderTypes(m *csvMaster)map[string]ValueType{out:=map[string]ValueType{};if m==nil{return out};for _,h:=range m.Headers{out[h]=ValueText};for _,row:=range m.ByKey{for h,raw:=range row{if raw==""{continue};t:=inferValueType(raw);if t==ValueNumber{out[h]=ValueNumber}}};return out}
 func findConfiguredSOColumn(sh MemorySheet,configured int)string{if configured>0{for _,c:=range sh.Columns{if c.Index==configured-1{return c.ID}}};for _,c:=range sh.Columns{n:=normalizeHeader(c.Title);switch n{case "SO","NRO SO","N SO","NUMERO SO","NÚMERO SO","ORDEN DE VENTA","ORDENVENTA","SALES ORDER":return c.ID}};return ""}
-type lookupTable struct{Name string;KeyHeader string;Headers []string;ByKey map[string]map[string]string;Source string}
-
-func lookupCSVSeparator(data []byte)rune{
-	line:=strings.SplitN(strings.TrimPrefix(string(data),"\ufeff"),"\n",2)[0]
-	semi:=strings.Count(line,";");comma:=strings.Count(line,",")
-	if comma>semi{return ','}
-	return ';'
-}
-func parseLookupTable(data []byte,name,source string)(lookupTable,error){
-	r:=csv.NewReader(bytes.NewReader(data));r.Comma=lookupCSVSeparator(data);r.FieldsPerRecord=-1
-	rows,e:=r.ReadAll();if e!=nil{return lookupTable{},e};if len(rows)==0{return lookupTable{},fmt.Errorf("CSV %q vacío",name)}
-	h:=make([]string,len(rows[0]));for i,x:=range rows[0]{h[i]=strings.TrimSpace(strings.TrimPrefix(x,"\ufeff"))}
-	if len(h)==0||strings.TrimSpace(h[0])==""{return lookupTable{},fmt.Errorf("CSV %q sin columna clave",name)}
-	t:=lookupTable{Name:name,KeyHeader:h[0],Headers:h,ByKey:map[string]map[string]string{},Source:source}
-	for _,row:=range rows[1:]{if len(row)==0||strings.TrimSpace(row[0])==""{continue};k:=normalizeJoinKey(row[0]);if k==""{continue};v:=map[string]string{};for i,header:=range h{if i<len(row){v[header]=strings.TrimSpace(row[i])}};t.ByKey[k]=v}
-	return t,nil
-}
-func lookupCSVSearchDirs()[]string{
-	dirs:=make([]string,0,2);seen:=map[string]bool{};add:=func(d string){d=strings.TrimSpace(d);if d==""{return};d=filepath.Clean(d);if seen[d]{return};if st,e:=os.Stat(d);e==nil&&st.IsDir(){seen[d]=true;dirs=append(dirs,d)}}
-	if x,e:=os.Executable();e==nil{add(filepath.Dir(x))}
-	if d,e:=os.Getwd();e==nil{add(d)}
-	return dirs
-}
-func lookupCSVFiles()[]string{
-	files:=[]string{};seenNames:=map[string]bool{}
-	for _,dir:=range lookupCSVSearchDirs(){entries,e:=os.ReadDir(dir);if e!=nil{continue};for _,entry:=range entries{if entry.IsDir()||!strings.EqualFold(filepath.Ext(entry.Name()),".csv"){continue};name:=entry.Name();if strings.EqualFold(name,"GestionSO_Datos.csv")||seenNames[strings.ToLower(name)]{continue};seenNames[strings.ToLower(name)]=true;files=append(files,filepath.Join(dir,name))}}
-	return files
-}
-func loadLookupTables()([]lookupTable,error){
-	paths:=lookupCSVFiles();tables:=make([]lookupTable,0,len(paths))
-	for _,path:=range paths{data,e:=os.ReadFile(path);if e!=nil{log.Printf("[LOOKUP] no se pudo leer %q: %v",path,e);continue};name:=strings.TrimSuffix(filepath.Base(path),filepath.Ext(path));t,e:=parseLookupTable(data,name,path);if e!=nil{log.Printf("[LOOKUP] se omite %q: %v",path,e);continue};tables=append(tables,t);log.Printf("[LOOKUP] base=%q key=%q filas=%d source=%q",t.Name,t.KeyHeader,len(t.ByKey),t.Source)}
-	return tables,nil
-}
-func lookupColumnForKey(sh MemorySheet,keyHeader string)string{
-	if strings.TrimSpace(keyHeader)==""{return ""}
-	for _,c:=range sh.Columns{if lookupHeadersMatch(c.Title,keyHeader){return c.ID}}
-	return ""
-}
-func lookupColumnID(baseName,attributeHeader string,used map[string]int)string{
-	base:=normalizeHeader(baseName);if base==""{base="BASE"};attr:=normalizeHeader(attributeHeader);if attr==""{attr="COLUMNA"}
-	key:=fmt.Sprintf("LOOKUP:%s:%s",base,attr);used[key]++;if used[key]==1{return key};return fmt.Sprintf("%s_%d",key,used[key])
-}
-func applyLookupEnrichment(rec *DatasetRecord,sh MemorySheet,row MemoryRow,lookups []lookupTable,lookupIDs map[string]map[string]string)int{
-	if rec==nil{return 0};matches:=0
-	for _,table:=range lookups{keyID:=lookupColumnForKey(sh,table.KeyHeader);if keyID==""{continue};keyRaw:="";if x,ok:=row.Values[keyID];ok{keyRaw=x.Raw};match,ok:=table.ByKey[normalizeJoinKey(keyRaw)];if !ok{continue};matches++;for _,h:=range table.Headers[1:]{raw:=match[h];if raw==""{continue};id:=lookupIDs[table.Name][h];rec.Values[id]=makeMemoryValue(id,raw)}}
-	return matches
-}
-func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){
-	if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")}
-	m,_,e:=loadMasterCSV("");if e!=nil{return nil,e}
-	lookups,err:=loadLookupTables();if err!=nil{return nil,err}
-	ds:=&MemoryDataset{CSVRows:len(m.ByKey)}
-	addCSV:=func(t string,typ ValueType)string{x:=fmt.Sprintf("CSV:%s",normalizeHeader(t));c:=DatasetColumn{ID:x,Title:strings.TrimSpace(t),Source:"CSV",Type:typ,Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c);return x}
-	csvTypes:=csvHeaderTypes(m);csvIDs:=map[string]string{};csvJoinHeader:="";for _,h:=range m.Headers{if _,exists:=csvIDs[h];exists{continue};csvIDs[h]=addCSV(h,csvTypes[h]);if csvJoinHeader==""&&(normalizeHeader(h)=="CLAVE"||normalizeHeader(h)=="SKU"){csvJoinHeader=h}}
-	lookupIDs:=map[string]map[string]string{};lookupTypes:=map[string]map[string]ValueType{};for _,table:=range lookups{ids:=map[string]string{};types:=map[string]ValueType{};used:=map[string]int{};for _,h:=range table.Headers[1:]{id:=lookupColumnID(table.Name,h,used);ids[h]=id;types[h]=ValueText};lookupIDs[table.Name]=ids;lookupTypes[table.Name]=types;for _,h:=range table.Headers[1:]{c:=DatasetColumn{ID:ids[h],Title:strings.TrimSpace(h),Source:"LOOKUP",Type:types[h],Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c)}}
-	seenLines:=map[string]bool{};createdColumns:=map[string]bool{}
-	for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{
-		soID,itemID,joinID:="","","";mapID:=map[string]string{};usedIDs:=map[string]int{};explicitJoinMatched:=false
-		for _,c:=range sh.Columns{id:=uniqueNormalizedHeaderID(c.Title,usedIDs);if !createdColumns[id]{dc:=DatasetColumn{ID:id,Title:c.Title,Source:"XLSX",Type:c.Type,Width:c.Width,Visible:true};if strings.TrimSpace(c.Title)==""{dc.Title=fmt.Sprintf("C%d",c.Index+1)};if dc.Width<1{dc.Width=140};dc=applyConfiguredColumnType(dc);ds.Columns=append(ds.Columns,dc);createdColumns[id]=true};mapID[c.ID]=id;normalizedTitle:=normalizeHeader(c.Title);if strings.TrimSpace(s.JoinExcelColumn)!=""&&normalizedTitle==normalizeHeader(s.JoinExcelColumn){joinID=c.ID;explicitJoinMatched=true};if normalizedTitle=="ITEM"{itemID=c.ID}}
-		soID=findConfiguredSOColumn(sh,s.SOColumn);if !explicitJoinMatched{for _,synonym:=range []string{"CLAVE","SKU","CODIGO","COD"}{for _,c:=range sh.Columns{if normalizeHeader(c.Title)==synonym{joinID=c.ID;break}};if joinID!=""{break}}};if joinID==""{joinID=itemID}
-		joinExcelTitle:="";for _,c:=range sh.Columns{if c.ID==joinID{joinExcelTitle=c.Title;break}}
-		if soID==""{continue};sheetEnriched:=0
-		for _,row:=range sh.Rows{
-			v,ok:=row.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue}
-			lineKey:="";if itemID!=""{if item,ok:=row.Values[itemID];ok&&strings.TrimSpace(item.Raw)!=""{lineKey=normalizeJoinKey(v.Raw)+"\x1f"+normalizeJoinKey(item.Raw)}};if lineKey!=""{if seenLines[lineKey]{ds.DuplicateSO++;continue};seenLines[lineKey]=true}
-			rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";if joinID!=""{if x,ok:=row.Values[joinID];ok{join=normalizeJoinKey(x.Raw)}}
-			for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x}}
-			if item,ok:=m.ByKey[join];ok{ds.Enriched++;sheetEnriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}}
-			applyLookupEnrichment(&rec,sh,row,lookups,lookupIDs)
-			ds.Records=append(ds.Records,rec)
-		}
-		log.Printf("[JOIN] Excel=%q CSV=%q filas_match=%d Enriched=%d",joinExcelTitle,csvJoinHeader,sheetEnriched,ds.Enriched)
-	}}
-	if len(ds.Records)==0{return nil,fmt.Errorf("no se encontraron filas con SO: columna configurada N°%d y tampoco se detectó una cabecera SO válida",s.SOColumn)}
-	order:=make([]string,0,len(ds.Columns));for _,c:=range ds.Columns{order=append(order,c.ID)};s.ColumnOrder=order;s.VisibleColumns=order;if s.MaxColumns<len(ds.Columns){s.MaxColumns=len(ds.Columns)+50};ensureCalculatedDatasetColumns(ds,s);log.Printf("[JOIN] final: filas_csv=%d Enriched=%d lookups=%d",len(m.ByKey),ds.Enriched,len(lookups));return ds,nil
-}
-
+type lookupTable struct{Name string;KeyHeader string;Headers []string;ByKey map[string]map[string]string;Source string;Rows []map[string]string}
+func lookupCSVSeparator(data []byte)rune{line:=strings.SplitN(strings.TrimPrefix(string(data),"\ufeff"),"\n",2)[0];semi:=strings.Count(line,";");comma:=strings.Count(line,",");if comma>semi{return ','};return ';'}
+func parseLookupTable(data []byte,name,source string)(lookupTable,error){r:=csv.NewReader(bytes.NewReader(data));r.Comma=lookupCSVSeparator(data);r.FieldsPerRecord=-1;rows,e:=r.ReadAll();if e!=nil{return lookupTable{},e};if len(rows)==0{return lookupTable{},fmt.Errorf("CSV %q vacío",name)};h:=make([]string,len(rows[0]));for i,x:=range rows[0]{h[i]=strings.TrimSpace(strings.TrimPrefix(x,"\ufeff"))};if len(h)==0||strings.TrimSpace(h[0])==""{return lookupTable{},fmt.Errorf("CSV %q sin columna clave",name)};t:=lookupTable{Name:name,KeyHeader:h[0],Headers:h,ByKey:map[string]map[string]string{},Source:source,Rows:make([]map[string]string,0,len(rows)-1)};for _,row:=range rows[1:]{if len(row)==0{continue};v:=map[string]string{};for i,header:=range h{if i<len(row){v[header]=strings.TrimSpace(row[i])}};t.Rows=append(t.Rows,v);k:=normalizeJoinKey(row[0]);if k==""{continue};t.ByKey[k]=v};return t,nil}
+func reindexLookupTable(t lookupTable,keyHeader string)lookupTable{out:=t;out.KeyHeader=keyHeader;out.ByKey=map[string]map[string]string{};for _,row:=range t.Rows{k:=normalizeJoinKey(row[keyHeader]);if k!=""{out.ByKey[k]=row}};return out}
+func lookupCSVSearchDirs()[]string{dirs:=make([]string,0,2);seen:=map[string]bool{};add:=func(d string){d=strings.TrimSpace(d);if d==""{return};d=filepath.Clean(d);if seen[d]{return};if st,e:=os.Stat(d);e==nil&&st.IsDir(){seen[d]=true;dirs=append(dirs,d)}};if x,e:=os.Executable();e==nil{add(filepath.Dir(x))};if d,e:=os.Getwd();e==nil{add(d)};return dirs}
+func lookupCSVFiles()[]string{files:=[]string{};seenNames:=map[string]bool{};for _,dir:=range lookupCSVSearchDirs(){entries,e:=os.ReadDir(dir);if e!=nil{continue};for _,entry:=range entries{if entry.IsDir()||!strings.EqualFold(filepath.Ext(entry.Name()),".csv"){continue};name:=entry.Name();if strings.EqualFold(name,"GestionSO_Datos.csv")||seenNames[strings.ToLower(name)]{continue};seenNames[strings.ToLower(name)]=true;files=append(files,filepath.Join(dir,name))}};return files}
+func loadLookupTables()([]lookupTable,error){paths:=lookupCSVFiles();tables:=make([]lookupTable,0,len(paths));for _,path:=range paths{data,e:=os.ReadFile(path);if e!=nil{log.Printf("[LOOKUP] no se pudo leer %q: %v",path,e);continue};name:=strings.TrimSuffix(filepath.Base(path),filepath.Ext(path));t,e:=parseLookupTable(data,name,path);if e!=nil{log.Printf("[LOOKUP] se omite %q: %v",path,e);continue};tables=append(tables,t);log.Printf("[LOOKUP] base=%q key=%q filas=%d source=%q",t.Name,t.KeyHeader,len(t.ByKey),t.Source)};return tables,nil}
+func lookupColumnForKey(sh MemorySheet,keyHeader string)string{if strings.TrimSpace(keyHeader)==""{return ""};for _,c:=range sh.Columns{if lookupHeadersMatch(c.Title,keyHeader){return c.ID}};return ""}
+func lookupKeyHeaderForDocs(t lookupTable,docs []*xlsxDoc)string{for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{for _,header:=range t.Headers{for _,c:=range sh.Columns{if lookupHeadersMatch(c.Title,header){return header}}}}};if len(t.Headers)>0{return t.Headers[0]};return ""}
+func lookupColumnID(baseName,attributeHeader string,used map[string]int)string{base:=normalizeHeader(baseName);if base==""{base="BASE"};attr:=normalizeHeader(attributeHeader);if attr==""{attr="COLUMNA"};key:=fmt.Sprintf("LOOKUP:%s:%s",base,attr);used[key]++;if used[key]==1{return key};return fmt.Sprintf("%s_%d",key,used[key])}
+func lookupMatchesForRow(sh MemorySheet,row MemoryRow,lookups []lookupTable,lookupIDs map[string]map[string]string,rec *DatasetRecord)[]int{matched:=[]int{};for i,table:=range lookups{keyID:=lookupColumnForKey(sh,table.KeyHeader);if keyID==""{continue};keyRaw:="";if x,ok:=row.Values[keyID];ok{keyRaw=x.Raw};match,ok:=table.ByKey[normalizeJoinKey(keyRaw)];if !ok{continue};matched=append(matched,i);for _,h:=range table.Headers{if lookupHeadersMatch(h,table.KeyHeader){continue};raw:=match[h];if raw==""{continue};id:=lookupIDs[table.Name][h];if id==""{continue};rec.Values[id]=makeMemoryValue(id,raw)}};return matched}
+func applyLookupEnrichment(rec *DatasetRecord,sh MemorySheet,row MemoryRow,lookups []lookupTable,lookupIDs map[string]map[string]string)int{if rec==nil{return 0};return len(lookupMatchesForRow(sh,row,lookups,lookupIDs,rec))}
+func BuildMemoryDataset(docs []*xlsxDoc,s DatasetSettings)(*MemoryDataset,error){if len(docs)==0{return nil,fmt.Errorf("no hay archivos XLSX seleccionados")};m,_,e:=loadMasterCSV("");if e!=nil{return nil,e};lookups,err:=loadLookupTables();if err!=nil{return nil,err};for i:=range lookups{lookups[i]=reindexLookupTable(lookups[i],lookupKeyHeaderForDocs(lookups[i],docs))};ds:=&MemoryDataset{CSVRows:len(m.ByKey),LookupDiagnostics:make([]LookupSummary,len(lookups))};for i,t:=range lookups{ds.LookupDiagnostics[i]=LookupSummary{Name:t.Name,KeyHeader:t.KeyHeader,Rows:len(t.Rows)}};addCSV:=func(t string,typ ValueType)string{x:=fmt.Sprintf("CSV:%s",normalizeHeader(t));c:=DatasetColumn{ID:x,Title:strings.TrimSpace(t),Source:"CSV",Type:typ,Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c);return x};csvTypes:=csvHeaderTypes(m);csvIDs:=map[string]string{};csvJoinHeader:="";for _,h:=range m.Headers{if _,exists:=csvIDs[h];exists{continue};csvIDs[h]=addCSV(h,csvTypes[h]);if csvJoinHeader==""&&(normalizeHeader(h)=="CLAVE"||normalizeHeader(h)=="SKU"){csvJoinHeader=h}};lookupIDs:=map[string]map[string]string{};lookupTypes:=map[string]map[string]ValueType{};for _,table:=range lookups{ids:=map[string]string{};types:=map[string]ValueType{};used:=map[string]int{};for _,h:=range table.Headers{if lookupHeadersMatch(h,table.KeyHeader){continue};id:=lookupColumnID(table.Name,h,used);ids[h]=id;types[h]=ValueText};lookupIDs[table.Name]=ids;lookupTypes[table.Name]=types;for _,h:=range table.Headers{if lookupHeadersMatch(h,table.KeyHeader){continue};c:=DatasetColumn{ID:ids[h],Title:strings.TrimSpace(h),Source:"LOOKUP",Type:types[h],Width:140,Visible:false};c=applyConfiguredColumnType(c);ds.Columns=append(ds.Columns,c)}};seenLines:=map[string]bool{};createdColumns:=map[string]bool{};for _,doc:=range docs{if doc==nil||doc.Memory==nil{continue};for _,sh:=range doc.Memory.Sheets{soID,itemID,joinID:="","","";mapID:=map[string]string{};usedIDs:=map[string]int{};explicitJoinMatched:=false;for _,c:=range sh.Columns{id:=uniqueNormalizedHeaderID(c.Title,usedIDs);if !createdColumns[id]{dc:=DatasetColumn{ID:id,Title:c.Title,Source:"XLSX",Type:c.Type,Width:c.Width,Visible:true};if strings.TrimSpace(c.Title)==""{dc.Title=fmt.Sprintf("C%d",c.Index+1)};if dc.Width<1{dc.Width=140};dc=applyConfiguredColumnType(dc);ds.Columns=append(ds.Columns,dc);createdColumns[id]=true};mapID[c.ID]=id;normalizedTitle:=normalizeHeader(c.Title);if strings.TrimSpace(s.JoinExcelColumn)!=""&&normalizedTitle==normalizeHeader(s.JoinExcelColumn){joinID=c.ID;explicitJoinMatched=true};if normalizedTitle=="ITEM"{itemID=c.ID}};for i,t:=range lookups{if lookupColumnForKey(sh,t.KeyHeader)!=""{ds.LookupDiagnostics[i].MatchedColumns++}};soID=findConfiguredSOColumn(sh,s.SOColumn);if !explicitJoinMatched{for _,synonym:=range []string{"CLAVE","SKU","CODIGO","COD"}{for _,c:=range sh.Columns{if normalizeHeader(c.Title)==synonym{joinID=c.ID;break}};if joinID!=""{break}}};if joinID==""{joinID=itemID};joinExcelTitle:="";for _,c:=range sh.Columns{if c.ID==joinID{joinExcelTitle=c.Title;break}};if soID==""{continue};sheetEnriched:=0;for _,row:=range sh.Rows{v,ok:=row.Values[soID];if !ok||strings.TrimSpace(v.Raw)==""{continue};lineKey:="";if itemID!=""{if item,ok:=row.Values[itemID];ok&&strings.TrimSpace(item.Raw)!=""{lineKey=normalizeJoinKey(v.Raw)+"\x1f"+normalizeJoinKey(item.Raw)}};if lineKey!=""{if seenLines[lineKey]{ds.DuplicateSO++;continue};seenLines[lineKey]=true};rec:=DatasetRecord{SO:v.Raw,Values:map[string]MemoryValue{}};join:="";if joinID!=""{if x,ok:=row.Values[joinID];ok{join=normalizeJoinKey(x.Raw)}};for old,newID:=range mapID{if x,ok:=row.Values[old];ok{x.ColumnID=newID;rec.Values[newID]=x}};if item,ok:=m.ByKey[join];ok{ds.Enriched++;sheetEnriched++;for _,h:=range m.Headers{raw:=item[h];if raw==""{continue};id,ok:=csvIDs[h];if !ok{continue};rec.Values[id]=makeMemoryValue(id,raw)}};matched:=lookupMatchesForRow(sh,row,lookups,lookupIDs,&rec);for _,idx:=range matched{ds.LookupDiagnostics[idx].EnrichedRows++};ds.Records=append(ds.Records,rec)};log.Printf("[JOIN] Excel=%q CSV=%q filas_match=%d Enriched=%d",joinExcelTitle,csvJoinHeader,sheetEnriched,ds.Enriched)}};if len(ds.Records)==0{return nil,fmt.Errorf("no se encontraron filas con SO: columna configurada N°%d y tampoco se detectó una cabecera SO válida",s.SOColumn)};order:=make([]string,0,len(ds.Columns));for _,c:=range ds.Columns{order=append(order,c.ID)};s.ColumnOrder=order;s.VisibleColumns=order;if s.MaxColumns<len(ds.Columns){s.MaxColumns=len(ds.Columns)+50};ensureCalculatedDatasetColumns(ds,s);for _,d:=range ds.LookupDiagnostics{if d.MatchedColumns==0{log.Printf("[LOOKUP] AVISO base=%q key=%q no matchea ninguna columna XLSX",d.Name,d.KeyHeader)}else if d.EnrichedRows==0{log.Printf("[LOOKUP] AVISO base=%q key=%q columnas_match=%d pero 0 filas enriquecidas",d.Name,d.KeyHeader,d.MatchedColumns)}};log.Printf("[JOIN] final: filas_csv=%d Enriched=%d lookups=%d",len(m.ByKey),ds.Enriched,len(lookups));return ds,nil}
 func ensureCalculatedDatasetColumns(ds *MemoryDataset,s DatasetSettings){if ds==nil{return};ensure:=func(name string)DatasetColumn{for _,c:=range ds.Columns{if c.Source=="CALCULADA"&&strings.EqualFold(c.Title,name){return c}};c:=DatasetColumn{ID:fmt.Sprintf("D%03d",len(ds.Columns)+1),Title:name,Source:"CALCULADA",Type:ValueNumber,Width:150,Visible:true};ds.Columns=append(ds.Columns,c);return c};if strings.TrimSpace(s.FormulaTitle)!=""&&strings.TrimSpace(s.Formula)!=""{ensure(strings.TrimSpace(s.FormulaTitle))};for _,cc:=range s.CalculatedColumns{if strings.TrimSpace(cc.Name)!=""&&strings.TrimSpace(cc.Formula)!=""{ensure(strings.TrimSpace(cc.Name))}}}
 func(e *MemoryDataset)columnByTitle(t string)(DatasetColumn,bool){for _,c:=range e.Columns{if strings.EqualFold(strings.TrimSpace(c.Title),strings.TrimSpace(t))||strings.EqualFold(strings.TrimSpace(datasetColumnDisplayTitle(c)),strings.TrimSpace(t)){return c,true}};return DatasetColumn{},false}
 func evaluateFormula(expr string,r DatasetRecord,cols []DatasetColumn)(float64,bool){vals:=map[string]float64{};for _,c:=range cols{if v,ok:=r.Values[c.ID];ok&&(v.Type==ValueNumber||v.Type==ValueDate){n:=v.Number;title:=strings.ToLower(strings.TrimSpace(c.Title));vals[title]=n;vals[strings.ToLower(strings.TrimSpace(c.Source+":"+c.Title))]=n;if c.Source=="CSV"{vals["csv:"+title]=n}}};p:=&formulaParser{s:expr,values:vals};v,ok:=p.expr();p.skip();return v,ok&&p.pos==len(p.s)}
 type formulaParser struct{s string;values map[string]float64;pos int};func(p *formulaParser)skip(){for p.pos<len(p.s)&&(p.s[p.pos]==' '||p.s[p.pos]=='\t'){p.pos++}};func(p *formulaParser)expr()(float64,bool){a,ok:=p.term();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='+'&&o!='-'{return a,true};p.pos++;b,ok:=p.term();if !ok{return 0,false};if o=='+'{a+=b}else{a-=b}}};func(p *formulaParser)term()(float64,bool){a,ok:=p.factor();if !ok{return 0,false};for{p.skip();if p.pos>=len(p.s){return a,true};o:=p.s[p.pos];if o!='*'&&o!='/'{return a,true};p.pos++;b,ok:=p.factor();if !ok{return 0,false};if o=='*'{a*=b}else{if b==0{return 0,false};a/=b}}};func(p *formulaParser)factor()(float64,bool){p.skip();if p.pos>=len(p.s){return 0,false};if p.s[p.pos]=='(' {p.pos++;v,ok:=p.expr();p.skip();if p.pos>=len(p.s)||p.s[p.pos]!=')'{return 0,false};p.pos++;return v,ok};st:=p.pos;if p.s[p.pos]=='['{if e:=strings.IndexByte(p.s[st:],']');e>=0{e+=st;key:=strings.ToLower(strings.TrimSpace(p.s[st+1:e]));p.pos=e+1;v,ok:=p.values[key];return v,ok}};for p.pos<len(p.s)&&((p.s[p.pos]>='0'&&p.s[p.pos]<='9')||p.s[p.pos]=='.'||p.s[p.pos]==','){p.pos++};if p.pos>st{v,e:=strconv.ParseFloat(strings.ReplaceAll(p.s[st:p.pos],",","."),64);return v,e==nil};return 0,false}
 func applyDatasetFormula(ds *MemoryDataset,s DatasetSettings){if ds==nil{return};ensureCalculatedDatasetColumns(ds,s);if s.ColumnPercent==nil{s.ColumnPercent=map[string]bool{}};if s.ColumnTypes==nil{s.ColumnTypes=map[string]string{}};for _,cc:=range s.CalculatedColumns{if c,ok:=ds.columnByTitle(cc.Name);ok{s.ColumnPercent[c.ID]=cc.Percent;if cc.Percent{s.ColumnTypes[c.ID]="porcentaje"}}};if s.Formula!=""&&s.FormulaTitle!=""{if c,ok:=ds.columnByTitle(s.FormulaTitle);ok{for i:=range ds.Records{if v,ok:=evaluateFormula(s.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,datasetColumnDecimals(c))}}}}};for _,cc:=range s.CalculatedColumns{c,ok:=ds.columnByTitle(cc.Name);if !ok{continue};for i:=range ds.Records{if v,ok:=evaluateFormula(cc.Formula,ds.Records[i],ds.Columns);ok{ds.Records[i].Values[c.ID]=MemoryValue{ColumnID:c.ID,Type:ValueNumber,Number:v,Raw:formatDatasetNumber(v,datasetColumnDecimals(c))}}}}}
 type SubtotalRow struct{GroupValue string `json:"group_value"`;GroupCount int `json:"group_count"`;Values map[string]string `json:"values"`;Total bool `json:"total"`}
-
-func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{
-	if ds==nil||strings.TrimSpace(appSettings.SubtotalColumn)==""||len(appSettings.SubtotalAgg)==0{return nil}
-	group,ok:=ds.columnByTitle(appSettings.SubtotalColumn);if !ok{for _,c:=range ds.Columns{if c.ID==appSettings.SubtotalColumn{group=c;ok=true;break}}};if !ok{return nil}
-	type accum struct{sum map[string]float64;count map[string]int;unique map[string]map[string]struct{}}
-	groups:=map[string]*accum{};order:=[]string{};seenGroups:=map[string]struct{}{}
-	total:=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}}
-	for _,r:=range ds.Records{
-		gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if strings.TrimSpace(gv)!=""{if _,seen:=seenGroups[gv];!seen{seenGroups[gv]=struct{}{}}};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};order=append(order,gv)}
-		g:=groups[gv]
-		for id,agg:=range appSettings.SubtotalAgg{
-			if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue}
-			for _,c:=range ds.Columns{if c.ID!=id{continue}
-				v,has:=r.Values[id]
-				if agg=="conteo_unico"{raw:=strings.TrimSpace(v.Raw);if has&&raw!=""{if g.unique[id]==nil{g.unique[id]=map[string]struct{}{}};if total.unique[id]==nil{total.unique[id]=map[string]struct{}{}};g.unique[id][raw]=struct{}{};total.unique[id][raw]=struct{}{}};break}
-				if has&&v.Type==ValueNumber{g.sum[id]+=v.Number;g.count[id]++;total.sum[id]+=v.Number;total.count[id]++}
-				break
-			}
-		}
-	}
-	makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};if agg=="conteo_unico"{vals[id]=strconv.Itoa(len(a.unique[id]));continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}}
-	out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));out[len(out)-1].GroupCount=len(seenGroups);return out
-}
-
-func formatDatasetDate(v MemoryValue)string{
-	raw:=strings.TrimSpace(v.Raw)
-	if v.Type==ValueDate && raw!="" { return raw }
-	if raw!="" {
-		if n,err:=strconv.ParseFloat(strings.ReplaceAll(raw,",","."),64);err==nil&&n>=1&&n<100000 {
-			return time.Date(1899,12,30,0,0,0,0,time.UTC).Add(time.Duration(n*24)*time.Hour).Format("02/01/2006")
-		}
-		for _,layout:=range []string{"02/01/2006","2/1/2006","2006-01-02","2006/01/02","02-01-2006","2-1-2006","2006-01-02 15:04:05","02/01/2006 15:04:05"}{
-			if t,err:=time.Parse(layout,raw);err==nil{return t.Format("02/01/2006")}
-		}
-	}
-	return raw
-}
+func computeSubtotals(ds *MemoryDataset)[]SubtotalRow{if ds==nil||strings.TrimSpace(appSettings.SubtotalColumn)==""||len(appSettings.SubtotalAgg)==0{return nil};group,ok:=ds.columnByTitle(appSettings.SubtotalColumn);if !ok{for _,c:=range ds.Columns{if c.ID==appSettings.SubtotalColumn{group=c;ok=true;break}}};if !ok{return nil};type accum struct{sum map[string]float64;count map[string]int;unique map[string]map[string]struct{}};groups:=map[string]*accum{};order:=[]string{};seenGroups:=map[string]struct{}{};total:=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};for _,r:=range ds.Records{gv:="";if v,ok:=r.Values[group.ID];ok{gv=datasetValueText(group,v)};if strings.TrimSpace(gv)!=""{if _,seen:=seenGroups[gv];!seen{seenGroups[gv]=struct{}{}}};if _,ok:=groups[gv];!ok{groups[gv]=&accum{sum:map[string]float64{},count:map[string]int{},unique:map[string]map[string]struct{}{}};order=append(order,gv)};g:=groups[gv];for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};for _,c:=range ds.Columns{if c.ID!=id{continue};v,has:=r.Values[id];if agg=="conteo_unico"{raw:=strings.TrimSpace(v.Raw);if has&&raw!=""{if g.unique[id]==nil{g.unique[id]=map[string]struct{}{}};if total.unique[id]==nil{total.unique[id]=map[string]struct{}{}};g.unique[id][raw]=struct{}{};total.unique[id][raw]=struct{}{}};break};if has&&v.Type==ValueNumber{g.sum[id]+=v.Number;g.count[id]++;total.sum[id]+=v.Number;total.count[id]++};break}}};makeRow:=func(label string,a *accum,totalRow bool)SubtotalRow{vals:=map[string]string{};for id,agg:=range appSettings.SubtotalAgg{if agg!="suma"&&agg!="promedio"&&agg!="conteo_unico"{continue};if agg=="conteo_unico"{vals[id]=strconv.Itoa(len(a.unique[id]));continue};v:=a.sum[id];if agg=="promedio"{if a.count[id]==0{continue};v/=float64(a.count[id])};for _,c:=range ds.Columns{if c.ID==id{vals[id]=datasetValueText(c,MemoryValue{ColumnID:id,Type:ValueNumber,Number:v});break}}};return SubtotalRow{GroupValue:label,Values:vals,Total:totalRow}};out:=make([]SubtotalRow,0,len(order)+1);for _,gv:=range order{out=append(out,makeRow(gv,groups[gv],false))};out=append(out,makeRow("TOTAL GENERAL",total,true));out[len(out)-1].GroupCount=len(seenGroups);return out}
+func formatDatasetDate(v MemoryValue)string{raw:=strings.TrimSpace(v.Raw);if v.Type==ValueDate&&raw!=""{return raw};if raw!=""{if n,err:=strconv.ParseFloat(strings.ReplaceAll(raw,",","."),64);err==nil&&n>=1&&n<100000{return time.Date(1899,12,30,0,0,0,0,time.UTC).Add(time.Duration(n*24)*time.Hour).Format("02/01/2006")};for _,layout:=range []string{"02/01/2006","2/1/2006","2006-01-02","2006/01/02","02-01-2006","2-1-2006","2006-01-02 15:04:05","02/01/2006 15:04:05"}{if t,err:=time.Parse(layout,raw);err==nil{return t.Format("02/01/2006")}}};return raw}
 func formatDatasetNumber(v float64,d int)string{if d<0{d=0};if d>8{d=8};if math.IsNaN(v)||math.IsInf(v,0){return ""};return strconv.FormatFloat(v,'f',d,64)}
 func formatDatasetNumberGrouped(v float64,d int)string{raw:=formatDatasetNumber(math.Abs(v),d);parts:=strings.SplitN(raw,".",2);intPart:=parts[0];for i:=len(intPart)-3;i>0;i-=3{intPart=intPart[:i]+"."+intPart[i:]};out:=intPart;if len(parts)==2{out+=","+parts[1]};if v<0{out="-"+out};return out}
