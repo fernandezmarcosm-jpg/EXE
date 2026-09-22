@@ -12,6 +12,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -117,13 +118,7 @@ func panicGuard(fn func()) {
 }
 
 func logf(format string, args ...interface{}) {
-	p := filepath.Join(os.TempDir(), "GestionSO-V57-debug.log")
-	f, e := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if e != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintf(f, format+"\n", args...)
+	log.Printf(format, args...)
 }
 
 func initLog() { logf("initLog: GestionSO V57 reconstruccion") }
