@@ -35,20 +35,24 @@ jobs:
       - name: Resolve Go modules
         run: go get github.com/wailsapp/wails/v2@v2.10.2
 
-      - name: Remove stale unused lookup variable
+      - name: Apply source fix for ITEM fallback
         shell: pwsh
         run: |
           $p = 'dataset.go'
           $s = Get-Content -Raw -Encoding UTF8 $p
-          $old = ';explicitJoinMatched:=false;'
-          if (-not $s.Contains($old)) { throw 'No se encontró el residuo explicitJoinMatched esperado' }
-          $s = $s.Replace($old, ';')
-          $s = $s.Replace(';explicitJoinMatched=true', '')
+          $old = 'if normalizedTitle=="ITEM"{itemID=c.ID}};for i,t:=range lookups{'
+          $new = 'if normalizedTitle=="ITEM"{itemID=c.ID}};if joinID==""&&itemID!=""{joinID=itemID};for i,t:=range lookups{'
+          if ($s.Contains($new)) {
+            Write-Host 'ITEM fallback ya está aplicado; no hay cambios que commitear.'
+            exit 0
+          }
+          if (-not $s.Contains($old)) { throw 'No se encontró el punto de inserción del fallback ITEM en dataset.go' }
+          $s = $s.Replace($old, $new)
           Set-Content -Path $p -Value $s -Encoding UTF8 -NoNewline
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dataset.go
-          git commit -m 'Fix stale unused lookup variable'
+          git commit -m 'Fix ITEM fallback for CSV join'
           git push
 
       - name: Go build (pre-generation)
