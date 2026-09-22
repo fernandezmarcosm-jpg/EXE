@@ -393,9 +393,48 @@ async function refreshCalculatedList(){state.calculated.list=await ListCalculate
 function renderCalculatedPanel(){formulaTokens.innerHTML=state.data?.columns.map(c=>{const token=c.source==='CSV'?'[CSV:'+c.title+']':'['+c.title+']';return '<button type="button" data-token="'+escAttr(token)+'">'+esc(token)+'</button>'}).join('')??'';formulaTokens.querySelectorAll<HTMLButtonElement>('button[data-token]').forEach(b=>b.addEventListener('click',()=>{calcFormula.value+=(calcFormula.value&&!/[-+*/( ]$/.test(calcFormula.value)?' ':'')+b.dataset.token;calcFormula.focus()}));calcList.innerHTML=state.calculated.list.map((c,i)=>'<div class="calc-row"><span><strong>'+esc(c.Name)+'</strong><small>'+esc(c.Formula)+(c.Percent?' · %':'')+'</small></span><span><button data-edit="'+i+'">Editar</button> <button data-delete="'+i+'">Eliminar</button></span></div>').join('')||'<div class="empty">No hay campos calculados.</div>';calcList.querySelectorAll<HTMLButtonElement>('button[data-edit]').forEach(b=>b.addEventListener('click',()=>{const c=state.calculated.list[Number(b.dataset.edit)];state.calculated.editingOriginal=c.Name;calcName.value=c.Name;calcFormula.value=c.Formula;calcPercent.checked=c.Percent;calcSave.textContent='GUARDAR';calcCancel.classList.remove('hidden')}));calcList.querySelectorAll<HTMLButtonElement>('button[data-delete]').forEach(b=>b.addEventListener('click',async()=>{const c=state.calculated.list[Number(b.dataset.delete)];if(!confirm('Eliminar "'+c.Name+'"?'))return;try{state.data=await DeleteCalculatedColumn(c.Name) as Dataset;await refreshCalculatedList();render();renderColumnPanel();renderSubtotalControls()}catch(e){status.textContent='Error eliminando: '+String(e)}}))}
 function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=state.data.columns.map(c=>{const numeric=isNumericColumn(c);const isGroup=c.id===current;return '<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option>'+(!isGroup&&numeric?'<option value="suma">Suma</option><option value="promedio">Promedio</option>':'')+'<option value="conteo_unico">Contador (únicos)</option></select></label>'}).join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
 async function saveSubtotals(){const agg:Record<string,string>={};subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{if(s.value)agg[s.dataset.subtotalId!]=s.value});try{state.data=await SetSubtotals(subtotalGroup.value,agg) as Dataset;state.visual.settings.subtotal_column=subtotalGroup.value;state.visual.settings.subtotal_agg=agg;render()}catch(e){status.textContent='Error guardando subtotales: '+String(e)}}
-function renderReportSelectors(){if(!state.data)return;const cols=state.data.columns;const selected=[...reportGroups.selectedOptions].map(o=>o.value);const prevMeasure=reportMeasure.value;const prevWeight=reportWeight.value;reportGroups.innerHTML=cols.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');selected.forEach(id=>{const o=[...reportGroups.options].find(x=>x.value===id);if(o)o.selected=true});const numeric=cols.filter(isNumericColumn);reportMeasure.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');if(prevMeasure&&numeric.some(c=>c.id===prevMeasure))reportMeasure.value=prevMeasure;reportWeight.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');if(prevWeight&&numeric.some(c=>c.id===prevWeight))reportWeight.value=prevWeight;syncReportWeight();}
+function renderReportSelectors(){
+  if(!state.data)return;
+  const cols=state.data.columns;
+  const selected=[...reportGroups.selectedOptions].map(o=>o.value);
+  const prevMeasure=reportMeasure.value;
+  const prevWeight=reportWeight.value;
+  reportGroups.innerHTML=cols.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');
+  selected.forEach(id=>{const o=[...reportGroups.options].find(x=>x.value===id);if(o)o.selected=true});
+  const numeric=cols.filter(isNumericColumn);
+  reportMeasure.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');
+  if(prevMeasure&&numeric.some(c=>c.id===prevMeasure))reportMeasure.value=prevMeasure;
+  else if(numeric.length)reportMeasure.value=numeric[0].id;
+  reportWeight.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');
+  if(prevWeight&&numeric.some(c=>c.id===prevWeight))reportWeight.value=prevWeight;
+  syncReportWeight();
+}
 function syncReportWeight(){reportWeightWrap.classList.toggle('hidden',reportAgg.value!=='ponderado')}
-function formatReportValue(id:string,value:number){const c=state.data?.columns.find(x=>x.id===id);if(!c)return String(value);const kind=columnFormatKind(c);const decimals=kind==='entero'?0:Number(state.visual.settings?.column_decimals?.[id]??2);const shown=kind==='porcentaje'?value*100:value;let out=shown.toLocaleString('es-AR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});if(kind==='moneda')out='state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
+function formatReportValue(id:string,value:number){
+  const c=state.data?.columns.find(x=>x.id===id);
+  if(!c)return String(value);
+  const kind=columnFormatKind(c);
+  const decimals=kind==='entero'?0:Number(state.visual.settings?.column_decimals?.[id]??2);
+  const shown=kind==='porcentaje'?value*100:value;
+  let out=shown.toLocaleString('es-AR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
+  if(kind==='moneda')out='$'+out;
+  if(kind==='porcentaje')out+='%';
+  return out;
+}
+function renderReport(){
+  if(!state.data)return;
+  const groupBy=[...reportGroups.selectedOptions].map(o=>o.value);
+  const measureID=reportMeasure.value;
+  const agg=reportAgg.value as ReportAgg;
+  const weightID=reportWeight.value;
+  if(!measureID){reportResult.innerHTML='<div class="empty">Seleccione una medida.</div>';return}
+  if(agg==='ponderado'&&(!weightID||weightID===measureID)){reportResult.innerHTML='<div class="empty">Seleccione una columna peso distinta de la medida.</div>';return}
+  const rows=filteredRows();
+  const result=pivotReport(rows,groupBy,measureID,agg,weightID);
+  const headers=groupBy.map(id=>state.data!.columns.find(c=>c.id===id)?.title??id);
+  const body=result.groups.map(g=>'<tr>'+g.labels.map(v=>'<td>'+esc(v||'(en blanco)')+'</td>').join('')+'<td>'+esc(formatReportValue(measureID,g.value))+'</td><td>'+g.count+'</td></tr>').join('');
+  reportResult.innerHTML='<div class="report-meta">'+result.groups.length+' grupo(s) · '+rows.length+' fila(s) filtrada(s)</div><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'<th>'+esc(state.data!.columns.find(c=>c.id===measureID)?.title??measureID)+'</th><th>Filas</th></tr></thead><tbody>'+body+'</tbody><tfoot><tr>'+groupBy.map((_,i)=>'<th>'+(i===0?'TOTAL GENERAL':'')+'</th>').join('')+'<th>'+esc(formatReportValue(measureID,result.total))+'</th><th>'+result.totalCount+'</th></tr></tfoot></table>';
+}
 async function setPanel(open:boolean, mode: 'columns'|'calculated'|'report' = state.panelMode){
   state.columnsOpen=open; state.panelMode=mode
   panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open)
