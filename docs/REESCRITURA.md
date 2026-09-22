@@ -149,10 +149,15 @@ Los tests cubren notación científica, separadores ,/. , miles, fechas, porcent
 ## Cruce por rango de fechas en CSV auxiliares — 2026-09-22
 La convención fue restaurada después de la pérdida accidental de esta lógica en el commit `57af8324`: el motor actual conserva el cruce exacto y agrega el modo por vigencia sin reintroducir logging físico.
 
-
 Los CSV auxiliares también pueden representar rangos de vigencia. Se detectan cuando las dos primeras columnas se llaman **DESDE/HASTA** o **FECHA DESDE/FECHA HASTA**. La **tercera columna es el header físico de la fecha del XLSX** contra la que se evalúa el rango; las columnas desde la cuarta en adelante son atributos enriquecidos.
 
 Las fechas de DESDE/HASTA y de la fila XLSX aceptan ISO (yyyy-mm-dd, con hora opcional), dd/mm/aaaa, variantes equivalentes con / o -, y serial numérico de Excel. El intervalo es inclusivo en ambos extremos. Si existen rangos superpuestos, se utiliza el primero después de ordenar por fecha DESDE ascendente.
+
+### Normalización de zona horaria del cruce por rango
+
+La comparación del rango se realiza como **fecha de calendario pura en UTC**. `lookupDateOnly` reconstruye siempre año, mes y día a medianoche con `time.UTC`, eliminando la zona horaria del `time.Time` original. Esto hace que una fecha proveniente de un serial Excel convertido en `time.Local` (por ejemplo Argentina UTC-3) y una fecha leída desde texto con `time.Parse` en UTC representen el mismo día calendario. El límite **HASTA es inclusivo** y no puede quedar excluido por un desfase horario del sistema.
+
+El test `TestLookupRangeExcelSerialUsesCalendarDateInNegativeTimezone` fuerza `time.Local` a ART (UTC-3), utiliza el serial Excel 46278 correspondiente a 13/09/2026 y verifica que cruza el rango hasta 13/09/2026. También se conserva `TestLookupRangeAcceptsDateTimeWithoutLeadingZeros` para las variantes con hora y sin ceros iniciales.
 
 Ejemplo: DESDE;HASTA;FECHA;EJERCICIO con 01/01/2026;31/12/2026;FECHA;Ejercicio 2026 cruza contra la columna física FECHA del XLSX. La base conserva el modo exacto anterior cuando no tiene encabezados DESDE/HASTA.
 
