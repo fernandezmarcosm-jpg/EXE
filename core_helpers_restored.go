@@ -84,6 +84,35 @@ func parseNumber(s string) (float64, bool) {
 	s = strings.ReplaceAll(s, "$", "")
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, "'", "")
+	// Notacion cientifica y numeros simples se resuelven directamente.
+	if x, err := strconv.ParseFloat(s, 64); err == nil {
+		return x, true
+	}
+	// En es-AR, una cadena como 80.003.285 usa puntos como separadores de miles.
+	// Tambien aceptamos la variante con comas si todos los grupos posteriores
+	// tienen tres digitos.
+	for _, sep := range []string{".", ","} {
+		if strings.Count(s, sep) < 2 || strings.Contains(strings.ReplaceAll(s, sep, ""), ".") && sep == "," || strings.Contains(strings.ReplaceAll(s, sep, ""), ",") && sep == "." {
+			continue
+		}
+		parts := strings.Split(s, sep)
+		if len(parts) < 2 || parts[0] == "" {
+			continue
+		}
+		valid := true
+		for _, p := range parts[1:] {
+			if len(p) != 3 {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
+				return x, true
+			}
+		}
+	}
+	// Formato decimal/local: 1.234,56 o 534,68.
 	if strings.Contains(s, ",") && strings.Contains(s, ".") {
 		if strings.LastIndex(s, ",") > strings.LastIndex(s, ".") {
 			s = strings.ReplaceAll(s, ".", "")
