@@ -198,3 +198,18 @@ El motor de fórmulas preserva el signo de los valores numéricos de las columna
 - signo positivo inicial o final: `+210` / `210+`.
 
 El formateo visible se aplica después sobre `MemoryValue.Number`, por lo que no cambia el signo utilizado por el cálculo.
+
+## Deduplicación de líneas físicas del XLSX — 2026-09-22
+
+`BuildMemoryDataset` ya no deduplica por la combinación `SO + ITEM`. Esa regla era demasiado agresiva para una base de facturación real: una misma orden (`SO`) puede contener varias líneas legítimas del mismo `ITEM`, por ejemplo por distintas fechas, comprobantes, cantidades o kilos.
+
+La regla actual es **deduplicar únicamente filas 100% idénticas**: la clave de deduplicación se construye recorriendo todas las columnas físicas de la fila, normalizando cada valor y separándolo con un delimitador. Si cualquier valor de cualquier columna cambia, la fila conserva su lugar en `ds.Records`.
+
+Por lo tanto:
+
+- dos filas con el mismo `SO + ITEM` pero distinta `CANTIDAD`, `KG`, fecha, comprobante, precio u otro campo se conservan ambas;
+- dos filas físicamente idénticas se consideran duplicado real de exportación y solo una se conserva;
+- `ds.DuplicateSO` cuenta únicamente esas filas 100% idénticas descartadas;
+- subtotales y `filteredRows()` trabajan sobre el conjunto físico ya corregido, por lo que el conteo de filas y las sumas vuelven a coincidir con el XLSX importado.
+
+La regresión está cubierta por tests que comprueban tanto la conservación de varias líneas con el mismo `SO + ITEM` y distintas cantidades/KG como la eliminación de una fila completamente idéntica.
