@@ -129,10 +129,9 @@ Las claves se normalizan en ambos lados. Para valores numéricos se eliminan esp
 - `lookup_value_test.go` cubre el caso `Nº CLIENTE;ATRIBUTO` con `80003285.00` y el caso con separadores de miles.
 
 
-## Log físico de diagnóstico — 2026-09-22
+## Logging a disco eliminado — 2026-09-22
 
-La aplicación escribe el diagnóstico en `GestionSO_log.txt`, junto al ejecutable cuando `os.Executable()` está disponible; como fallback usa el directorio de trabajo y finalmente `%TEMP%`. El archivo se abre en modo append y permanece abierto durante la sesión. Cada inicio registra timestamp, versión/SHA de compilación y ruta del log. Los mensajes `[LOOKUP]` muestran carga y resolución de headers; `[LOOKUP-DBG]` muestra claves crudas y normalizadas y el resultado del match; `[JOIN]` resume filas y enriquecimientos. La barra de estado muestra la ruta absoluta mediante `LogFilePath()` después de importar.
-
+La aplicación ya no crea ni redirige el logger estándar hacia `GestionSO_log.txt` ni hacia otro archivo de diagnóstico. El diagnóstico de lookup que permanezca usa únicamente el logger estándar (stderr) y no se escribe a disco. La barra de estado conserva los avisos de `matched_columns`, `enriched_rows` y errores de interpretación de fechas sin mostrar ninguna ruta de log.
 
 ## Normalización canónica central de valores — 2026-09-22
 
@@ -148,6 +147,8 @@ Los tests cubren notación científica, separadores ,/. , miles, fechas, porcent
 
 
 ## Cruce por rango de fechas en CSV auxiliares — 2026-09-22
+La convención fue restaurada después de la pérdida accidental de esta lógica en el commit `57af8324`: el motor actual conserva el cruce exacto y agrega el modo por vigencia sin reintroducir logging físico.
+
 
 Los CSV auxiliares también pueden representar rangos de vigencia. Se detectan cuando las dos primeras columnas se llaman **DESDE/HASTA** o **FECHA DESDE/FECHA HASTA**. La **tercera columna es el header físico de la fecha del XLSX** contra la que se evalúa el rango; las columnas desde la cuarta en adelante son atributos enriquecidos.
 
