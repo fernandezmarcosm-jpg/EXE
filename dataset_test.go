@@ -350,7 +350,7 @@ func TestBuildMemoryDatasetLookupRangeFiscalYear(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	defer os.Chdir(oldWD)
 	if err := os.Chdir(dir); err != nil { t.Fatal(err) }
-	csvData := "DESDE;HASTA;FECFACTURA;EJERCICIO\\n01/07/2024;30/06/2025;FECFACTURA;Ejercicio 2025\\n01/07/2025;30/06/2026;FECFACTURA;Ejercicio 2026\\n"
+	csvData := "DESDE;HASTA;FECFACTURA;EJERCICIO\n01/07/2024;30/06/2025;;Ejercicio 2025\n01/07/2025;30/06/2026;;Ejercicio 2026\n"
 	if err := os.WriteFile(filepath.Join(dir, "Ejercicio.csv"), []byte(csvData), 0644); err != nil { t.Fatal(err) }
 	doc := &xlsxDoc{Memory: &MemoryWorkbook{Sheets: []MemorySheet{{
 		Columns: []MemoryColumn{
@@ -358,7 +358,7 @@ func TestBuildMemoryDatasetLookupRangeFiscalYear(t *testing.T) {
 			{ID:"FECFACTURA", Title:"FECFACTURA", Index:1, Type:ValueDate},
 		},
 		Rows: []MemoryRow{
-			{Values:map[string]MemoryValue{"SO":{ColumnID:"SO",Raw:"100",Type:ValueText},"FECFACTURA":{ColumnID:"FECFACTURA",Raw:"13/09/2026",Type:ValueDate}}},
+			{Values:map[string]MemoryValue{"SO":{ColumnID:"SO",Raw:"100",Type:ValueText},"FECFACTURA":{ColumnID:"FECFACTURA",Raw:"13/09/2025",Type:ValueDate}}},
 			{Values:map[string]MemoryValue{"SO":{ColumnID:"SO",Raw:"101",Type:ValueText},"FECFACTURA":{ColumnID:"FECFACTURA",Raw:"15/03/2025",Type:ValueDate}}},
 		},
 	}}}}
