@@ -84,35 +84,18 @@ func parseNumber(s string) (float64, bool) {
 	s = strings.ReplaceAll(s, "$", "")
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, "'", "")
-	// Notacion cientifica y numeros simples se resuelven directamente.
-	if x, err := strconv.ParseFloat(s, 64); err == nil {
-		return x, true
+
+	// La notación científica debe resolverse antes de aplicar heurísticas
+	// locales: el separador decimal puede ser un punto y la E no es un
+	// separador de miles.
+	if strings.ContainsAny(s, "eE") {
+		if x, err := strconv.ParseFloat(s, 64); err == nil {
+			return x, true
+		}
+		return 0, false
 	}
-	// En es-AR, una cadena como 80.003.285 usa puntos como separadores de miles.
-	// Tambien aceptamos la variante con comas si todos los grupos posteriores
-	// tienen tres digitos.
-	for _, sep := range []string{".", ","} {
-		if strings.Count(s, sep) < 2 || strings.Contains(strings.ReplaceAll(s, sep, ""), ".") && sep == "," || strings.Contains(strings.ReplaceAll(s, sep, ""), ",") && sep == "." {
-			continue
-		}
-		parts := strings.Split(s, sep)
-		if len(parts) < 2 || parts[0] == "" {
-			continue
-		}
-		valid := true
-		for _, p := range parts[1:] {
-			if len(p) != 3 {
-				valid = false
-				break
-			}
-		}
-		if valid {
-			if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
-				return x, true
-			}
-		}
-	}
-	// Formato decimal/local: 1.234,56 o 534,68.
+
+	// Con ambos separadores, el último determina el separador decimal.
 	if strings.Contains(s, ",") && strings.Contains(s, ".") {
 		if strings.LastIndex(s, ",") > strings.LastIndex(s, ".") {
 			s = strings.ReplaceAll(s, ".", "")
@@ -120,14 +103,58 @@ func parseNumber(s string) (float64, bool) {
 		} else {
 			s = strings.ReplaceAll(s, ",", "")
 		}
-	} else if strings.Contains(s, ",") {
-		s = strings.ReplaceAll(s, ".", "")
+		if x, err := strconv.ParseFloat(s, 64); err == nil {
+			return x, true
+		}
+		return 0, false
+	}
+
+	// Solo coma: en es-AR es separador decimal.
+	if strings.Contains(s, ",") {
+		// Varias comas con grupos de tres son miles: 80,003,285.
+		parts := strings.Split(s, ",")
+		if len(parts) > 2 && allThousandGroups(parts) {
+			if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
+				return x, true
+			}
+		}
 		s = strings.ReplaceAll(s, ",", ".")
+		if x, err := strconv.ParseFloat(s, 64); err == nil {
+			return x, true
+		}
+		return 0, false
+	}
+
+	// Solo punto: un único grupo de tres dígitos después de un entero corto
+	// se interpreta como miles (23.961 => 23961). Los demás puntos son
+	// decimales (534.68, 1234.5).
+	parts := strings.Split(s, ".")
+	if len(parts) > 2 && allThousandGroups(parts) {
+		if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
+			return x, true
+		}
+	}
+	if len(parts) == 2 && len(parts[1]) == 3 && len(parts[0]) > 0 && len(parts[0]) <= 3 {
+		if x, err := strconv.ParseFloat(parts[0]+parts[1], 64); err == nil {
+			return x, true
+		}
 	}
 	if x, err := strconv.ParseFloat(s, 64); err == nil {
 		return x, true
 	}
 	return 0, false
+}
+
+func allThousandGroups(parts []string) bool {
+	if len(parts) < 2 || parts[0] == "" {
+		return false
+	}
+	for _, p := range parts[1:] {
+		if len(p) != 3 {
+			return false
+		}
+	}
+	return true
 }
 
 // maxColumns returns the widest row in a decoded XLSX sheet.
