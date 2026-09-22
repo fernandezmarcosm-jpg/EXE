@@ -8,7 +8,8 @@ function renderLookupDiagnostics(items:LookupSummary[]){
   const total=items.map(d=>{
     const base=`base ${d.name}.csv: clave=${d.key_header}, ${d.rows} filas, ${d.enriched_rows} enriquecidas`
     if(d.matched_columns===0)return `${base} · AVISO: la clave no coincide con ninguna columna XLSX`
-    if(d.date_parse_failures>0)return `${base} · AVISO: ${d.date_parse_failures} fecha(s) del XLSX no se pudieron interpretar`\n    if(d.enriched_rows===0)return `${base} · AVISO: la clave coincide, pero ningún valor coincide`
+    if(d.date_parse_failures>0)return `${base} · AVISO: ${d.date_parse_failures} fecha(s) del XLSX no se pudieron interpretar`
+    if(d.enriched_rows===0)return `${base} · AVISO: la clave coincide, pero ningún valor coincide`
     return base
   }).join(' · ')
   status.textContent=`${status.textContent} · ${total}`
