@@ -419,7 +419,8 @@ openBtn.addEventListener('click', async () => {
     const data = await ImportXLSX() as Dataset
     if (!data.columns?.length) { status.textContent = 'Importación cancelada.'; return }
     state.data = data; state.filters = {}; state.valueFilters = {}; state.criteria = {}; state.sort = null
-    status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s)`
+    const logPath = await LogFilePath()
+    status.textContent = `${data.total_rows} filas · ${data.source_files?.length ?? 0} archivo(s) · Log: ${logPath}`
     render()
   } catch (e) { status.textContent = `ERROR: ${String(e)}` }
   finally { openBtn.disabled = false }
