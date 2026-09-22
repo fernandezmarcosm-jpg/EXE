@@ -7,12 +7,27 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Apply lookup fix and commit
+        shell: pwsh
+        run: |
+          python tools/fix_lookup.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ((git status --porcelain).Length -gt 0) {
+            git add dataset.go lookup_value_test.go docs/REESCRITURA.md
+            git commit -m "Fix lookup value matching and diagnostics"
+            git push origin HEAD:${{ github.ref_name }}
+          }
 
       - name: Setup Go
         uses: actions/setup-go@v5
