@@ -81,6 +81,10 @@ func parseNumber(s string) (float64, bool) {
 	if s == "" {
 		return 0, false
 	}
+	accountingNegative := strings.HasPrefix(s, "(") && strings.HasSuffix(s, ")")
+	if accountingNegative {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
 	s = strings.ReplaceAll(s, "$", "")
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, "'", "")
@@ -90,6 +94,7 @@ func parseNumber(s string) (float64, bool) {
 	// separador de miles.
 	if strings.ContainsAny(s, "eE") {
 		if x, err := strconv.ParseFloat(s, 64); err == nil {
+			if accountingNegative { x = -math.Abs(x) }
 			return x, true
 		}
 		return 0, false
@@ -104,6 +109,7 @@ func parseNumber(s string) (float64, bool) {
 			s = strings.ReplaceAll(s, ",", "")
 		}
 		if x, err := strconv.ParseFloat(s, 64); err == nil {
+			if accountingNegative { x = -math.Abs(x) }
 			return x, true
 		}
 		return 0, false
