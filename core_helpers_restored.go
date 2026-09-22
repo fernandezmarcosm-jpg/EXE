@@ -121,11 +121,13 @@ func parseNumber(s string) (float64, bool) {
 		parts := strings.Split(s, ",")
 		if len(parts) > 2 && allThousandGroups(parts) {
 			if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
+				if accountingNegative { x = -math.Abs(x) }
 				return x, true
 			}
 		}
 		s = strings.ReplaceAll(s, ",", ".")
 		if x, err := strconv.ParseFloat(s, 64); err == nil {
+			if accountingNegative { x = -math.Abs(x) }
 			return x, true
 		}
 		return 0, false
@@ -137,15 +139,18 @@ func parseNumber(s string) (float64, bool) {
 	parts := strings.Split(s, ".")
 	if len(parts) > 2 && allThousandGroups(parts) {
 		if x, err := strconv.ParseFloat(strings.Join(parts, ""), 64); err == nil {
+			if accountingNegative { x = -math.Abs(x) }
 			return x, true
 		}
 	}
 	if len(parts) == 2 && len(parts[1]) == 3 && len(parts[0]) > 0 && len(parts[0]) <= 3 {
 		if x, err := strconv.ParseFloat(parts[0]+parts[1], 64); err == nil {
+			if accountingNegative { x = -math.Abs(x) }
 			return x, true
 		}
 	}
 	if x, err := strconv.ParseFloat(s, 64); err == nil {
+		if accountingNegative { x = -math.Abs(x) }
 		return x, true
 	}
 	return 0, false
