@@ -41,6 +41,9 @@ jobs:
       - name: Go tests
         run: go test ./...
 
+      - name: Frontend report pivot tests
+        run: node --experimental-strip-types frontend/src/report_pivot.test.ts
+
       - name: Regenerate Wails bindings
         shell: pwsh
         run: wails generate module

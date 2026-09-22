@@ -154,3 +154,17 @@ Los CSV auxiliares también pueden representar rangos de vigencia. Se detectan c
 Las fechas de DESDE/HASTA y de la fila XLSX aceptan ISO (yyyy-mm-dd, con hora opcional), dd/mm/aaaa, variantes equivalentes con / o -, y serial numérico de Excel. El intervalo es inclusivo en ambos extremos. Si existen rangos superpuestos, se utiliza el primero después de ordenar por fecha DESDE ascendente.
 
 Ejemplo: DESDE;HASTA;FECHA;EJERCICIO con 01/01/2026;31/12/2026;FECHA;Ejercicio 2026 cruza contra la columna física FECHA del XLSX. La base conserva el modo exacto anterior cuando no tiene encabezados DESDE/HASTA.
+
+## Ventana REPORTE
+
+La barra principal incorpora **REPORTE**, una ventana tipo tabla dinámica sobre el dataset ya enriquecido. El reporte reutiliza las filas que quedan luego de los filtros de texto, filtros por valores y criterios activos de la grilla.
+
+- **FILAS (niveles):** permite seleccionar uno o varios campos y su orden, por ejemplo Cadena → Año → Mes. Están disponibles las columnas XLSX, CSV/LOOKUP, calculadas y cualquier columna derivada de período presente en el dataset.
+- **MEDIDA:** selector editable de cualquier columna numérica disponible, incluidos los campos calculados y campos de volumen/kg/toneladas cuando existan.
+- **OPERACIÓN:** Suma, Promedio, Conteo y Promedio ponderado.
+- **PROMEDIO PONDERADO:** requiere una segunda columna numérica como **COLUMNA PESO** y calcula suma(medida × peso) / suma(peso).
+- **RESULTADO:** muestra las combinaciones multinivel seleccionadas, la medida agregada y la cantidad de filas de cada grupo, con **TOTAL GENERAL** al pie.
+
+El cálculo del primer entregable se realiza en frontend para reutilizar directamente filteredRows() y mantener consistencia con los filtros activos de la grilla. La lógica de pivot y agregación está en frontend/src/report_pivot.ts y cuenta con prueba unitaria ejecutada por el workflow.
+
+La medida y la columna peso no quedan fijadas a una columna física: ambas son configurables desde la ventana REPORTE. No se asume una columna por defecto de volumen/kg/toneladas; se utiliza la primera columna numérica disponible si el usuario todavía no eligió otra.
