@@ -80,16 +80,15 @@ func TestBuildMemoryWorkbookUsesOnlyRowsBelowHeaders(t *testing.T) {
 		t.Fatalf("row IDs are not stable: %#v", s.Rows)
 	}
 	v := s.Rows[0].Values[s.Columns[2].ID]
-	if v.Type != ValueNumber || v.Number != 1234.5 || v.Raw != "1.234,50" {
-		t.Fatalf("numeric value was not normalized while preserving raw value: %#v", v)
+	if v.Type != ValueNumber || v.Number != 1234.5 || v.Raw != "1234.5" {
+		t.Fatalf("numeric value was not canonically normalized: %#v", v)
 	}
 	// El tipo se determina por el valor, no por el nombre de la columna.
-	// Raw conserva "001", por lo que el identificador sigue siendo utilizable
-	// para cruces externos sin depender de que su tipo visual sea TEXT.
+	// Raw es canónico, por lo que los ceros de presentación no forman parte del valor de trabajo.
 	if s.Rows[0].Values[s.Columns[0].ID].Type != ValueNumber {
 		t.Fatalf("a valor numerico debe quedar tipado como NUMBER")
 	}
-	if s.Rows[0].Values[s.Columns[0].ID].Raw != "001" {
+	if s.Rows[0].Values[s.Columns[0].ID].Raw != "1" {
 		t.Fatalf("el valor original debe conservarse sin perder ceros: %#v", s.Rows[0].Values[s.Columns[0].ID])
 	}
 }
