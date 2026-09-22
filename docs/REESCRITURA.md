@@ -174,3 +174,8 @@ La barra principal incorpora **REPORTE**, una ventana tipo tabla dinámica sobre
 El cálculo del primer entregable se realiza en frontend para reutilizar directamente filteredRows() y mantener consistencia con los filtros activos de la grilla. La lógica de pivot y agregación está en frontend/src/report_pivot.ts y cuenta con prueba unitaria ejecutada por el workflow.
 
 La medida y la columna peso no quedan fijadas a una columna física: ambas son configurables desde la ventana REPORTE. No se asume una columna por defecto de volumen/kg/toneladas; se utiliza la primera columna numérica disponible si el usuario todavía no eligió otra.
+
+
+## Fórmulas y campos calculados — 2026-09-22
+
+El motor de fórmulas preserva el signo de los valores numéricos de las columnas. `evaluateFormula` toma `MemoryValue.Number` directamente, por lo que un valor negativo de origen participa con su signo en multiplicaciones, divisiones, sumas y restas. El parser también admite el operador menos unario delante de columnas, valores y expresiones.
