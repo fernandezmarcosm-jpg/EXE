@@ -256,3 +256,74 @@ func TestNormalizeJoinKeyLocaleNumbers(t *testing.T) {
 	cases:=map[string]string{"80003285":"80003285","80003285.00":"80003285","80003285,00":"80003285","23.961,00":"23961","23,961.00":"23961"}
 	for in,want:=range cases{if got:=normalizeJoinKey(in);got!=want{t.Fatalf("%q => %q; want %q",in,got,want)}}
 }
+
+
+func TestMakeMemoryValueCanonicalizesNumbers(t *testing.T) {
+	cases := []struct{ raw, want string; number float64 }{
+		{"8.0003285E7", "80003285", 80003285},
+		{"80.003.285", "80003285", 80003285},
+		{"23.961,00", "23961", 23961},
+		{"534,68", "534.68", 534.68},
+		{"534.68", "534.68", 534.68},
+	}
+	for _, tc := range cases {
+		v := makeMemoryValue("C", tc.raw)
+		if v.Type != ValueNumber || v.Raw != tc.want || v.Number != tc.number {
+			t.Fatalf("%q => type=%v raw=%q number=%v; want raw=%q number=%v", tc.raw, v.Type, v.Raw, v.Number, tc.want, tc.number)
+		}
+	}
+}
+
+func TestCanonicalJoinScientificXLSXMatchesCSV(t *testing.T) {
+	xlsx := makeMemoryValue("CLIENTE", "8.0003285E7")
+	csv := normalizeJoinKey("80003285")
+	if xlsx.Raw != "80003285" {
+		t.Fatalf("canonical XLSX Raw=%q; want 80003285", xlsx.Raw)
+	}
+	if got := normalizeJoinKey(xlsx.Raw); got != csv {
+		t.Fatalf("normalized keys differ: XLSX=%q CSV=%q", got, csv)
+	}
+	table := lookupTable{
+		Name: "Clientes", KeyHeader: "Nº CLIENTE",
+		Headers: []string{"Nº CLIENTE", "ATRIBUTO"},
+		ByKey: map[string]map[string]string{csv: {"Nº CLIENTE": "80003285", "ATRIBUTO": "Cadena"}},
+	}
+	sh := MemorySheet{Columns: []MemoryColumn{{ID: "CLIENTE", Title: "Nº CLIENTE", Index: 0, Type: ValueNumber}}}
+	row := MemoryRow{Values: map[string]MemoryValue{"CLIENTE": xlsx}}
+	rec := DatasetRecord{Values: map[string]MemoryValue{}}
+	ids := map[string]map[string]string{"Clientes": {"ATRIBUTO": "LOOKUP:CLIENTES:ATRIBUTO"}}
+	if got := applyLookupEnrichment(&rec, sh, row, []lookupTable{table}, ids); got != 1 {
+		t.Fatalf("lookup matches=%d; want 1", got)
+	}
+	if got := rec.Values["LOOKUP:CLIENTES:ATRIBUTO"].Raw; got != "Cadena" {
+		t.Fatalf("lookup attribute=%q; want Cadena", got)
+	}
+}
+
+func TestNormalizeJoinKeyScientificNotation(t *testing.T) {
+	cases := map[string]string{
+		"8.0003285E7": "80003285",
+		"8.0003285e+07": "80003285",
+		"8.0003285E+07": "80003285",
+	}
+	for in, want := range cases {
+		if got := normalizeJoinKey(in); got != want {
+			t.Fatalf("%q => %q; want %q", in, got, want)
+		}
+	}
+}
+
+func TestCanonicalConfiguredTypes(t *testing.T) {
+	date := canonicalizeMemoryValue(MemoryValue{ColumnID: "F", Raw: "21/09/2026", Type: ValueText}, ValueDate)
+	if date.Raw != "2026-09-21" || date.Type != ValueDate {
+		t.Fatalf("date canonical=%q type=%v; want 2026-09-21/DATE", date.Raw, date.Type)
+	}
+	percent := canonicalizeMemoryValue(MemoryValue{ColumnID: "P", Raw: "12,50", Type: ValueText}, ValueNumber)
+	if percent.Raw != "12.5" || percent.Number != 12.5 {
+		t.Fatalf("percent canonical raw=%q number=%v; want 12.5", percent.Raw, percent.Number)
+	}
+	decimal := canonicalizeMemoryValue(MemoryValue{ColumnID: "D", Raw: "23.961,00", Type: ValueText}, ValueNumber)
+	if decimal.Raw != "23961" || decimal.Number != 23961 {
+		t.Fatalf("decimal canonical raw=%q number=%v; want 23961", decimal.Raw, decimal.Number)
+	}
+}
