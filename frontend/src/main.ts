@@ -474,7 +474,7 @@ reportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})
 reportMeasure.addEventListener('change',renderReport)
 reportWeight.addEventListener('change',renderReport)
 byId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)
-byId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{[...reportGroups.options].forEach(o=>o.selected=false);reportResult.innerHTML=''})
+byId<HTMLButtonElement>('report-clear').addEventListener('click',()=>{reportResult.innerHTML='';renderReport()})
 byId<HTMLButtonElement>('close').addEventListener('click', () => setPanel(false))
 backdrop.addEventListener('click', () => setPanel(false))
 byId<HTMLButtonElement>('all').addEventListener('click', async () => {
