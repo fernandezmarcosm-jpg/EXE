@@ -26,7 +26,7 @@ const ponderado=buildMonthlyPivot(rows.slice(0,2),'FECHA','CADENA','VENTA','pond
 assert.equal(ponderado.groups.find(g=>g.label==='A')?.values['2026-01'],40/3)
 
 const serial=buildMonthlyPivot([{FECHA:'46023',CADENA:'S',VENTA:'7'}],'FECHA','CADENA','VENTA','suma')
-assert.deepEqual(serial.months,['2025-12'])
+assert.deepEqual(serial.months,['2026-01'])
 assert.equal(serial.grandTotal,7)
 
 console.log('report pivot tests: OK')
