@@ -161,20 +161,21 @@ El test `TestLookupRangeExcelSerialUsesCalendarDateInNegativeTimezone` fuerza `t
 
 Ejemplo: DESDE;HASTA;FECHA;EJERCICIO con 01/01/2026;31/12/2026;FECHA;Ejercicio 2026 cruza contra la columna física FECHA del XLSX. La base conserva el modo exacto anterior cuando no tiene encabezados DESDE/HASTA.
 
-## Ventana REPORTE
+## Reporte pivote mensual
 
-La barra principal incorpora **REPORTE**, una ventana tipo tabla dinámica sobre el dataset ya enriquecido. El reporte reutiliza las filas que quedan luego de los filtros de texto, filtros por valores y criterios activos de la grilla.
+La barra principal incorpora **REPORTE**, una ventana a pantalla completa tipo tabla dinámica sobre el dataset ya cargado y enriquecido. El reporte reutiliza directamente `filteredRows()`, por lo que respeta los filtros de texto, valores y criterios activos de la grilla y no aplica deduplicaciones adicionales.
 
-- **FILAS (niveles):** permite seleccionar uno o varios campos y su orden, por ejemplo Cadena → Año → Mes. Están disponibles las columnas XLSX, CSV/LOOKUP, calculadas y cualquier columna derivada de período presente en el dataset.
-- **MEDIDA:** selector editable de cualquier columna numérica disponible, incluidos los campos calculados y campos de volumen/kg/toneladas cuando existan.
-- **OPERACIÓN:** Suma, Promedio, Conteo y Promedio ponderado.
-- **PROMEDIO PONDERADO:** requiere una segunda columna numérica como **COLUMNA PESO** y calcula suma(medida × peso) / suma(peso).
-- **RESULTADO:** muestra las combinaciones multinivel seleccionadas, la medida agregada y la cantidad de filas de cada grupo, con **TOTAL GENERAL** al pie.
+- **FECHA:** selector poblado únicamente con columnas detectadas como fecha. Por defecto toma la primera fecha disponible.
+- **DIMENSIÓN DE FILAS:** selector con todas las columnas del dataset; cada valor de esta columna genera una fila del pivote.
+- **MEDIDA:** selector con las columnas numéricas y calculadas disponibles.
+- **OPERACIÓN:** Suma, Promedio, Conteo y una estructura preparada para Promedio ponderado mediante una columna PESO.
+- **PERÍODO:** cada fecha válida se convierte a `AAAA-MM` usando año y mes UTC de calendario. Se aceptan fechas ISO, dd/mm/aaaa, fechas con hora y seriales de Excel. Los meses presentes se ordenan cronológicamente y forman las columnas del pivote.
+- **RESULTADO:** columnas `Dimensión + mes1 + mes2 + ... + Total`, más una fila **TOTAL GENERAL** con cada total mensual y el total global.
+- **NÚMEROS:** la medida se interpreta con la misma convención es-AR y se conserva el signo negativo. El resultado se presenta con el formato configurado para la medida.
+- **DIAGNÓSTICO:** las filas sin fecha válida se descartan del pivote y se contabilizan por separado; también se informa la cantidad de medidas no numéricas que no pudieron agregarse.
+- **ACTUALIZACIÓN:** el reporte se recalcula al abrirse, al cambiar fecha/dimensión/medida/operación/peso y cada vez que cambian los filtros de la grilla.
 
-El cálculo del primer entregable se realiza en frontend para reutilizar directamente filteredRows() y mantener consistencia con los filtros activos de la grilla. La lógica de pivot y agregación está en frontend/src/report_pivot.ts y cuenta con prueba unitaria ejecutada por el workflow.
-
-La medida y la columna peso no quedan fijadas a una columna física: ambas son configurables desde la ventana REPORTE. No se asume una columna por defecto de volumen/kg/toneladas; se utiliza la primera columna numérica disponible si el usuario todavía no eligió otra.
-
+La lógica está aislada en `frontend/src/report_pivot.ts` mediante `buildMonthlyPivot()`. El total global se obtiene de las mismas filas filtradas que alimentan la grilla, por lo que el cruce esperado para **Suma** es: **TOTAL GENERAL = suma de la medida sobre `filteredRows()`**, descontando únicamente fechas inválidas y valores de medida no numéricos según el diagnóstico mostrado.
 
 ## Fórmulas y campos calculados — 2026-09-22
 
