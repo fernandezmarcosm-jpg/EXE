@@ -1,6 +1,6 @@
 import './style.css'
 import { parseNumber } from './ui_fixes'
-import { pivotReport, type ReportAgg } from './report_pivot'
+import { buildMonthlyPivot, type ReportAgg } from './report_pivot'
 import { ImportXLSX, GetSettings, SaveSettings, SetVisibleColumns, SetColumnOrder, AddCalculatedColumn, UpdateCalculatedColumn, DeleteCalculatedColumn, ListCalculatedColumns, SetColumnFormat, SetSubtotals, SetColumnSignHighlight, SetColumnBackground, SetColumnAlign, SetColumnTitle } from '../wailsjs/go/main/App'
 
 type Column = { id:string; title:string; source:string; type:string; visible:boolean; highlight_sign?:boolean; background?:string; align?:string }
@@ -40,7 +40,7 @@ app.innerHTML = `
     <button id="all">MARCAR TODAS</button><button id="none">DESMARCAR TODAS</button><button id="clear">LIMPIAR FILTROS</button>
   </div>
   <div id="column-list" class="column-list"></div><section id="calculated-section" class="panel-section"><h3>CAMPOS CALCULADOS</h3><div class="calc-form"><input id="calc-name" placeholder="Nombre"><input id="calc-formula" placeholder="Fórmula"><label><input id="calc-percent" type="checkbox"> Porcentaje</label><div id="formula-tokens" class="formula-tokens"></div><div><button id="calc-save">AGREGAR</button><button id="calc-cancel" class="hidden">CANCELAR</button></div></div><div id="calc-list"></div></section><section id="subtotal-section" class="panel-section"><h3>SUBTOTALES</h3><label class="subtotal-control">Agrupar por <select id="subtotal-group"></select></label><div id="subtotal-fields"></div></section>
-<section id="report-section" class="report-section hidden"><div class="report-help">El reporte usa las filas que quedan después de todos los filtros activos de la grilla.</div><label>FILAS (niveles)<select id="report-groups" multiple size="7"></select></label><label>MEDIDA<select id="report-measure"></select></label><label>OPERACIÓN<select id="report-agg"><option value="suma">Suma</option><option value="promedio">Promedio</option><option value="conteo">Conteo</option><option value="ponderado">Promedio ponderado</option></select></label><label id="report-weight-wrap" class="hidden">COLUMNA PESO<select id="report-weight"></select></label><div class="report-actions"><button id="report-generate">GENERAR</button><button id="report-clear">LIMPIAR</button></div><div id="report-result" class="report-result"></div></section></aside>`
+<section id="report-section" class="report-section hidden"><div class="report-help">El reporte usa las filas que quedan después de todos los filtros activos de la grilla.</div><label>FECHA<select id="report-date"></select></label><label>DIMENSIÓN DE FILAS<select id="report-group"></select></label><label>MEDIDA<select id="report-measure"></select></label><label>OPERACIÓN<select id="report-agg"><option value="suma">Suma</option><option value="promedio">Promedio</option><option value="conteo">Conteo</option><option value="ponderado">Promedio ponderado</option></select></label><label id="report-weight-wrap" class="hidden">COLUMNA PESO<select id="report-weight"></select></label><div class="report-actions"><button id="report-generate">GENERAR</button><button id="report-clear">LIMPIAR</button></div><div id="report-result" class="report-result"></div></section></aside>`
 
 const byId = <T extends Element>(id:string) => document.getElementById(id) as unknown as T
 const openBtn = byId<HTMLButtonElement>('open')
@@ -64,7 +64,8 @@ const subtotalFields = byId<HTMLDivElement>('subtotal-fields')
 const calculatedSection = byId<HTMLElement>('calculated-section')
 const subtotalSection = byId<HTMLElement>('subtotal-section')
 const reportSection = byId<HTMLElement>('report-section')
-const reportGroups = byId<HTMLSelectElement>('report-groups')
+const reportDate = byId<HTMLSelectElement>('report-date')
+const reportGroup = byId<HTMLSelectElement>('report-group')
 const reportMeasure = byId<HTMLSelectElement>('report-measure')
 const reportAgg = byId<HTMLSelectElement>('report-agg')
 const reportWeightWrap = byId<HTMLElement>('report-weight-wrap')
@@ -394,51 +395,38 @@ function renderCalculatedPanel(){formulaTokens.innerHTML=state.data?.columns.map
 function renderSubtotalControls(){if(!state.data)return;const current=state.visual.settings?.subtotal_column??'';subtotalGroup.innerHTML='<option value="">Sin subtotales</option>'+state.data.columns.map(c=>'<option value="'+escAttr(c.id)+'" '+(c.id===current?'selected':'')+'>'+esc(c.title)+'</option>').join('');const agg=state.visual.settings?.subtotal_agg??{};subtotalFields.innerHTML=state.data.columns.map(c=>{const numeric=isNumericColumn(c);const isGroup=c.id===current;return '<label class="subtotal-field">'+esc(c.title)+' <select data-subtotal-id="'+escAttr(c.id)+'"><option value="">Nada</option>'+(!isGroup&&numeric?'<option value="suma">Suma</option><option value="promedio">Promedio</option>':'')+'<option value="conteo_unico">Contador (únicos)</option></select></label>'}).join('');subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{s.value=agg[s.dataset.subtotalId!]??'';s.addEventListener('change',saveSubtotals)})}
 async function saveSubtotals(){const agg:Record<string,string>={};subtotalFields.querySelectorAll<HTMLSelectElement>('select[data-subtotal-id]').forEach(s=>{if(s.value)agg[s.dataset.subtotalId!]=s.value});try{state.data=await SetSubtotals(subtotalGroup.value,agg) as Dataset;state.visual.settings.subtotal_column=subtotalGroup.value;state.visual.settings.subtotal_agg=agg;render()}catch(e){status.textContent='Error guardando subtotales: '+String(e)}}
 function renderReportSelectors(){
-  if(!state.data)return;
-  const cols=state.data.columns;
-  const selected=[...reportGroups.selectedOptions].map(o=>o.value);
-  const prevMeasure=reportMeasure.value;
-  const prevWeight=reportWeight.value;
-  reportGroups.innerHTML=cols.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');
-  selected.forEach(id=>{const o=[...reportGroups.options].find(x=>x.value===id);if(o)o.selected=true});
-  const numeric=cols.filter(isNumericColumn);
-  reportMeasure.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');
-  if(prevMeasure&&numeric.some(c=>c.id===prevMeasure))reportMeasure.value=prevMeasure;
-  else if(numeric.length)reportMeasure.value=numeric[0].id;
-  reportWeight.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('');
-  if(prevWeight&&numeric.some(c=>c.id===prevWeight))reportWeight.value=prevWeight;
-  syncReportWeight();
+ if(!state.data)return
+ const cols=state.data.columns,dates=cols.filter(isDateColumn),numeric=cols.filter(isNumericColumn)
+ const pd=reportDate.value,pg=reportGroup.value,pm=reportMeasure.value,pw=reportWeight.value
+ reportDate.innerHTML=dates.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('')
+ if(pd&&dates.some(c=>c.id===pd))reportDate.value=pd;else if(dates.length)reportDate.value=dates[0].id
+ reportGroup.innerHTML=cols.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('')
+ if(pg&&cols.some(c=>c.id===pg))reportGroup.value=pg;else if(cols.length)reportGroup.value=cols[0].id
+ reportMeasure.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('')
+ if(pm&&numeric.some(c=>c.id===pm))reportMeasure.value=pm;else if(numeric.length)reportMeasure.value=numeric[0].id
+ reportWeight.innerHTML=numeric.map(c=>'<option value="'+escAttr(c.id)+'">'+esc(c.title)+'</option>').join('')
+ if(pw&&numeric.some(c=>c.id===pw))reportWeight.value=pw
+ syncReportWeight()
 }
 function syncReportWeight(){reportWeightWrap.classList.toggle('hidden',reportAgg.value!=='ponderado')}
-function formatReportValue(id:string,value:number){
-  const c=state.data?.columns.find(x=>x.id===id);
-  if(!c)return String(value);
-  const kind=columnFormatKind(c);
-  const decimals=kind==='entero'?0:Number(state.visual.settings?.column_decimals?.[id]??2);
-  const shown=kind==='porcentaje'?value*100:value;
-  let out=shown.toLocaleString('es-AR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
-  if(kind==='moneda')out='$'+out;
-  if(kind==='porcentaje')out+='%';
-  return out;
-}
+function formatReportValue(id:string,value:number){const c=state.data?.columns.find(x=>x.id===id);const kind=c?columnFormatKind(c):'decimal';const decimals=kind==='entero'?0:Number(state.visual.settings?.column_decimals?.[id]??2);const shown=kind==='porcentaje'?value*100:value;let out=shown.toLocaleString('es-AR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});if(kind==='moneda')out='$'+out;if(kind==='porcentaje')out+='%';return out}
 function renderReport(){
-  if(!state.data)return;
-  const groupBy=[...reportGroups.selectedOptions].map(o=>o.value);
-  const measureID=reportMeasure.value;
-  const agg=reportAgg.value as ReportAgg;
-  const weightID=reportWeight.value;
-  if(!measureID){reportResult.innerHTML='<div class="empty">Seleccione una medida.</div>';return}
-  if(agg==='ponderado'&&(!weightID||weightID===measureID)){reportResult.innerHTML='<div class="empty">Seleccione una columna peso distinta de la medida.</div>';return}
-  const rows=filteredRows();
-  const result=pivotReport(rows,groupBy,measureID,agg,weightID);
-  const headers=groupBy.map(id=>state.data!.columns.find(c=>c.id===id)?.title??id);
-  const body=result.groups.map(g=>'<tr>'+g.labels.map(v=>'<td>'+esc(v||'(en blanco)')+'</td>').join('')+'<td>'+esc(formatReportValue(measureID,g.value))+'</td><td>'+g.count+'</td></tr>').join('');
-  reportResult.innerHTML='<div class="report-meta">'+result.groups.length+' grupo(s) · '+rows.length+' fila(s) filtrada(s)</div><table><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'<th>'+esc(state.data!.columns.find(c=>c.id===measureID)?.title??measureID)+'</th><th>Filas</th></tr></thead><tbody>'+body+'</tbody><tfoot><tr>'+groupBy.map((_,i)=>'<th>'+(i===0?'TOTAL GENERAL':'')+'</th>').join('')+'<th>'+esc(formatReportValue(measureID,result.total))+'</th><th>'+result.totalCount+'</th></tr></tfoot></table>';
-}
-function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
+ if(!state.data)return
+ const dateID=reportDate.value,groupID=reportGroup.value,measureID=reportMeasure.value,agg=reportAgg.value as ReportAgg,weightID=reportWeight.value
+ if(!dateID){reportResult.innerHTML='<div class="empty">No hay una columna de fecha disponible.</div>';return}
+ if(!groupID){reportResult.innerHTML='<div class="empty">Seleccione una dimensión de filas.</div>';return}
+ if(agg!=='conteo'&&!measureID){reportResult.innerHTML='<div class="empty">No hay una medida numérica disponible.</div>';return}
+ if(agg==='ponderado'&&(!weightID||weightID===measureID)){reportResult.innerHTML='<div class="empty">Seleccione una columna peso distinta de la medida.</div>';return}
+ const rows=filteredRows(),result=buildMonthlyPivot(rows,dateID,groupID,measureID,agg,weightID),title=state.data.columns.find(c=>c.id===groupID)?.title??groupID
+ const body=result.groups.map(g=>'<tr><td>'+esc(g.label||'(en blanco)')+'</td>'+result.months.map(x=>'<td class="report-number">'+esc(formatReportValue(measureID,g.values[x]??0))+'</td>').join('')+'<td class="report-number">'+esc(formatReportValue(measureID,g.total))+'</td></tr>').join('')
+ const totals=result.months.map(x=>'<th class="report-number">'+esc(formatReportValue(measureID,result.totals[x]??0))+'</th>').join('')
+ const diag=(result.skippedInvalidDates||result.skippedInvalidMeasures)?' · Fechas inválidas: '+result.skippedInvalidDates+' · Medidas inválidas: '+result.skippedInvalidMeasures:''
+ reportResult.innerHTML='<div class="report-meta">'+rows.length+' fila(s) filtrada(s) · '+result.months.length+' mes(es) · '+result.groups.length+' valor(es)'+diag+'</div><div class="report-table-wrap"><table><thead><tr><th>'+esc(title)+'</th>'+result.months.map(x=>'<th class="report-number">'+esc(x)+'</th>').join('')+'<th class="report-number">Total</th></tr></thead><tbody>'+body+'</tbody><tfoot><tr><th>TOTAL GENERAL</th>'+totals+'<th class="report-number">'+esc(formatReportValue(measureID,result.grandTotal))+'</th></tr></tfoot></table></div>'
+}function resetCalc(){state.calculated.editingOriginal='';calcName.value='';calcFormula.value='';calcPercent.checked=false;calcSave.textContent='AGREGAR';calcCancel.classList.add('hidden')}
 
 async function setPanel(open:boolean, mode: 'columns'|'calculated'|'report' = state.panelMode){
   state.columnsOpen=open; state.panelMode=mode
+  panel.classList.toggle('report-open',open&&mode==='report')
   panel.classList.toggle('hidden',!open); backdrop.classList.toggle('hidden',!open)
   if(!open)return
   panelTitle.textContent=mode==='columns'?'Columnas':mode==='calculated'?'Campos calculados':'Reporte'
@@ -480,8 +468,9 @@ openBtn.addEventListener('click', async () => {
 byId<HTMLButtonElement>('columns').addEventListener('click', () => setPanel(true,'columns'))
 byId<HTMLButtonElement>('calculated').addEventListener('click', () => setPanel(true,'calculated'))
 byId<HTMLButtonElement>('report').addEventListener('click', () => setPanel(true,'report'))
+reportDate.addEventListener('change',renderReport)
+reportGroup.addEventListener('change',renderReport)
 reportAgg.addEventListener('change',()=>{syncReportWeight();renderReport()})
-reportGroups.addEventListener('change',renderReport)
 reportMeasure.addEventListener('change',renderReport)
 reportWeight.addEventListener('change',renderReport)
 byId<HTMLButtonElement>('report-generate').addEventListener('click',renderReport)
