@@ -1,53 +1,5 @@
 export type ReportAgg = 'suma'|'promedio'|'conteo'|'ponderado'
-
-export type ReportColumn = { id:string; title:string; type:string; source:string }
-export type ReportGroup = { key:string; labels:string[]; value:number; count:number }
-export type ReportResult = { groups:ReportGroup[]; total:number; totalCount:number }
-
-export function reportNumber(value:string):number|null {
-  let s=value.trim().replace(/[%$\s]/g,'')
-  if(!s)return null
-  if(s.includes(',')&&s.includes('.')){
-    if(s.lastIndexOf(',')>s.lastIndexOf('.'))s=s.replace(/\./g,'').replace(',','.')
-    else s=s.replace(/,/g,'')
-  } else if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.')
-  const n=Number(s)
-  return Number.isFinite(n)?n:null
-}
-
-export function pivotReport(rows:Record<string,string>[],groupBy:string[],measureID:string,agg:ReportAgg,weightID=''):ReportResult{
-  type Acc={labels:string[];sum:number;count:number;weightSum:number;weightedSum:number}
-  const groups=new Map<string,Acc>()
-  const values=(row:Record<string,string>,id:string)=>row[id]??''
-  for(const row of rows){
-    const labels=groupBy.map(id=>values(row,id))
-    const key=JSON.stringify(labels)
-    let acc=groups.get(key)
-    if(!acc){acc={labels,sum:0,count:0,weightSum:0,weightedSum:0};groups.set(key,acc)}
-    const measure=reportNumber(values(row,measureID))
-    if(agg==='conteo'){acc.count++;continue}
-    if(measure===null)continue
-    acc.sum+=measure
-    acc.count++
-    if(agg==='ponderado'&&weightID){
-      const weight=reportNumber(values(row,weightID))
-      if(weight!==null){acc.weightedSum+=measure*weight;acc.weightSum+=weight}
-    }
-  }
-  const makeValue=(a:Acc)=>{
-    if(agg==='conteo')return a.count
-    if(agg==='promedio')return a.count?a.sum/a.count:0
-    if(agg==='ponderado')return a.weightSum?a.weightedSum/a.weightSum:0
-    return a.sum
-  }
-  const groupsOut=[...groups.values()].map(a=>({key:JSON.stringify(a.labels),labels:a.labels,value:makeValue(a),count:a.count}))
-  let total=0,totalCount=0,weightSum=0,weightedSum=0
-  for(const row of rows){
-    if(agg==='conteo'){totalCount++;continue}
-    const m=reportNumber(values(row,measureID)); if(m===null)continue
-    total+=m; totalCount++
-    if(agg==='ponderado'&&weightID){const w=reportNumber(values(row,weightID));if(w!==null){weightedSum+=m*w;weightSum+=w}}
-  }
-  const totalValue=agg==='conteo'?totalCount:agg==='promedio'?(totalCount?total/totalCount:0):agg==='ponderado'?(weightSum?weightedSum/weightSum:0):total
-  return {groups:groupsOut,total:totalValue,totalCount}
-}
+export type MonthlyPivot = { months:string[]; groups:Array<{label:string;values:Record<string,number>;total:number}>; totals:Record<string,number>; grandTotal:number; skippedInvalidDates:number; skippedInvalidMeasures:number }
+function num(v:string):number|null{let s=v.trim().replace(/[%$\s]/g,'');if(!s)return null;let neg=false;if(/^\(.*\)$/.test(s)){neg=true;s=s.slice(1,-1)}if(/^[−-]/.test(s)){neg=true;s=s.slice(1)}else if(/\+$/.test(s))s=s.slice(0,-1);if(s.includes(',')&&s.includes('.'))s=s.lastIndexOf(',')>s.lastIndexOf('.')?s.replace(/\./g,'').replace(',','.'):s.replace(/,/g,'');else if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const n=Number(s);return Number.isFinite(n)?(neg?-Math.abs(n):n):null}
+function date(v:string):number|null{const s=v.trim();if(!s)return null;const n=Number(s.replace(',','.'));if(Number.isFinite(n)&&/^[-+]?\d+(?:[.,]\d+)?$/.test(s))return Date.UTC(1899,11,30)+n*86400000;let m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+.*)?$/);if(m)return Date.UTC(+m[3],+m[2]-1,+m[1]);m=s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:[T\s].*)?$/);if(m)return Date.UTC(+m[1],+m[2]-1,+m[3]);const t=Date.parse(s);return Number.isFinite(t)?t:null}
+export function buildMonthlyPivot(rows:Record<string,string>[],dateID:string,groupID:string,measureID:string,agg:ReportAgg,weightID=''):MonthlyPivot{type C={sum:number;count:number;weighted:number;weights:number};const cells=new Map<string,Map<string,C>>(),monthsSet=new Set<string>();let skippedInvalidDates=0,skippedInvalidMeasures=0;for(const row of rows){const t=date(row[dateID]??'');if(t===null){skippedInvalidDates++;continue}const d=new Date(t),month=d.getUTCFullYear().toString().padStart(4,'0')+'-'+(d.getUTCMonth()+1).toString().padStart(2,'0'),label=row[groupID]??'';monthsSet.add(month);if(!cells.has(label))cells.set(label,new Map());const map=cells.get(label)!;if(!map.has(month))map.set(month,{sum:0,count:0,weighted:0,weights:0});const c=map.get(month)!;if(agg==='conteo'){c.count++;continue}const value=num(row[measureID]??'');if(value===null){skippedInvalidMeasures++;continue}c.sum+=value;c.count++;if(agg==='ponderado'&&weightID){const w=num(row[weightID]??'');if(w!==null){c.weighted+=value*w;c.weights+=w}}}const months=[...monthsSet].sort();const value=(c:C|undefined)=>!c?0:agg==='conteo'?c.count:agg==='promedio'?(c.count?c.sum/c.count:0):agg==='ponderado'?(c.weights?c.weighted/c.weights:0):c.sum;const groups=[...cells.entries()].sort((a,b)=>a[0].localeCompare(b[0],'es',{numeric:true,sensitivity:'base'})).map(([label,map])=>{const values:Record<string,number>={};let total=0;for(const month of months){values[month]=value(map.get(month));total+=values[month]}return{label,values,total}});const totals:Record<string,number>={};let grandTotal=0;for(const month of months){totals[month]=groups.reduce((s,g)=>s+(g.values[month]??0),0);grandTotal+=totals[month]}return{months,groups,totals,grandTotal,skippedInvalidDates,skippedInvalidMeasures}}
